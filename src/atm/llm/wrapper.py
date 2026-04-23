@@ -302,13 +302,17 @@ class LLMWrapper:
         self,
         lc_messages: list[BaseMessage],
         invoke_kwargs: dict[str, Any],
+        *,
+        agent_id: str = "default",
     ) -> Any:
         """Call the underlying LLM with retry, returning response (AIMessage or LLMResponse)."""
 
         async def _call() -> Any:
-            # FakeLLM has its own ainvoke signature
+            # FakeLLM has its own ainvoke signature and returns LLMResponse directly
             if isinstance(self._llm, FakeLLM):
-                return await self._llm.ainvoke(list(lc_messages))  # type: ignore[arg-type]
+                return await self._llm.ainvoke(  # type: ignore[arg-type]
+                    list(lc_messages), agent_id=agent_id
+                )
             return await self._llm.ainvoke(lc_messages, **invoke_kwargs)
 
         return await with_retry(
@@ -382,9 +386,34 @@ class LLMWrapper:
             invoke_kwargs["response_format"] = response_format
         invoke_kwargs.update(opts)
 
-        ai_msg = await self._invoke_llm(lc_messages, invoke_kwargs)
+        ai_msg = await self._invoke_llm(lc_messages, invoke_kwargs, agent_id=agent_id)
 
         # --- Step 6: parse usage and cost ---
+        # FakeLLM returns LLMResponse directly; bypass AIMessage parsing in that case.
+        if isinstance(ai_msg, LLMResponse):
+            fake_resp = ai_msg
+            actual_cost = self._pricing.cost(
+                self._model_id,
+                fake_resp.usage,
+                cache_write_tokens=0,
+            )
+            # --- Step 7: record cost ---
+            await self._budget.record(actual_cost, level=BudgetLevel.RUN)
+            await self._budget.record(actual_cost, level=BudgetLevel.EXPERIMENT)
+
+            latency_ms = int((time.monotonic() - started_monotonic) * 1000)
+            return LLMResponse(
+                id=fake_resp.id,
+                model=self._model_id,
+                text=fake_resp.text,
+                tool_calls=fake_resp.tool_calls,
+                usage=fake_resp.usage,
+                cost_usd=actual_cost,
+                latency_ms=latency_ms,
+                finish_reason=fake_resp.finish_reason,  # type: ignore[arg-type]
+                started_at=started_dt,
+            )
+
         usage, cache_write_tokens = _detect_and_parse_usage(ai_msg, self._provider)
         actual_cost = self._pricing.cost(
             self._model_id,
