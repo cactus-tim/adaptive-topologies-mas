@@ -15,13 +15,16 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import pyarrow as pa
 import yaml
 
 from atm.core.types import LLMResponse, Message, MessageKind, TokenUsage, ToolCall
+
+if TYPE_CHECKING:
+    from langchain_core.messages import BaseMessage
 
 # ---------------------------------------------------------------------------
 # REPLAY_SCHEMA: mirrors arch.md §3.5 llm_calls Parquet schema.
@@ -211,7 +214,9 @@ class FakeLLM:
         )
 
     @staticmethod
-    def _echo_content(messages: list[Message] | list[dict[str, Any]]) -> str:
+    def _echo_content(
+        messages: list[Message] | list[dict[str, Any]] | list[BaseMessage],
+    ) -> str:
         """Return the content of the last user-kind message, or last message overall."""
         if not messages:
             return ""
@@ -228,7 +233,10 @@ class FakeLLM:
         last = messages[-1]
         if isinstance(last, Message):
             return last.content
-        return str(last.get("content", ""))
+        if isinstance(last, dict):
+            return str(last.get("content", ""))
+        # BaseMessage — both HumanMessage, AIMessage etc. have .content attribute
+        return str(getattr(last, "content", ""))
 
     # ------------------------------------------------------------------
     # Public API
@@ -236,7 +244,7 @@ class FakeLLM:
 
     async def ainvoke(
         self,
-        messages: list[Message] | list[dict[str, Any]],
+        messages: list[Message] | list[dict[str, Any]] | list[BaseMessage],
         *,
         agent_id: str = "default",
         **opts: Any,

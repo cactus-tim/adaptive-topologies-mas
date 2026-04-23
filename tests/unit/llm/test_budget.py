@@ -16,7 +16,7 @@ import asyncio
 import pytest
 
 from atm.core.errors import BudgetExceededError
-from atm.llm.budget import BudgetEvent, BudgetLevel, BudgetTracker
+from atm.llm.budget import BudgetLevel, BudgetSignal, BudgetTracker
 
 # ---------------------------------------------------------------------------
 # Test 1: Per-call cutoff
@@ -142,10 +142,10 @@ async def test_concurrent_record_sums_correctly() -> None:
 
 @pytest.mark.asyncio
 async def test_event_callback_fired_on_warn_and_exceed() -> None:
-    """on_event callback is called with BudgetEvent for warn (>=80%) and exceed."""
-    events: list[BudgetEvent] = []
+    """on_event callback is called with BudgetSignal for warn (>=80%) and exceed."""
+    events: list[BudgetSignal] = []
 
-    async def collector(event: BudgetEvent) -> None:
+    async def collector(event: BudgetSignal) -> None:
         events.append(event)
 
     tracker = BudgetTracker(
@@ -185,10 +185,10 @@ async def test_event_callback_fired_on_warn_and_exceed() -> None:
 
 @pytest.mark.asyncio
 async def test_sync_callback_also_accepted() -> None:
-    """on_event accepts a synchronous callback (Callable[[BudgetEvent], None])."""
-    events: list[BudgetEvent] = []
+    """on_event accepts a synchronous callback (Callable[[BudgetSignal], None])."""
+    events: list[BudgetSignal] = []
 
-    def sync_collector(event: BudgetEvent) -> None:
+    def sync_collector(event: BudgetSignal) -> None:
         events.append(event)
 
     tracker = BudgetTracker(

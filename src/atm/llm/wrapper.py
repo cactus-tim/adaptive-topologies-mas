@@ -310,7 +310,7 @@ class LLMWrapper:
         async def _call() -> Any:
             # FakeLLM has its own ainvoke signature and returns LLMResponse directly
             if isinstance(self._llm, FakeLLM):
-                return await self._llm.ainvoke(  # type: ignore[arg-type]
+                return await self._llm.ainvoke(
                     list(lc_messages), agent_id=agent_id
                 )
             return await self._llm.ainvoke(lc_messages, **invoke_kwargs)
@@ -410,7 +410,7 @@ class LLMWrapper:
                 usage=fake_resp.usage,
                 cost_usd=actual_cost,
                 latency_ms=latency_ms,
-                finish_reason=fake_resp.finish_reason,  # type: ignore[arg-type]
+                finish_reason=fake_resp.finish_reason,
                 started_at=started_dt,
             )
 

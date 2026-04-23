@@ -2,7 +2,7 @@
 
 BudgetTracker enforces per-call, per-run, and per-experiment USD ceilings using
 asyncio.Lock for concurrency safety. A callback (sync or async) can be registered
-to receive BudgetEvent notifications on warn (≥warn_fraction of limit) and exceed.
+to receive BudgetSignal notifications on warn (≥warn_fraction of limit) and exceed.
 
 Architecture: §4.2 of arch.md.
 """
@@ -29,7 +29,7 @@ class BudgetLevel(StrEnum):
     EXPERIMENT = "experiment"
 
 
-class BudgetEvent(BaseModel):
+class BudgetSignal(BaseModel):
     """A budget notification — either a warning (≥80% spent) or an exceed event."""
 
     model_config = ConfigDict(frozen=True)
@@ -42,7 +42,7 @@ class BudgetEvent(BaseModel):
 
 
 # Callback type alias: accepts sync or async callables
-_OnEvent = Callable[[BudgetEvent], "Awaitable[None] | None"]
+_OnEvent = Callable[[BudgetSignal], "Awaitable[None] | None"]
 
 
 class BudgetTracker:
@@ -62,7 +62,7 @@ class BudgetTracker:
         per_run_usd:        Maximum USD cumulative across calls in one run.
         per_experiment_usd: Maximum USD cumulative across all runs in an experiment.
         warn_fraction:      Fraction of limit at which a 'warn' event fires (default 0.8).
-        on_event:           Optional callback invoked with a ``BudgetEvent`` on warn/exceed.
+        on_event:           Optional callback invoked with a ``BudgetSignal`` on warn/exceed.
                             May be synchronous or asynchronous.
     """
 
@@ -154,7 +154,7 @@ class BudgetTracker:
         value_usd: float,
         limit_usd: float,
     ) -> None:
-        """Construct and dispatch a BudgetEvent to the registered callback.
+        """Construct and dispatch a BudgetSignal to the registered callback.
 
         Handles both synchronous and asynchronous callbacks transparently.
         Must be called while holding self._lock (or be otherwise safe).
@@ -162,7 +162,7 @@ class BudgetTracker:
         if self._on_event is None:
             return
 
-        event = BudgetEvent(
+        event = BudgetSignal(
             level=level,
             kind=kind,
             value_usd=value_usd,

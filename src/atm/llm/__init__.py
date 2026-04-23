@@ -8,7 +8,7 @@ M2 scope includes:
   - LLMWrapper: unified LangChain-based LLM abstraction with budget/retry
   - FakeLLM: scripted / replay / echo test double + REPLAY_SCHEMA
   - Pricing, ModelPricing: cost table with YAML loader
-  - BudgetTracker, BudgetLevel, BudgetEvent: three-tier token budget
+  - BudgetTracker, BudgetLevel, BudgetSignal: three-tier token budget
   - RetryPolicy, with_retry, is_transient: async retry helpers
   - build_openai, build_anthropic, build_vllm: provider factories
   - inject_cache_control, DEFAULT_CACHE_TTL: Anthropic prompt-cache helpers
@@ -16,7 +16,7 @@ M2 scope includes:
 
 from __future__ import annotations
 
-from atm.llm.budget import BudgetEvent, BudgetLevel, BudgetTracker
+from atm.llm.budget import BudgetLevel, BudgetSignal, BudgetTracker
 from atm.llm.fake import REPLAY_SCHEMA, FakeLLM
 from atm.llm.pricing import ModelPricing, Pricing
 from atm.llm.providers import (
@@ -32,8 +32,8 @@ from atm.llm.wrapper import LLMWrapper
 __all__ = [
     "DEFAULT_CACHE_TTL",
     "REPLAY_SCHEMA",
-    "BudgetEvent",
     "BudgetLevel",
+    "BudgetSignal",
     "BudgetTracker",
     "FakeLLM",
     "LLMWrapper",
