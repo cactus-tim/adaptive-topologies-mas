@@ -168,10 +168,7 @@ class TokenUsage(BaseModel):
 
 
 class LLMResponse(BaseModel):
-    """Result of a single LLM ainvoke. Contains text and/or tool-calls if requested.
-
-    Note: started_at is NOT present in M1 — will be added in M2 (CI-1 path a).
-    """
+    """Result of a single LLM ainvoke. Contains text and/or tool-calls if requested."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -183,6 +180,7 @@ class LLMResponse(BaseModel):
     cost_usd: float
     latency_ms: int
     finish_reason: Literal["stop", "tool_calls", "length", "content_filter", "error"]
+    started_at: _dt.datetime = Field(default_factory=_utcnow)
     raw: dict[str, Any] = Field(default_factory=dict)  # for debug; not fully written to Parquet
 
 

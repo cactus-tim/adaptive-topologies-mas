@@ -68,3 +68,34 @@ class ToolError(AtmError):
     def cause(self) -> BaseException | None:
         """The chained exception set via ``raise ToolError(...) from exc``."""
         return self.__cause__
+
+
+class LLMError(AtmError):
+    """Raised when an LLM call fails after all retry attempts are exhausted.
+
+    Uses standard Python exception chaining to attach the original cause:
+        raise LLMError(provider="openai", model="gpt-4o", attempts=3, message="...") from original_exc
+
+    Attributes:
+        provider: LLM provider name (e.g. "openai", "anthropic", "vllm", "fake").
+        model:    Model identifier (e.g. "gpt-4o", "claude-3-5-sonnet-latest").
+        attempts: Number of attempts made before giving up.
+        message:  Human-readable description of the failure.
+
+    Properties:
+        cause: Returns ``self.__cause__`` (set via ``raise ... from``).
+               Is ``None`` when no chaining was used.
+    """
+
+    def __init__(self, *, provider: str, model: str, attempts: int, message: str) -> None:
+        self.provider = provider
+        self.model = model
+        self.attempts = attempts
+        super().__init__(
+            f"LLM call failed after {attempts} attempt(s) [{provider}:{model}]: {message}"
+        )
+
+    @property
+    def cause(self) -> BaseException | None:
+        """The chained exception set via ``raise LLMError(...) from exc``."""
+        return self.__cause__

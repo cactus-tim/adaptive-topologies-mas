@@ -7,11 +7,14 @@ Coverage:
   - MC-3: closure name check for dedup_by_id_reducer-produced reducers
   - MC-4: that Annotated metadata contains callable reducers
   - get_type_hints with include_extras=True returns Annotated
+  - M2 step 1.3: llm_calls reducer sorts by started_at
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, get_args, get_origin, get_type_hints
+from uuid import uuid4
 
 from atm.core.state import AgentState, GraphState, SharedState
 
@@ -207,3 +210,62 @@ class TestMC4ReducersCallable:
         reducer = get_args(hints["agents"])[1]
         result = reducer({}, {})
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# 6. M2 step 1.3: llm_calls reducer sorts by started_at
+# ---------------------------------------------------------------------------
+
+
+class TestLlmCallsReducerSortByStartedAt:
+    """M2 step 1.3: GraphState.llm_calls reducer must sort by started_at ASC."""
+
+    def _make_llm_response(self, started_at: datetime) -> dict:
+        """Create a minimal dict that mimics LLMResponse for reducer testing."""
+        return {"id": uuid4(), "started_at": started_at}
+
+    def test_llm_calls_reducer_sorts_ascending(self) -> None:
+        """Reducer must return items in started_at ascending order."""
+        hints = get_type_hints(GraphState, include_extras=True)
+        reducer = get_args(hints["llm_calls"])[1]
+
+        now = datetime.now(UTC)
+        early = self._make_llm_response(started_at=now - timedelta(seconds=10))
+        late = self._make_llm_response(started_at=now)
+
+        # Pass late first in left, early in right — result must be sorted ASC
+        result = reducer([late], [early])
+        assert len(result) == 2
+        assert result[0]["started_at"] < result[1]["started_at"]
+        assert result[0]["started_at"] == early["started_at"]
+        assert result[1]["started_at"] == late["started_at"]
+
+    def test_llm_calls_reducer_sorts_with_multiple_items(self) -> None:
+        """Reducer must sort correctly across many items with different timestamps."""
+        hints = get_type_hints(GraphState, include_extras=True)
+        reducer = get_args(hints["llm_calls"])[1]
+
+        now = datetime.now(UTC)
+        items = [
+            self._make_llm_response(started_at=now + timedelta(seconds=i))
+            for i in [3, 1, 4, 1, 5, 9, 2, 6]
+        ]
+        # Shuffle: put some in left, some in right
+        # Dedup by id means all unique IDs so all 8 kept
+        result = reducer(items[:4], items[4:])
+        started_ats = [r["started_at"] for r in result]
+        assert started_ats == sorted(started_ats)
+
+    def test_llm_calls_reducer_dedup_by_id(self) -> None:
+        """Reducer must still deduplicate by id (left-wins) even with sort_by."""
+        hints = get_type_hints(GraphState, include_extras=True)
+        reducer = get_args(hints["llm_calls"])[1]
+
+        shared_id = uuid4()
+        now = datetime.now(UTC)
+        left_item = {"id": shared_id, "started_at": now - timedelta(seconds=5)}
+        right_item = {"id": shared_id, "started_at": now}  # same id, left wins
+
+        result = reducer([left_item], [right_item])
+        assert len(result) == 1
+        assert result[0]["started_at"] == left_item["started_at"]  # left wins

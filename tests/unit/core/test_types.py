@@ -175,14 +175,46 @@ def test_llm_response_creation() -> None:
     assert resp.raw == {}
 
 
-def test_llm_response_no_started_at_field() -> None:
-    """CI-1 path a: LLMResponse must NOT have started_at in M1."""
+def test_llm_response_started_at_auto_populated() -> None:
+    """M2 step 1.2: LLMResponse must auto-populate started_at via _utcnow default factory."""
+    from atm.core.types import LLMResponse, TokenUsage
+
+    usage = TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    resp = LLMResponse(
+        model="openai:gpt-4o",
+        text="Hello",
+        usage=usage,
+        cost_usd=0.001,
+        latency_ms=200,
+        finish_reason="stop",
+    )
+    assert isinstance(resp.started_at, datetime)
+    assert resp.started_at.tzinfo is not None
+
+
+def test_llm_response_started_at_in_model_fields() -> None:
+    """M2 step 1.2: started_at must be present as a model field."""
     from atm.core.types import LLMResponse
 
-    model_fields = LLMResponse.model_fields
-    assert "started_at" not in model_fields, (
-        "LLMResponse should NOT have 'started_at' field in M1 — it's added in M2"
+    assert "started_at" in LLMResponse.model_fields
+
+
+def test_llm_response_started_at_explicit() -> None:
+    """M2 step 1.2: started_at can be set explicitly without breaking other fields."""
+    from atm.core.types import LLMResponse, TokenUsage
+
+    usage = TokenUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+    ts = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    resp = LLMResponse(
+        model="fake:deterministic",
+        text=None,
+        usage=usage,
+        cost_usd=0.0,
+        latency_ms=0,
+        finish_reason="stop",
+        started_at=ts,
     )
+    assert resp.started_at == ts
 
 
 # ---------------------------------------------------------------------------

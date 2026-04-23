@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from atm.core.errors import AtmError, BudgetExceededError, PhaseError, ToolError
+from atm.core.errors import AtmError, BudgetExceededError, LLMError, PhaseError, ToolError
 
 # ---------------------------------------------------------------------------
 # Test 1: Inheritance hierarchy
@@ -159,5 +159,60 @@ class TestAtmErrorDirect:
             BudgetExceededError(level="call", limit_usd=1.0, spent_usd=2.0),
             PhaseError(attempted="done", current="planning"),
             ToolError(tool_name="x", message="y"),
+            LLMError(provider="openai", model="gpt-4o", attempts=3, message="exhausted"),
         ]:
             assert isinstance(exc, AtmError)
+
+
+# ---------------------------------------------------------------------------
+# Test 7: LLMError — M2 step 1.1
+# ---------------------------------------------------------------------------
+
+
+class TestLLMError:
+    """LLMError must inherit AtmError and carry provider, model, attempts attrs."""
+
+    def test_inherits_atm_error(self) -> None:
+        assert issubclass(LLMError, AtmError)
+
+    def test_fields_stored(self) -> None:
+        exc = LLMError(provider="openai", model="gpt-4o", attempts=3, message="retry exhausted")
+        assert exc.provider == "openai"
+        assert exc.model == "gpt-4o"
+        assert exc.attempts == 3
+
+    def test_str_non_empty(self) -> None:
+        exc = LLMError(provider="anthropic", model="claude-3-5-sonnet-latest", attempts=1, message="rate limit")
+        assert len(str(exc)) > 0
+
+    def test_is_raiseable(self) -> None:
+        with pytest.raises(LLMError) as exc_info:
+            raise LLMError(provider="openai", model="gpt-4o-mini", attempts=2, message="timeout")
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.model == "gpt-4o-mini"
+        assert exc_info.value.attempts == 2
+
+    def test_cause_set_via_chaining(self) -> None:
+        """LLMError.cause reflects __cause__ set via `raise ... from`."""
+        original = TimeoutError("network timeout")
+        try:
+            raise LLMError(provider="openai", model="gpt-4o", attempts=3, message="retry exhausted") from original
+        except LLMError as exc:
+            assert exc.cause is original
+            assert exc.__cause__ is original
+
+    def test_cause_is_none_without_chaining(self) -> None:
+        exc = LLMError(provider="fake", model="deterministic", attempts=0, message="no cause")
+        assert exc.cause is None
+
+    def test_cause_property_returns_cause(self) -> None:
+        original = RuntimeError("root")
+        try:
+            raise LLMError(provider="vllm", model="llama", attempts=1, message="fail") from original
+        except LLMError as exc:
+            assert exc.cause is exc.__cause__
+
+    def test_no_cause_constructor_arg(self) -> None:
+        """LLMError must NOT accept a cause= keyword argument in constructor."""
+        with pytest.raises(TypeError):
+            LLMError(provider="x", model="y", attempts=1, message="z", cause=ValueError("x"))  # type: ignore[call-arg]

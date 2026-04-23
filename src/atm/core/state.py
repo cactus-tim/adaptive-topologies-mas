@@ -89,6 +89,6 @@ class GraphState(TypedDict, total=False):
     shared: SharedState
     agents: Annotated[dict[str, AgentState], merge_agent_states]
     messages: Annotated[list[Message], dedup_by_id_reducer("id", sort_by="created_at")]
-    llm_calls: Annotated[list[LLMResponse], dedup_by_id_reducer("id")]  # no sort_by: started_at added in M2 (CI-1 path a)
+    llm_calls: Annotated[list[LLMResponse], dedup_by_id_reducer("id", sort_by="started_at")]
     budget_events: Annotated[list[BudgetEvent], dedup_by_id_reducer("id", sort_by="at")]
     topology_transitions: Annotated[list[TopologyTransition], dedup_by_id_reducer("id", sort_by="at")]
