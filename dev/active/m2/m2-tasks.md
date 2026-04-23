@@ -1,6 +1,6 @@
 # M2 — LLM Layer — Tasks
 
-## Phase 1: Core extensions + deps + scaffold  IN PROGRESS
+## Phase 1: Core extensions + deps + scaffold  COMPLETE
 
 - [x] 1.1 Add `LLMError(AtmError)` to `core/errors.py` — `src/atm/core/errors.py`
   - Acceptance: `from atm.core.errors import LLMError` works; attrs `provider`, `model`,
@@ -31,7 +31,7 @@
   - Files: `planner_simple.yaml`, `executor_code_run.yaml`, `determinism_seed.yaml`
   - Acceptance: all three load via `yaml.safe_load`.
 
-## Phase 2: LLM module implementations  NOT STARTED
+## Phase 2: LLM module implementations  COMPLETE
 
 - [x] 2.1 `llm/pricing.py` — `Pricing` loader + cost calculation
   - Files: `src/atm/llm/pricing.py`, `src/atm/llm/__init__.py`,
@@ -59,7 +59,7 @@
   - Acceptance: `uv run pytest tests/unit/llm/test_fake_llm.py -q` green; 6 test cases;
     `latency_ms=0` constant; `REPLAY_SCHEMA` maps `call_id -> LLMResponse.id`.
 
-## Phase 3: Wrapper + Message adapters  NOT STARTED
+## Phase 3: Wrapper + Message adapters  COMPLETE
 
 - [x] 3.1 Implement `Message.to_lc` / `Message.from_lc` in `core/types.py`
   - Files: `src/atm/core/types.py`, `tests/unit/core/test_message_lc_adapter.py`
@@ -72,16 +72,16 @@
     green; OpenAI-shape + Anthropic-shape usage parsed; budget-exceed halts before
     `_llm.ainvoke`; astream raises `NotImplementedError`.
 
-## Phase 4: Integration contract + exports  NOT STARTED
+## Phase 4: Integration contract + exports  COMPLETE
 
-- [ ] 4.1 Integration acceptance test `test_llm_layer_contract.py`
+- [x] 4.1 Integration acceptance test `test_llm_layer_contract.py`
   - Files: `tests/integration/llm/__init__.py`,
     `tests/integration/llm/test_llm_layer_contract.py`
   - Acceptance: `uv run pytest tests/integration/llm/test_llm_layer_contract.py -v` green;
     covers scripted-fake + budget-exceed-path + replay-round-trip; all exception assertions
     use `atm.core.errors` types, not bare `Exception`.
 
-- [ ] 4.2 Public exports + ruff/mypy clean
+- [x] 4.2 Public exports + ruff/mypy clean
   - Files: `src/atm/llm/__init__.py`, `src/atm/core/__init__.py`
   - Acceptance: `from atm.llm import LLMWrapper, FakeLLM, BudgetTracker, Pricing` works;
     `uv run ruff check src tests` → 0 findings;
@@ -93,7 +93,7 @@
 ## Stats
 
 - Total: 14 tasks · ~7.5h
-- Done: 0 / 14
+- Done: 14 / 14
 
 ## How to Update
 

@@ -17,8 +17,12 @@
 - Step 3.1: Implemented `Message.to_lc` and `Message.from_lc` in `src/atm/core/types.py`. Mapping: REQUEST/DRAFT/CRITIQUE → HumanMessage, DECISION → AIMessage, BROADCAST → HumanMessage(additional_kwargs={channel:'broadcast'}), PHASE_EMIT → SystemMessage. `from_lc` stores LC extras in `payload['_lc']`. Updated M1 stub-check tests in `test_types.py` to reflect M2 implementation. 18 new tests in `test_message_lc_adapter.py` — all green.
 - Step 3.2: Created `src/atm/llm/wrapper.py` — `LLMWrapper` with `ainvoke` + `astream` (stub). Supports OpenAI (`usage_metadata`) and Anthropic (`response_metadata.usage`) usage shapes. Pre-call budget estimate + three-level BudgetExceededError guard. Retry via `with_retry`. Token counting via tiktoken (openai) or heuristic (anthropic). Cache injection for Anthropic when `cache_key` set. 14 new tests (9 usage, 5 retry) — all green. ruff 0 findings; mypy 0 findings.
 
+- Step 4.1: Created `tests/integration/llm/__init__.py` (empty) and `tests/integration/llm/test_llm_layer_contract.py` with 3 acceptance tests (scripted-fake end-to-end, budget-exceed-before-call, replay round-trip). Fixed a bug in `wrapper.py` where `agent_id` was not forwarded to `FakeLLM.ainvoke` and where `LLMResponse` returned by FakeLLM was not handled in the usage-parsing step (short-circuit added). All 3 integration tests green; all 260 unit tests green; ruff 0 findings.
+
+- Fix mode: Resolved 2 blocking findings — (1) widened `FakeLLM.ainvoke` signature to accept `list[BaseMessage]` and removed 2 unused `# type: ignore` from `wrapper.py`; (2) renamed M2 runtime `BudgetEvent` → `BudgetSignal` in `budget.py`, `llm/__init__.py`, and `test_budget.py` to eliminate name collision with M1 DB schema class in `core/types.py`. ruff 0 findings; mypy 0 findings; 263 tests green.
+
 ### IN PROGRESS
-- Phase 4: Integration contract + exports (next step)
+- All blocking findings resolved; M2 complete.
 
 ### BLOCKERS
 - None
