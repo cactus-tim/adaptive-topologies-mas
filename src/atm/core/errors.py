@@ -3,6 +3,7 @@
 All custom exceptions inherit from AtmError. Designed for use with standard
 Python exception chaining: `raise ToolError(tool_name, "...") from original_exc`.
 """
+
 from __future__ import annotations
 
 
@@ -24,8 +25,7 @@ class BudgetExceededError(AtmError):
         self.limit_usd = limit_usd
         self.spent_usd = spent_usd
         super().__init__(
-            f"Budget exceeded at level={level!r}: "
-            f"spent ${spent_usd:.4f} > limit ${limit_usd:.4f}"
+            f"Budget exceeded at level={level!r}: spent ${spent_usd:.4f} > limit ${limit_usd:.4f}"
         )
 
 

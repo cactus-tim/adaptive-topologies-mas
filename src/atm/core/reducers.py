@@ -8,21 +8,23 @@ Public API:
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable
-from typing import Any
+from typing import Any, cast
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
 
-def _get(item: Any, field: str) -> Any:
+def _get(item: Any, field: str) -> Hashable:
     """Access a field from a dict or object attribute.
 
+    Returns a Hashable value (as required by arch.md §3.3bis lines 565-566).
+    The caller is responsible for ensuring the accessed field value is Hashable.
     Supports both dict-style access and attribute access (e.g. namedtuple, dataclass).
     """
     if isinstance(item, dict):
-        return item[field]
-    return getattr(item, field)
+        return cast(Hashable, item[field])
+    return cast(Hashable, getattr(item, field))
 
 
 def _merge_one(left_agent: dict[str, Any], right_agent: dict[str, Any]) -> dict[str, Any]:
@@ -38,9 +40,9 @@ def _merge_one(left_agent: dict[str, Any], right_agent: dict[str, Any]) -> dict[
         merged[key] = list(left_agent.get(key, [])) + list(right_agent.get(key, []))
 
     # Summary — right wins if non-empty, else left
-    merged["summary_before_window"] = right_agent.get(
-        "summary_before_window"
-    ) or left_agent.get("summary_before_window", "")
+    merged["summary_before_window"] = right_agent.get("summary_before_window") or left_agent.get(
+        "summary_before_window", ""
+    )
 
     # Monotonically increasing numeric fields — max wins
     for key in ("step_count", "tokens_spent"):
@@ -119,7 +121,7 @@ def dedup_by_id_reducer(
         merged = list(left) + [x for x in right if _get(x, key) not in seen]
 
         if sort_by is not None:
-            merged.sort(key=lambda x: _get(x, sort_by))
+            merged.sort(key=lambda x: _get(x, sort_by))  # type: ignore[arg-type, return-value]  # _get returns Hashable; caller ensures field is also orderable (e.g. datetime, UUID)
 
         return merged
 

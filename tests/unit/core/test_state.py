@@ -8,15 +8,12 @@ Coverage:
   - MC-4: that Annotated metadata contains callable reducers
   - get_type_hints with include_extras=True returns Annotated
 """
+
 from __future__ import annotations
 
-import typing
 from typing import Annotated, get_args, get_origin, get_type_hints
 
-import pytest
-
 from atm.core.state import AgentState, GraphState, SharedState
-
 
 # ---------------------------------------------------------------------------
 # 1. AgentState structure
@@ -73,8 +70,8 @@ class TestSharedState:
 
     def test_has_topology_fields(self) -> None:
         hints = get_type_hints(SharedState)
-        # Required L2 topology fields
-        assert "topology" in hints or "active_topology" in hints
+        # Required L2 topology fields — field name matches arch.md §3.2 line 419
+        assert "active_topology" in hints
         assert "topology_switch_count" in hints
         assert "topology_history" in hints
 
@@ -185,7 +182,13 @@ class TestMC4ReducersCallable:
 
     def test_all_reducers_are_callable(self) -> None:
         hints = get_type_hints(GraphState, include_extras=True)
-        reducer_fields = ("agents", "messages", "llm_calls", "budget_events", "topology_transitions")
+        reducer_fields = (
+            "agents",
+            "messages",
+            "llm_calls",
+            "budget_events",
+            "topology_transitions",
+        )
         for field in reducer_fields:
             hint = hints[field]
             assert get_origin(hint) is Annotated, f"Field '{field}' is not Annotated"

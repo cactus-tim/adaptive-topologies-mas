@@ -7,6 +7,7 @@ Tests:
   - GraphState Annotated metadata contains callable reducers for all list/dict fields
   - Star-import doesn't fail
 """
+
 from __future__ import annotations
 
 from typing import Annotated, get_args, get_origin, get_type_hints
@@ -205,9 +206,7 @@ def test_graphstate_annotated_reducers_are_callable() -> None:
     for field in expected_annotated:
         assert field in hints, f"GraphState missing field {field!r}"
         hint = hints[field]
-        assert get_origin(hint) is Annotated, (
-            f"GraphState.{field} must be Annotated, got {hint!r}"
-        )
+        assert get_origin(hint) is Annotated, f"GraphState.{field} must be Annotated, got {hint!r}"
         args = get_args(hint)
         assert len(args) >= 2, f"GraphState.{field} Annotated has < 2 args"
         reducer = args[1]
@@ -219,6 +218,74 @@ def test_graphstate_annotated_reducers_are_callable() -> None:
 # ---------------------------------------------------------------------------
 # Direct import smoke test
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Sort-by tests (arch.md §3.2 lines 454-459)
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_sort_by_created_at_messages() -> None:
+    """messages reducer sorts ASC by created_at; items fed in descending order."""
+    import datetime
+
+    from atm.core import Message, MessageKind, dedup_by_id_reducer
+
+    t_old = datetime.datetime(2026, 1, 1, 10, 0, 0, tzinfo=datetime.UTC)
+    t_new = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
+
+    msg_newer = Message.model_construct(
+        id=__import__("uuid").uuid4(),
+        sender="a",
+        kind=MessageKind.REQUEST,
+        content="newer",
+        recipients=(),
+        refs=(),
+        payload={},
+        created_at=t_new,
+    )
+    msg_older = Message.model_construct(
+        id=__import__("uuid").uuid4(),
+        sender="b",
+        kind=MessageKind.REQUEST,
+        content="older",
+        recipients=(),
+        refs=(),
+        payload={},
+        created_at=t_old,
+    )
+
+    # Feed descending order (newer first, older second) — reducer must return ASC
+    reducer = dedup_by_id_reducer("id", sort_by="created_at")
+    result = reducer([msg_newer], [msg_older])
+
+    assert len(result) == 2
+    assert result[0].created_at == t_old, "First item must be the older one (ASC sort)"
+    assert result[1].created_at == t_new, "Second item must be the newer one (ASC sort)"
+
+
+def test_dedup_sort_by_at_budget_events() -> None:
+    """budget_events reducer sorts ASC by 'at'; items fed in descending order."""
+    import datetime
+    import uuid
+
+    from atm.core import BudgetEvent, dedup_by_id_reducer
+
+    t_old = datetime.datetime(2026, 1, 1, 9, 0, 0, tzinfo=datetime.UTC)
+    t_new = datetime.datetime(2026, 1, 1, 11, 0, 0, tzinfo=datetime.UTC)
+
+    # Two events with distinct run_ids so they are not deduped; timestamps set via model_copy
+    base_newer = BudgetEvent(run_id=uuid.uuid4(), level="run", event="warn", limit_usd=1.0, current_usd=0.5)
+    base_older = BudgetEvent(run_id=uuid.uuid4(), level="call", event="warn", limit_usd=1.0, current_usd=0.3)
+    ev_newer = base_newer.model_copy(update={"at": t_new})
+    ev_older = base_older.model_copy(update={"at": t_old})
+
+    reducer = dedup_by_id_reducer("run_id", sort_by="at")
+    result = reducer([ev_newer], [ev_older])
+
+    assert len(result) == 2
+    assert result[0].at == t_old, "First item must be the older one (ASC sort)"
+    assert result[1].at == t_new, "Second item must be the newer one (ASC sort)"
 
 
 def test_direct_named_imports() -> None:

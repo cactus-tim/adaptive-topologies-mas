@@ -3,6 +3,7 @@
 All 17 classes/enums defined here are used throughout the framework.
 LangChain integration (Message.to_lc / from_lc) is stubbed — implemented in M2.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -66,11 +67,11 @@ class Phase(StrEnum):
 class MessageKind(StrEnum):
     """Semantic type of an inter-agent message."""
 
-    REQUEST = "request"        # addressed: agent → agent
-    BROADCAST = "broadcast"    # to shared bus (Mesh)
+    REQUEST = "request"  # addressed: agent → agent
+    BROADCAST = "broadcast"  # to shared bus (Mesh)
     DRAFT = "draft"
     CRITIQUE = "critique"
-    DECISION = "decision"      # Coordinator → final answer
+    DECISION = "decision"  # Coordinator → final answer
     PHASE_EMIT = "phase_emit"  # agent requests phase transition
 
 
@@ -90,12 +91,12 @@ class Message(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: UUID = Field(default_factory=uuid4)
-    sender: str                                 # agent_id
-    recipients: tuple[str, ...] = ()            # empty = broadcast
+    sender: str  # agent_id
+    recipients: tuple[str, ...] = ()  # empty = broadcast
     kind: MessageKind
     content: str
     payload: dict[str, Any] = Field(default_factory=dict)
-    refs: tuple[UUID, ...] = ()                 # reply-to chain
+    refs: tuple[UUID, ...] = ()  # reply-to chain
     created_at: _dt.datetime = Field(default_factory=_utcnow)
 
     def to_lc(self) -> BaseMessage:
@@ -116,8 +117,8 @@ class Message(BaseModel):
         cls,
         lc_msg: BaseMessage,
         *,
-        sender: str = "",
-        kind: MessageKind = MessageKind.REQUEST,
+        sender: str,
+        kind: MessageKind,
     ) -> Message:
         """Reverse adapter from LangChain BaseMessage.
 
@@ -138,7 +139,7 @@ class ToolCall(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tool_name: str
     args: dict[str, Any]
-    issued_by: str                              # agent_id
+    issued_by: str  # agent_id
     issued_at: _dt.datetime = Field(default_factory=_utcnow)
 
 
@@ -195,7 +196,7 @@ class HumanContext(BaseModel):
     question: str
     recent_messages: tuple[Message, ...]
     artifacts: dict[str, Any] = Field(default_factory=dict)  # draft, tests, diffs, etc.
-    allowed_actions: tuple[str, ...]                          # e.g. ("approve","reject","revise")
+    allowed_actions: tuple[str, ...]  # e.g. ("approve","reject","revise")
     deadline_s: int | None = None
 
 
@@ -204,12 +205,12 @@ class HumanResponse(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    action: str                                 # one of allowed_actions OR 'timeout'/'cancelled'
+    action: str  # one of allowed_actions OR 'timeout'/'cancelled'
     comment: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)     # structured edits
+    payload: dict[str, Any] = Field(default_factory=dict)  # structured edits
     answered_at: _dt.datetime = Field(default_factory=_utcnow)
-    tlx_scores: dict[str, int] | None = None    # 6 NASA-TLX scales, 0..100
-    timed_out: bool = False                     # True if gateway returned timeout-response
+    tlx_scores: dict[str, int] | None = None  # 6 NASA-TLX scales, 0..100
+    timed_out: bool = False  # True if gateway returned timeout-response
     source: Literal["human", "llm_sim", "fallback", "timeout"] = "human"
 
 
@@ -218,12 +219,12 @@ class TaskSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    id: str                                     # "humaneval/HumanEval/0"
+    id: str  # "humaneval/HumanEval/0"
     type: Literal["programming", "qa", "creative", "analysis"]
     input: str
     expected: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    evaluator_key: str                          # key in EvaluatorRegistry
+    evaluator_key: str  # key in EvaluatorRegistry
 
 
 class TaskResult(BaseModel):
@@ -233,7 +234,7 @@ class TaskResult(BaseModel):
 
     task_id: str
     final_answer: str
-    artifacts: dict[str, Any] = Field(default_factory=dict)   # code, tests, diffs
+    artifacts: dict[str, Any] = Field(default_factory=dict)  # code, tests, diffs
     iterations_used: int
     budget_spent_usd: float
     wall_time_s: float
@@ -248,7 +249,7 @@ class RunResult(BaseModel):
     status: Literal["completed", "failed", "budget_exceeded", "cancelled"]
     task_result: TaskResult | None
     error: str | None = None
-    metrics: dict[str, float] = Field(default_factory=dict)   # filled by Evaluator
+    metrics: dict[str, float] = Field(default_factory=dict)  # filled by Evaluator
 
 
 class PhaseTransition(BaseModel):
@@ -261,10 +262,10 @@ class PhaseTransition(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     run_id: UUID
-    from_phase: Phase | None                    # None only on initial init
+    from_phase: Phase | None  # None only on initial init
     to_phase: Phase
     entry_reason: str
-    iter_total: int                             # absolute meta-graph tick counter
+    iter_total: int  # absolute meta-graph tick counter
     decided_by: Literal["rule", "llm_router", "agent_emit", "initial"]
     at: _dt.datetime = Field(default_factory=_utcnow)
 
@@ -279,17 +280,17 @@ class TopologyTransition(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     run_id: UUID
-    from_topology: str | None                   # None only on the initial decision
-    to_topology: str                            # == from_topology if no-change
+    from_topology: str | None  # None only on the initial decision
+    to_topology: str  # == from_topology if no-change
     phase_at_decision: Phase
     iter_within_phase: int
-    iter_within_topology: int                   # 0 if this is a switch (new topology)
+    iter_within_topology: int  # 0 if this is a switch (new topology)
     decided_by: Literal["rule", "llm_router", "oracle", "guard_override", "initial"]
     reason: str
     considered_alternatives: tuple[str, ...] = ()
-    guards_applied: tuple[str, ...] = ()        # names of guards that fired
+    guards_applied: tuple[str, ...] = ()  # names of guards that fired
     signals_snapshot: dict[str, Any] = Field(default_factory=dict)
-    router_cost_usd: float = 0.0                # >0 only for llm_router
+    router_cost_usd: float = 0.0  # >0 only for llm_router
     at: _dt.datetime = Field(default_factory=_utcnow)
 
 

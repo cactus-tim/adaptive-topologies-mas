@@ -7,6 +7,7 @@ Three TypedDicts:
 
 Reference: arch.md §3.2
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Any, TypedDict
@@ -53,7 +54,7 @@ class SharedState(TypedDict, total=False):
     phase_history: list[Phase]
 
     # --- Topology axis (can change at runtime within a phase) ---
-    topology: str | None  # current active topology name
+    active_topology: str | None  # current active topology name (arch.md §3.2 line 419)
     topology_started_at_iter: int  # abs tick when current topology was activated
     topology_switch_count: int  # count of actual switches (for max_switches guard)
     topology_history: list[str]  # short tail (last K) for cooldown-check
@@ -87,7 +88,7 @@ class GraphState(TypedDict, total=False):
 
     shared: SharedState
     agents: Annotated[dict[str, AgentState], merge_agent_states]
-    messages: Annotated[list[Message], dedup_by_id_reducer("id")]
-    llm_calls: Annotated[list[LLMResponse], dedup_by_id_reducer("id")]
-    budget_events: Annotated[list[BudgetEvent], dedup_by_id_reducer("id")]
-    topology_transitions: Annotated[list[TopologyTransition], dedup_by_id_reducer("id")]
+    messages: Annotated[list[Message], dedup_by_id_reducer("id", sort_by="created_at")]
+    llm_calls: Annotated[list[LLMResponse], dedup_by_id_reducer("id")]  # no sort_by: started_at added in M2 (CI-1 path a)
+    budget_events: Annotated[list[BudgetEvent], dedup_by_id_reducer("id", sort_by="at")]
+    topology_transitions: Annotated[list[TopologyTransition], dedup_by_id_reducer("id", sort_by="at")]

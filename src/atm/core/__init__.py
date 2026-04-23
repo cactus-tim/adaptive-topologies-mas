@@ -13,6 +13,7 @@ M1 scope includes:
   - Reducers: merge_agent_states, dedup_by_id_reducer
   - Errors: AtmError, BudgetExceededError, PhaseError, ToolError
 """
+
 from __future__ import annotations
 
 from atm.core.errors import AtmError, BudgetExceededError, PhaseError, ToolError

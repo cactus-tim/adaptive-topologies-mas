@@ -1,13 +1,13 @@
 """Unit tests for atm.core.types — 17 Pydantic classes and enums (Step 2.2 / M1)."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from uuid import UUID
 
+import pydantic
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # 1. Import test — all 17 symbols must be importable
@@ -113,7 +113,7 @@ def test_message_is_frozen() -> None:
     from atm.core.types import Message, MessageKind
 
     msg = Message(sender="a", kind=MessageKind.REQUEST, content="x")
-    with pytest.raises((TypeError, Exception)):
+    with pytest.raises(pydantic.ValidationError):
         msg.content = "y"  # type: ignore[misc]
 
 
@@ -137,7 +137,7 @@ def test_tool_call_is_frozen() -> None:
     from atm.core.types import ToolCall
 
     tc = ToolCall(tool_name="run", args={}, issued_by="a")
-    with pytest.raises((TypeError, Exception)):
+    with pytest.raises(pydantic.ValidationError):
         tc.tool_name = "other"  # type: ignore[misc]
 
 
@@ -191,8 +191,9 @@ def test_llm_response_no_started_at_field() -> None:
 
 
 def test_tool_result_creation() -> None:
-    from atm.core.types import ToolResult
     from uuid import uuid4
+
+    from atm.core.types import ToolResult
 
     call_id = uuid4()
     result = ToolResult(call_id=call_id, ok=True, output="done", latency_ms=50)
@@ -209,8 +210,9 @@ def test_tool_result_creation() -> None:
 
 
 def test_human_context_creation() -> None:
-    from atm.core.types import HumanContext, HumanRole, Message, MessageKind
     from uuid import uuid4
+
+    from atm.core.types import HumanContext, HumanRole, Message, MessageKind
 
     run_id = uuid4()
     msg = Message(sender="a", kind=MessageKind.REQUEST, content="review this")
@@ -275,8 +277,9 @@ def test_task_result_creation() -> None:
 
 
 def test_run_result_creation() -> None:
-    from atm.core.types import RunResult
     from uuid import uuid4
+
+    from atm.core.types import RunResult
 
     run_id = uuid4()
     rr = RunResult(run_id=run_id, status="completed", task_result=None)
@@ -290,8 +293,9 @@ def test_run_result_creation() -> None:
 
 
 def test_phase_transition_creation() -> None:
-    from atm.core.types import Phase, PhaseTransition
     from uuid import uuid4
+
+    from atm.core.types import Phase, PhaseTransition
 
     run_id = uuid4()
     pt = PhaseTransition(
@@ -309,8 +313,9 @@ def test_phase_transition_creation() -> None:
 
 
 def test_topology_transition_creation() -> None:
-    from atm.core.types import Phase, TopologyTransition
     from uuid import uuid4
+
+    from atm.core.types import Phase, TopologyTransition
 
     run_id = uuid4()
     tt = TopologyTransition(
@@ -337,8 +342,9 @@ def test_topology_transition_creation() -> None:
 
 
 def test_budget_event_creation() -> None:
-    from atm.core.types import BudgetEvent
     from uuid import uuid4
+
+    from atm.core.types import BudgetEvent
 
     run_id = uuid4()
     ev = BudgetEvent(
@@ -360,8 +366,9 @@ def test_budget_event_creation() -> None:
 def test_no_deprecation_warning_on_creation() -> None:
     """datetime.now(timezone.utc) must be used — not deprecated utcnow()."""
     import warnings
-    from atm.core.types import BudgetEvent, Message, MessageKind, ToolCall
     from uuid import uuid4
+
+    from atm.core.types import BudgetEvent, Message, MessageKind, ToolCall
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -429,11 +436,11 @@ def test_to_lc_raises_not_implemented_with_m2() -> None:
 
 
 def test_from_lc_raises_not_implemented_with_m2() -> None:
-    """CI-2: Message.from_lc(None) must raise NotImplementedError containing 'M2'."""
-    from atm.core.types import Message
+    """CI-2: Message.from_lc(None, sender=..., kind=...) must raise NotImplementedError containing 'M2'."""
+    from atm.core.types import Message, MessageKind
 
     with pytest.raises(NotImplementedError, match="M2"):
-        Message.from_lc(None)  # type: ignore[arg-type]
+        Message.from_lc(None, sender="a", kind=MessageKind.REQUEST)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -472,8 +479,9 @@ def test_message_model_dump_json_roundtrip() -> None:
 
 def test_budget_event_model_dump_json_roundtrip() -> None:
     """IR-3c: BudgetEvent JSON roundtrip."""
-    from atm.core.types import BudgetEvent
     from uuid import uuid4
+
+    from atm.core.types import BudgetEvent
 
     ev = BudgetEvent(
         run_id=uuid4(),
@@ -503,9 +511,7 @@ def test_enums_are_str_subclass() -> None:
             assert isinstance(member, str), (
                 f"{enum_class.__name__}.{member.name} should be a str subclass"
             )
-            assert member == member.value, (
-                f"str enum member should compare equal to its value"
-            )
+            assert member == member.value, "str enum member should compare equal to its value"
 
 
 # ---------------------------------------------------------------------------
@@ -514,8 +520,8 @@ def test_enums_are_str_subclass() -> None:
 
 
 def test_datetime_fields_are_utc_aware() -> None:
+
     from atm.core.types import HumanResponse, Message, MessageKind, ToolCall
-    from uuid import uuid4
 
     msg = Message(sender="a", kind=MessageKind.REQUEST, content="test")
     tc = ToolCall(tool_name="t", args={}, issued_by="a")
@@ -523,4 +529,4 @@ def test_datetime_fields_are_utc_aware() -> None:
 
     for dt_val in [msg.created_at, tc.issued_at, hr.answered_at]:
         assert dt_val.tzinfo is not None, "datetime must be timezone-aware"
-        assert dt_val.tzinfo == timezone.utc or str(dt_val.tzinfo) in ("UTC", "utc")
+        assert dt_val.tzinfo == UTC or str(dt_val.tzinfo) in ("UTC", "utc")

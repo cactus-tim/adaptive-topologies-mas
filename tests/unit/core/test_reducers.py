@@ -14,14 +14,12 @@ import copy
 from collections import namedtuple
 from typing import Any
 
-import pytest
-
 from atm.core.reducers import dedup_by_id_reducer, merge_agent_states
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
+
 
 def _agent(
     agent_id: str,
@@ -130,7 +128,7 @@ class TestMergeAgentStates:
         result = merge_agent_states(left, right)
         agent = result["a1"]
         assert agent["inbox"] == ["m1", "m2"]
-        assert agent["step_count"] == 5   # max wins
+        assert agent["step_count"] == 5  # max wins
         assert agent["tokens_spent"] == 50  # max wins
 
     # Test 10: input immutability — does not mutate left or right

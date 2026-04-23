@@ -1,14 +1,15 @@
 """Unit tests for atm.core.errors — exception hierarchy."""
+
 from __future__ import annotations
 
 import pytest
 
 from atm.core.errors import AtmError, BudgetExceededError, PhaseError, ToolError
 
-
 # ---------------------------------------------------------------------------
 # Test 1: Inheritance hierarchy
 # ---------------------------------------------------------------------------
+
 
 class TestAtmErrorHierarchy:
     """All custom exceptions must inherit from AtmError (which inherits from Exception)."""
@@ -29,6 +30,7 @@ class TestAtmErrorHierarchy:
 # ---------------------------------------------------------------------------
 # Test 2: BudgetExceededError fields
 # ---------------------------------------------------------------------------
+
 
 class TestBudgetExceededError:
     """BudgetExceededError must carry level, limit_usd, spent_usd."""
@@ -61,6 +63,7 @@ class TestBudgetExceededError:
 # Test 3: PhaseError fields
 # ---------------------------------------------------------------------------
 
+
 class TestPhaseError:
     """PhaseError must carry attempted and current fields."""
 
@@ -83,6 +86,7 @@ class TestPhaseError:
 # ---------------------------------------------------------------------------
 # Test 4: ToolError — cause via exception chaining
 # ---------------------------------------------------------------------------
+
 
 class TestToolError:
     """ToolError.cause must reflect __cause__ set via `raise ... from`."""
@@ -141,6 +145,7 @@ class TestToolError:
 # ---------------------------------------------------------------------------
 # Test 6: AtmError directly
 # ---------------------------------------------------------------------------
+
 
 class TestAtmErrorDirect:
     """AtmError is a valid base exception that can be raised directly."""
