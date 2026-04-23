@@ -273,7 +273,7 @@ class Topology(Protocol):
 | **Mesh** | Broadcast-bus; все агенты читают bus, пишут bus; round-robin активации | `max_rounds` ИЛИ `consensus_threshold` голосов | Круги фиксированы; опц. голосование за финал |
 | **Debate** | Debater_pro + Debater_contra (параллельно) → Critic (judge) | `max_rounds` или Judge.decide | Debater-ы параметризуются `stance` |
 | **Hierarchical** | Top-Coord → 2 Sub-Coord → воркеры; каждый sub — subgraph | Top-Coord.finalize | Subgraph per sub-команда (LangGraph feature) |
-| **Adaptive** | Мета-граф: ноды = subgraph каждой из 5 топологий; router выбирает по `phase` | PhaseManager.finished | Router = LLM или rule-based, задаётся конфигом |
+| **Adaptive (L2)** | Мета-граф: START → PhaseRouter → TopologyRouter → {5 subgraph} → TransitionGate → loop/END. Топология меняется и внутри фазы по сигналам агентов. Tick-granularity. Monotonic phases. Superset of 7 agent roles. | `phase == done` или budget/iter exceeded | 3 режима TopologyRouter (rule / llm / oracle); SwitchGuards против thrashing; `TopologyTransition` пишется каждый тик (включая no-change). Подробности — `arch.md §7.7, §8, §8bis` |
 
 **Условия активации агентов в Mesh:**
 - round-robin по умолчанию, опц. priority-based (Critic первым если есть сообщения с `type=draft`)
@@ -432,21 +432,65 @@ class Topology(Protocol):
   - [ ] Integration-тесты: каждая топология на одной задаче
 - **Exit:** все 5 статических топологий работают end-to-end
 
-### M8 — Phase Manager + Adaptive topology (3 дня)
+### M8 — Adaptive topology (L2): PhaseManager + TopologyRouter + Guards + SignalBus (5–6 дней)
 
-- **Цель:** динамическое переключение топологий
-- **Зависимости:** M7
-- **Задачи:**
-  - [ ] `phases/manager.py`: `PhaseState`, FSM, запись transitions в `phases`
-  - [ ] `phases/router.py`:
-    - rule-based: "после планирования всегда execution, после N итераций exec — verification"
-    - llm-based: `should_switch(state) -> (phase, reason)`
-  - [ ] `topology/adaptive.py`:
-    - мета-граф, ноды = subgraph каждой из 5 топологий
-    - conditional edges по `state.shared.phase`
-    - передача state между субтопологиями (aggregate/filter)
-  - [ ] Integration-тест: задача, где явные фазы planning→execution→verification, Adaptive переключается корректно
-- **Exit:** Adaptive-топология на задаче с 3 фазами даёт осмысленный run, phases записаны
+- **Цель:** runtime-переключение топологий внутри и между фазами (архитектура L2, см. `arch.md §7.7, §8, §8bis`). Сердце RQ2.
+- **Зависимости:** M7 (все 5 статических топологий готовы)
+- **Декомпозиция (реализуется в порядке):**
+
+  **M8.1 — Core reducers & types (0.5 дня)**
+  - [ ] `core/types.py`: `TopologyTransition`, `TopologyDecision`, `PhaseDecision` (Pydantic, frozen)
+  - [ ] `core/state.py`: расширить `SharedState` (signals, iter_total, phase_started_at_iter, topology_started_at_iter, topology_switch_count, topology_history)
+  - [ ] `core/reducers.py`: `dedup_by_id_reducer(key, sort_by)` + unit-тесты на инварианты (idempotent, associative, empty-neutral)
+  - [ ] Alembic migration: таблица `topology_transitions`
+  - [ ] SQLAlchemy model: `TopologyTransition`
+
+  **M8.2 — PhaseManager (Monotonic FSM) (0.5 дня)**
+  - [ ] `phases/manager.py`: `RuleBasedPhaseRouter` (guards: `ready_for_execution`, `ready_for_verification`, `critic_approved`, iter caps)
+  - [ ] `phases/manager.py`: `LLMPhaseRouter` с fallback на Rule (парсит JSON, валидирует монотонность)
+  - [ ] Unit-тесты: попытка rollback возвращает фallback; все guard'ы покрыты
+
+  **M8.3 — TopologyRouter (3 режима) (1.5 дня)**
+  - [ ] `phases/topology_router.py`: `Protocol TopologyRouter`
+  - [ ] `RuleBasedTopologyRouter`: таблица (phase × signals) → topology из `arch.md §7.7`
+  - [ ] `LLMTopologyRouter`: prompt-template + Pydantic-валидация + router_cost_usd bookkeeping
+  - [ ] `OracleTopologyRouter`: читает `oracle_table.json` по task_id или task_type (см. M8.7)
+  - [ ] Unit-тесты с FakeLLM: каждый режим — детерминированный выбор на фиксированном state
+
+  **M8.4 — SwitchGuards (0.5 дня)**
+  - [ ] `phases/guards.py`: `SwitchGuards` + `GuardedRouter` декоратор
+  - [ ] Реализовать все 4 guard'а (min_dwell, cooldown, max_per_run, max_per_phase)
+  - [ ] Unit-тесты: каждый guard блокирует как ожидается, `considered_alternatives` сохраняется
+
+  **M8.5 — SignalBus & emission helpers (0.5 дня)**
+  - [ ] `phases/signals.py`: конвенции ключей (`stuck`, `rejected_count`, `needs_debate`, `ready_for_*`)
+  - [ ] helper `emit_signal(state, key, value)` для агентов — обновляет state + `dispatch_custom_event("signal_emit", ...)`
+  - [ ] Обновить Critic: эмитит `rejected_count` инкремент и `critic_approved` при approve
+  - [ ] Обновить Executor: эмитит `stuck=True` после N неудачных code_run, `ready_for_verification` после первого успеха
+  - [ ] Обновить Planner: эмитит `ready_for_execution` при финализации плана
+
+  **M8.6 — TransitionGate + Adaptive meta-graph (1 день)**
+  - [ ] `topology/adaptive.py`: meta-граф с PhaseRouter, TopologyRouter, TransitionGate, 5 subgraph-узлов
+  - [ ] `TransitionGate` как чистая функция — реализует state-transfer таблицу из `arch.md §7.7`
+  - [ ] Dispatch событий: `phase_transition` (только при advance), `topology_transition` (каждый тик)
+  - [ ] Subgraph-узлы оборачивают компилированные графы из M6/M7 (`node_for_topology(name)`)
+  - [ ] Superset agent roster: все 7 ролей инстанциируются при topology.name=='adaptive'
+  - [ ] Integration-тест (FakeLLM): задача, где сценарий заставляет switch-и (`stuck` → mesh, `rejected_count≥3` → debate); проверить:
+    - последовательность `topology_transitions` соответствует ожиданиям
+    - `phase` монотонна
+    - `messages` без дублей (dedup reducer работает)
+    - guards срабатывают на ожидаемых сценариях
+
+  **M8.7 — Oracle labels pipeline (0.5 дня, условно после E1 pilot)**
+  - [ ] `analysis/oracle.py`: `build_leave_one_out_oracle(exp_id) → OracleTable` — читает runs из E1, агрегирует по task_type без target task
+  - [ ] `conf/oracle/type_level_manual.yaml`: 4 task_type × 3 phase = 12 клеток ручной разметки (заготовка с TODO на заполнение)
+  - [ ] Unit-тест: `OracleTopologyRouter` с known table → stable decisions
+
+- **Exit criteria M8:**
+  - `atm run --config conf/experiments/adaptive_smoke.yaml` — прогоняет 1 задачу через Adaptive, делает ≥1 реальный topology switch внутри execution-фазы, все transitions в PG и parquet
+  - `SELECT COUNT(*) FROM topology_transitions WHERE decided_by='guard_override'` > 0 в тесте со специально сконструированной thrashing-провокацией
+  - monotonicity invariant: `SELECT phase FROM phases ORDER BY at` — строго возрастает
+  - `messages` после run'а без дубликатов (тест на `SELECT COUNT(*) = COUNT(DISTINCT message_id)`)
 
 ### M9 — Human Gateway + LLM-simulator (2 дня)
 
@@ -541,7 +585,8 @@ M0 → M1 → M2 ─┬─ M3 ─┐
 
 - Критичный путь: M0→M1→M2→M5→M6→M7→M8→M12→M13
 - Параллелимо: M3/M4 после M1; M9 после M6; M10 после M5
-- Оценка по человеко-дням: ~28 дней на одного исполнителя (ты + я), можно ужать до ~20 с распараллеливанием
+- M8.7 (Oracle pipeline) зависит от результатов E1-pilot — может выполняться параллельно с M9/M10 после первых confirmed E1-runs
+- Оценка по человеко-дням: ~30 дней на одного исполнителя (M8 расширен до 5–6 дней после перехода на L2), можно ужать до ~22 с распараллеливанием
 
 ## 10. Риски и их митигации
 
