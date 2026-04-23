@@ -16,155 +16,164 @@
 ## Project Structure
 - `src/atm/` — main package (Adaptive Topologies MAS, imported as `atm`)
   - `core/` — base types, state, errors (Message, ToolCall, Phase, AgentState, GraphState)
-  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/vLLM), budget tracking
-  - `tools/` — Tool protocol, registry, global tools, Docker/subprocess sandbox
-  - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles
-  - `topology/` — Topology protocol, Star/Chain/Mesh/Debate/Hierarchical/Adaptive implementations
-  - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals
-  - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway, Streamlit (M14+)
-  - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper
-  - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), tracer
-  - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations
-  - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX
-  - `experiment/` — Config schemas (Pydantic), loader (OmegaConf), runner, grid executor, CLI (Typer)
-  - `analysis/` — Loaders (read_experiment/llm_calls/runs), plots (Pareto/heatmaps/timelines)
-- `tests/` — unit (smoke test), integration (fixtures organized by module)
+  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/vLLM), budget tracking, pricing, retry, fake LLM
+  - `tools/` — Tool protocol, registry, global tools, Docker/subprocess sandbox (M4)
+  - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles (M5)
+  - `topology/` — Topology protocol, Star/Chain/Mesh/Debate/Hierarchical/Adaptive (M6-M8)
+  - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals (M8)
+  - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
+  - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3)
+  - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), tracer (M3)
+  - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations (M10)
+  - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX (M11)
+  - `experiment/` — Config schemas (Pydantic), loader (OmegaConf), runner, grid executor, CLI (M12)
+  - `analysis/` — Loaders, plots (M13)
+- `tests/` — unit, integration, fixtures
+  - `fixtures/llm/` — FakeLLM scripted response YAMLs (planner_simple, executor_code_run, determinism_seed)
+  - `unit/core/` — 150 tests for errors/types/reducers/state/public API
+  - `unit/llm/` — 110 tests for pricing/budget/retry/providers/fake/wrapper
+  - `integration/llm/` — 3 tests for LLM layer contract (end-to-end, budget exceed, replay round-trip)
 - `conf/` — YAML configuration templates
-  - `agents/` — agent set definitions (e.g., canonical_4.yaml)
-  - `topology/` — topology configs (star.yaml, chain.yaml, etc.)
-  - `task/` — task definitions (humaneval.yaml, mmlu.yaml, etc.)
-  - `model/` — LLM provider configs (gpt4.yaml, claude.yaml, etc.)
-  - `experiment/` — grid sweep definitions (topology/task/model combinations)
+  - `pricing.yaml` — per-1K-token prices for OpenAI/Anthropic/vLLM/fake models (version 1)
 - `alembic/` — database migrations (async template, single initial migration)
-- `notebooks/` — jupyter for post-experiment analysis
 - `dev/` — documentation (PLAN.md, arch.md) and task tracking (done/active)
 
 ## Key Modules
 
 ### Core Types & State (`core/`)
 - **Purpose:** Base data structures (Pydantic models + TypedDict) for message passing, errors, phase tracking; LangGraph-compatible reducers for merging agent state updates.
-- **Exports:** `AgentRole`, `AgentState`, `AtmError`, `BudgetEvent`, `BudgetExceededError`, `GraphState`, `HumanContext`, `HumanResponse`, `HumanRole`, `LLMResponse`, `Message`, `MessageKind`, `Phase`, `PhaseError`, `PhaseTransition`, `RunResult`, `SharedState`, `TaskResult`, `TaskSpec`, `TokenUsage`, `ToolCall`, `ToolError`, `ToolResult`, `TopologyTransition`, `dedup_by_id_reducer`, `merge_agent_states`
-- **Dependencies:** pydantic (validation), typing
-- **Status:** M1 complete
+- **Exports:** `AgentRole`, `AgentState`, `AtmError`, `BudgetEvent` (DB schema), `BudgetExceededError`, `GraphState`, `HumanContext`, `HumanResponse`, `HumanRole`, `LLMError`, `LLMResponse`, `Message`, `MessageKind`, `Phase`, `PhaseError`, `PhaseTransition`, `RunResult`, `SharedState`, `TaskResult`, `TaskSpec`, `TokenUsage`, `ToolCall`, `ToolError`, `ToolResult`, `TopologyTransition`, `dedup_by_id_reducer`, `merge_agent_states`
+- **M2 additions:** `LLMError(AtmError)` with attrs provider/model/attempts; `LLMResponse.started_at: datetime` with `llm_calls` reducer sorted by started_at; `Message.to_lc()` / `Message.from_lc()` LangChain adapters (4-kind round-trip: user/assistant/system/tool).
+- **Dependencies:** pydantic, typing, langchain-core (adapters)
+- **Status:** M1 complete + M2 extensions.
 
 ### LLM Layer (`llm/`)
-- **Purpose:** Unified wrapper over LangChain chat models with usage tracking, cost calculation, retry logic, prompt caching, and three-tier budget enforcement.
-- **Exports (M2 planned):** `LLMWrapper`, `LLMResponse`, `BudgetTracker`, `FakeLLM`, provider classes (OpenAIProvider, AnthropicProvider, vLLMProvider)
-- **Dependencies:** langchain-core, anthropic, openai, math (pricing)
-- **Subdirs:** `providers/` — provider-specific implementations
-- **Status:** M0 (skeleton), M2 not started
+- **Purpose:** Unified wrapper over LangChain chat models with usage/cost/retry, three-tier budget enforcement, prompt caching support, and deterministic FakeLLM for tests.
+- **Exports (from `atm.llm`):** `LLMWrapper`, `BudgetTracker`, `BudgetSignal` (runtime event), `BudgetLevel`, `FakeLLM`, `REPLAY_SCHEMA`, `Pricing`, `ModelPricing`, `RetryPolicy`, `with_retry`, `is_transient`, `build_openai`, `build_anthropic`, `build_vllm`, `inject_cache_control`, `DEFAULT_CACHE_TTL`.
+- **Submodules:**
+  - `pricing.py` — `ModelPricing` (frozen Pydantic, optional float fields), `Pricing.from_yaml` + `cost` (auto-detects OpenAI vs Anthropic cache convention) + `estimate` pre-call helper.
+  - `budget.py` — `BudgetLevel` StrEnum, `BudgetSignal` frozen Pydantic (runtime warn/exceed event — not to be confused with `core.types.BudgetEvent` which is the DB persistence schema), `BudgetTracker` (asyncio.Lock, three-tier check/record, warn+exceed callbacks, sync or async callable).
+  - `retry.py` — `RetryPolicy` frozen dataclass, `is_transient` duck-types `.status_code` 429/≥500 in addition to `retry_on` tuple, `with_retry` with exponential backoff + full jitter, wraps exhaustion as `LLMError` preserving `__cause__`.
+  - `wrapper.py` — `LLMWrapper.ainvoke` flow: convert Message→BaseMessage via `Message.to_lc`, pre-call budget estimate (tiktoken or heuristic), optional `inject_cache_control` for Anthropic, `with_retry` wrapping `_llm.ainvoke`, parse OpenAI or Anthropic usage_metadata, compute cost via Pricing, record budget, build LLMResponse with started_at + latency_ms. `astream` raises NotImplementedError. Accepts `llm=` injection for tests.
+  - `fake.py` — `FakeLLM(mode=scripted|replay|echo)`: scripted reads YAML fixtures by `(agent_id, step_idx)` with role fallback and asyncio.Lock; replay reads pyarrow Table with `REPLAY_SCHEMA` and maps `call_id → LLMResponse.id`; echo mirrors last user message content. `latency_ms=0` constant ensures bit-identical determinism.
+  - `providers/openai.py` — `build_openai` strips `openai:` prefix, `api_key="EMPTY"` default.
+  - `providers/anthropic.py` — `build_anthropic` + `inject_cache_control` (deep-copies last message, handles multi-modal `content=list[dict]`, always returns NEW list — never mutates input).
+  - `providers/vllm.py` — `build_vllm` → `ChatOpenAI(base_url=..., api_key="EMPTY")` per vLLM OpenAI-compatible endpoint convention.
+- **Dependencies:** langchain-core, langchain-openai, langchain-anthropic, anthropic, openai, tiktoken, pyyaml, pyarrow, asyncio.
+- **Test coverage:** 110 unit tests + 3 integration tests, all green.
+- **Status:** M2 complete.
 
 ### Tools & Sandbox (`tools/`)
-- **Purpose:** Tool registry protocol, global tools (calculator, search, file_read), isolated code execution via Docker or subprocess.
-- **Exports (M4 planned):** `Tool` protocol, `ToolRegistry`, `CodeSandbox` protocol, `DockerSandbox`, `SubprocessSandbox`, global/local tool definitions
-- **Dependencies:** docker (containers), pydantic, subprocess, asyncio
-- **Subdirs:** `sandbox/` — sandbox implementations with hardening (resource limits, seccomp, tmpfs)
-- **Status:** M0 (skeleton), M4 not started
+- **Exports (M4 planned):** `Tool` protocol, `ToolRegistry`, `CodeSandbox` protocol, `DockerSandbox`, `SubprocessSandbox`, global/local tool definitions.
+- **Status:** M0 skeleton, M4 not started.
 
 ### Agent Framework (`agents/`)
-- **Purpose:** Base Agent class with LangGraph node signature (`step(state) -> state`), tool-calling loop, scratchpad policy C (windowing + summarization).
-- **Exports (M5 planned):** `Agent` base, `Planner`, `Researcher`, `Executor`, `Critic`, `Debater` (with stance param)
-- **Dependencies:** core.state, llm, tools, pydantic
-- **Status:** M0 (skeleton), M5 not started
+- **Exports (M5 planned):** `Agent` base with LangGraph node signature, `Planner`, `Researcher`, `Executor`, `Critic`, `Debater` with stance parameter.
+- **Status:** M0 skeleton, M5 not started.
 
 ### Topology Framework (`topology/`)
-- **Purpose:** Protocol-based topology definitions; each topology is a function returning a compiled LangGraph StateGraph; supports Star (coordinator-centric), Chain (linear with retry), Mesh (broadcast), Debate (pro/contra), Hierarchical (2-level subgraphs), Adaptive (meta-graph with phase/topology routers).
-- **Exports (M6+ planned):** `Topology` protocol, `TopologyRegistry`, topology classes for each variant
-- **Dependencies:** agents, core.state, langgraph, typing
-- **Key Interfaces:** `topology.build(agents, cfg) -> CompiledStateGraph`
-- **Status:** M0 (skeleton), M6 not started
+- **Exports (M6+ planned):** `Topology` protocol, `TopologyRegistry`, Star/Chain/Mesh/Debate/Hierarchical/Adaptive implementations.
+- **Key Interface:** `topology.build(agents, cfg) -> CompiledStateGraph`
+- **Status:** M0 skeleton, M6 not started.
 
 ### Phase Manager & Routers (`phases/`)
-- **Purpose:** FSM for phase transitions (planning→execution→verification→done); rule-based and LLM-based routers; SwitchGuards prevent thrashing (min_dwell, cooldown, max_per_run, max_per_phase).
-- **Exports (M8 planned):** `PhaseManager`, `RuleBasedPhaseRouter`, `LLMPhaseRouter`, `TopologyRouter` (rule/llm/oracle modes), `SwitchGuards`, signal emission helpers
-- **Dependencies:** core.state, core.types, llm (for LLM router), pydantic
-- **Status:** M0 (skeleton), M8 not started
+- **Exports (M8 planned):** `PhaseManager`, `RuleBasedPhaseRouter`, `LLMPhaseRouter`, `TopologyRouter` (rule/llm/oracle modes), `SwitchGuards`.
+- **Status:** M0 skeleton, M8 not started.
 
 ### Human Gateway & HITL (`human/`)
-- **Purpose:** Protocol for human interventions in agent workflows; implementations: LLM-simulated (for testing), CLI (for dev), Streamlit (for user studies M14+); handles timeouts, fallback policies, idempotency.
-- **Exports (M9 planned):** `HumanGateway` protocol, `HumanContext`, `HumanResponse`, `LLMSimulatedGateway`, `CLIGateway`
-- **Dependencies:** llm (for simulator), rich (CLI UI), async utilities
-- **Status:** M0 (skeleton), M9 not started
+- **Exports (M9 planned):** `HumanGateway` protocol, `LLMSimulatedGateway`, `CLIGateway`.
+- **Status:** M0 skeleton, M9 not started.
 
-### Storage & Observability (`storage/` + `observability/`)
-- **Purpose:** SQLAlchemy async models (experiments, runs, phases, human_interactions, budget_events, topology_transitions), Parquet writer with async buffering, LangGraph callback handler, checkpointer wrapper (two separate async pools for isolation).
-- **Exports (M3 planned):** `ExperimentCallbackHandler`, `ParquetWriter`, `Checkpointer`, SQLAlchemy session factory
-- **Dependencies:** sqlalchemy, asyncpg, pyarrow, langgraph, pydantic
-- **Status:** M0 (skeleton), M3 not started
+### Storage & Observability (`storage/`, `observability/`)
+- **Exports (M3 planned):** `ExperimentCallbackHandler`, `ParquetWriter`, `Checkpointer`, SQLAlchemy session factory.
+- **Status:** M0 skeleton, M3 not started.
 
-### Tasks & Evaluation (`tasks/` + `evaluation/`)
-- **Purpose:** Task definitions (TaskSpec protocol), concrete datasets (HumanEval, MMLU, Creative, Analysis), evaluators (LLM-as-judge, test runners), metrics aggregation, NASA-TLX survey.
-- **Exports (M10-M11 planned):** `TaskSpec`, `TaskRegistry`, specific task loaders, evaluator functions, metric aggregators
-- **Dependencies:** huggingface-hub (datasets), llm (judge), pydantic, pandas
-- **Status:** M0 (skeleton), M10-M11 not started
+### Tasks & Evaluation (`tasks/`, `evaluation/`)
+- **Exports (M10-M11 planned):** `TaskSpec`, `TaskRegistry`, evaluators, NASA-TLX aggregator.
+- **Status:** M0 skeleton, not started.
 
 ### Experiment Runner & CLI (`experiment/`)
-- **Purpose:** Config loading (OmegaConf → Pydantic validation), single-run executor, grid sweep with ProcessPoolExecutor, CLI entry point (Typer), dry-run budget estimator.
-- **Exports (M12 planned):** `ExperimentConfig`, `RunConfig`, `ModelConfig`, `ConfigLoader`, `Runner`, `GridExecutor`, CLI commands (run, grid, estimate, status)
-- **Dependencies:** omegaconf, pydantic, typer, asyncio, multiprocessing, click
-- **Status:** M0 (skeleton), M12 not started
+- **Exports (M12 planned):** Pydantic schemas, `ConfigLoader`, `Runner`, `GridExecutor`, CLI commands.
+- **Status:** M0 skeleton, M12 not started.
 
 ### Analysis & Plots (`analysis/`)
-- **Purpose:** Data loaders for post-experiment analysis (load_experiment, load_llm_calls, load_runs returning pandas DataFrames), plot generators (Pareto, heatmaps, phase timelines, cognitive load boxplots).
-- **Exports (M13 planned):** `load_experiment()`, `load_llm_calls()`, `load_runs()`, plot functions
-- **Dependencies:** pandas, matplotlib, pyarrow (read parquet)
-- **Status:** M0 (skeleton), M13 not started
+- **Exports (M13 planned):** `load_experiment()`, `load_llm_calls()`, `load_runs()`, plot functions.
+- **Status:** M0 skeleton, M13 not started.
 
 ## Patterns & Conventions
 
 ### State Management
-- **LangGraph state:** TypedDict-based `GraphState` with shared fields + per-agent `AgentState` reducer for merging updates from parallel agents.
-- **Scratchpad policy C:** Agents always write reasoning to `scratchpad`, but send to LLM only a sliding window (last K steps) + optional LLM-summarized older steps to stay within context limits.
+- **LangGraph state:** TypedDict-based `GraphState` with shared fields + per-agent `AgentState` reducer.
+- **Scratchpad policy C:** Always write reasoning; send to LLM only a sliding window + optional LLM-summarized older steps.
 
 ### Error Handling
-- **Budget cuts:** `BudgetExceededError` raised immediately when per-call/per-run/per-experiment limit exceeded; hard stop in runner.
-- **Phase errors:** `PhaseError` for invalid state transitions; FSM prevents rollback (monotonic phases).
-- **Tool errors:** `ToolError` wrapped from sandbox or API failures; retryable vs terminal categorized by agent logic.
+- **Budget cuts:** `BudgetExceededError` raised on three-tier limit crossings — hard stop.
+- **LLM errors:** `LLMError(AtmError)` wraps retry exhaustion with `__cause__` preserved; duck-typing for transient classification.
+- **Phase errors:** `PhaseError` on invalid state transitions; FSM enforces monotonic phases.
+- **Tool errors:** `ToolError` wrapped from sandbox/API failures.
 
 ### Configuration & Composition
-- **YAML + OmegaConf:** Configs are YAML templates in `conf/`; `ConfigLoader` uses OmegaConf for variable interpolation and merges.
-- **Pydantic validation:** All config values validated against schema (in `experiment/config.py`) before instantiation.
-- **Registry pattern:** TopologyRegistry, ToolRegistry, TaskRegistry — dynamic lookup by name, simplifies CLI and config-driven runs.
+- **YAML + OmegaConf + Pydantic:** YAML in `conf/`, composed via OmegaConf, validated by Pydantic schemas.
+- **Pricing config:** `conf/pricing.yaml` (version 1) with per-1K-token rates; OpenAI uses `cached_input_per_1k`, Anthropic splits `cache_read_per_1k`/`cache_write_per_1k`.
+- **Registry pattern:** Dynamic lookup by name for topologies/tools/tasks.
 
 ### Dependency Injection
-- **Factory functions:** `init_llm(provider, model, **opts)`, `init_sandbox(type, **opts)` — parametrized by config, injected into Agent/Topology constructors.
-- **Protocol-based:** Agent doesn't know concrete Sandbox implementation; uses Protocol, allows swapping Docker↔Subprocess.
+- **Factory functions:** `build_openai/anthropic/vllm` accept optional kwargs; `LLMWrapper(..., llm=fake)` allows test injection.
+- **Protocol-based:** Agent / Sandbox / Topology / HumanGateway — Protocols with multiple implementations.
 
 ### Observability & Debugging
-- **LangGraph callbacks:** `ExperimentCallbackHandler` hooks into on_llm_start/end, on_tool_start/end, on_chain_start/end → async write to Postgres + Parquet with buffering.
-- **Event dispatch:** `dispatch_custom_event(type, **data)` for phase/topology transitions, signal emissions, guard activations.
-- **Parquet + SQL:** Bulk data (LLM calls, messages, tool calls) in Parquet (fast analytics); metadata (run status, costs, timing) in Postgres (real-time queries, transactional integrity).
+- **LangGraph callbacks:** `ExperimentCallbackHandler` (M3) hooks on_llm_*/on_tool_*/on_chain_* → async buffered write to Postgres + Parquet.
+- **Event dispatch:** `dispatch_custom_event` for phase/topology transitions, signal emissions, budget warnings (`BudgetSignal`).
+- **Parquet + SQL split:** Bulk data (LLM calls, messages, tool calls) in Parquet; metadata (runs, costs, phases) in Postgres.
 
 ### Testing
-- **FakeLLM:** Deterministic mock LLM — reads responses from YAML fixtures by (role, step_idx); used in unit tests to make runs reproducible.
-- **Fixtures location:** `tests/fixtures/llm/<test_name>.yaml` — scripted LLM responses; isolated, no real API calls.
-- **Smoke test:** Single integration test in M0 (test_atm_package_importable) — verifies package version.
-- **Current unit tests (M1):** 138 tests covering errors hierarchy (20), types/enums (31), reducers with monoid invariants (24), state TypedDicts (24), public API (35), plus M0 smoke.
+- **FakeLLM:** Deterministic mock, scripted fixtures keyed by `(agent_id, step_idx)` with role fallback; supports scripted/echo/replay.
+- **Fixtures location:** `tests/fixtures/llm/<name>.yaml` — scripted LLM responses.
+- **M2 test coverage:** 260 unit tests + 3 integration tests (all green). Key categories:
+  - Core errors hierarchy including `LLMError`.
+  - Types/enums (Message, ToolCall, LLMResponse.started_at, all Pydantic models).
+  - Reducers with monoid invariants + sort_by="started_at" for llm_calls.
+  - LLM pricing (OpenAI no-cache, OpenAI cache hit, Anthropic cache_read+cache_write, estimate).
+  - Budget tracker (per-call/per-run/per-experiment cutoffs, asyncio.gather concurrency, callback events).
+  - Retry (success, 429/500 retry, non-transient skip, exhaustion with __cause__, jitter bounds).
+  - Providers (build_openai/anthropic/vllm, `inject_cache_control` immutability + multi-modal).
+  - FakeLLM (scripted step advancement, tool_calls, echo, replay call_id→id, determinism, astream raises).
+  - LLMWrapper (OpenAI + Anthropic usage parsing, retry integration, budget-exceed-before-call, tool_calls passthrough, astream stub).
+  - Integration: end-to-end scripted fake + LLMWrapper, budget-exceed guard path, replay round-trip.
 
 ### Async Patterns
-- **Agents & topologies:** All state updates are async; agents emit state updates; LangGraph compiles graph with async node functions.
-- **Checkpointing:** Postgres checkpointer (separate async engine, autocommit=True) saves graph state at breaks (interrupts, phase transitions).
-- **Semaphores:** Rate limiting on API calls (e.g., OpenAI rate limits) via asyncio.Semaphore; ProcessPoolExecutor for grid parallelism (separate from agent-level async).
+- **Budget tracker:** `asyncio.Lock` for thread-safe three-tier checks.
+- **Retry backoff:** `asyncio.sleep` + exponential backoff + full jitter.
+- **FakeLLM:** `asyncio.Lock` around per-agent step counter for concurrent ainvoke safety.
 
 ## External Dependencies
-- **langgraph:** Multi-agent orchestration graph primitives (nodes, edges, reducers, checkpointers).
-- **langchain-core:** Chat model interface (`BaseChatModel`, `init_chat_model`), tool schema utilities.
-- **sqlalchemy[asyncio]:** ORM with async engine (asyncpg driver), transaction control.
-- **asyncpg:** PostgreSQL async client driver.
-- **omegaconf:** Config composition (interpolation, merging, CLI override).
-- **pydantic:** Data validation (all config schemas, message types).
-- **pyarrow:** Parquet I/O for bulk experiment data.
-- **pytest + pytest-asyncio:** Test framework with async fixture/node support.
-- **ruff:** Fast Python linter/formatter.
-- **mypy:** Static type checker (strict mode).
-- **alembic:** Database migration tool (async template).
-- **typer:** Modern CLI framework (used in M12 for experiment/grid commands).
-- **anthropic, openai:** LLM provider SDKs (fallback/alternate to LangChain models in M2+).
-- **huggingface-hub:** Dataset loading (HumanEval, MMLU in M10).
-- **docker:** Container API for code sandbox (in M4).
+
+### Runtime (M2 additions)
+- **langchain, langchain-core** (0.3.x): Chat model interface.
+- **langchain-openai** (0.3.x): ChatOpenAI.
+- **langchain-anthropic** (0.3.x): ChatAnthropic + cache control.
+- **tiktoken** (≥0.8): OpenAI token counting (Anthropic uses heuristic fallback).
+- **pyyaml** (≥6): Fixture + pricing config parsing.
+- **pyarrow** (≥16): Replay Table schema + bulk experiment data.
+
+### Existing (M0-M1)
+- **langgraph:** Multi-agent orchestration primitives.
+- **sqlalchemy[asyncio] + asyncpg:** Async ORM.
+- **omegaconf:** Config composition.
+- **pydantic:** Data validation.
+- **pytest + pytest-asyncio:** Test framework.
+- **ruff + mypy:** Lint + type checking.
+- **alembic:** DB migrations.
+- **typer:** CLI framework (M12).
+- **docker:** Container API (M4 sandbox).
+- **huggingface-hub:** Dataset loading (M10).
+
+### Dev
+- **types-PyYAML:** Mypy stubs for PyYAML.
 
 ## Test Setup
-- **Framework:** pytest with pytest-asyncio (asyncio_mode="auto"), error-on-warning filter.
-- **Structure:** `tests/unit/` (isolated, mocked), `tests/integration/` (with real DB in CI), `tests/fixtures/` (data: LLM responses, expected outputs).
-- **Patterns:** FakeLLM fixtures (YAML-based scripted responses), in-memory Postgres for integration tests (future M3+), parametrized tests for topology variants.
-- **Coverage target:** All core modules + critical paths (reducer correctness, budget enforcement, state transitions); lower coverage on M9+ until implementations exist.
+- **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
+- **Structure:** `tests/unit/{core,llm}/`, `tests/integration/llm/`, `tests/fixtures/llm/`.
+- **Total tests:** 263 (260 unit + 3 integration).
+- **Mocking approach:** FakeLLM with YAML fixtures for unit + integration; in-memory Postgres planned for M3+.
+- **Coverage target:** All core modules + critical paths; lower coverage on M4+ until implementations exist.
