@@ -57,7 +57,7 @@
 - **Scratchpad-политика C**: пишется всегда (для аудита), в промпт — окно последних K шагов + опциональный summarizer.
 - **Провайдер LLM — абстрагирован** через `LLMWrapper` поверх LangChain chat models (primary: OpenAI; switch на Anthropic/vLLM/Ollama через конфиг).
 - **HITL — через Protocol `HumanGateway`**, LangGraph `interrupt()` + Postgres checkpointer.
-- **Observability = свой LangGraph `BaseCallbackHandler`**, пишет синхронно в parquet + Postgres.
+- **Observability = свой LangGraph `AsyncCallbackHandler`**, пишет в parquet + Postgres асинхронно с буфером и обязательным sync-flush на границах run-а, transitions и ошибок (подробнее — `arch.md §10.3`, `§17/#2`).
 - **Budget — three-tier** (per-call / per-run / per-experiment), dry-run для оценки грида.
 
 ## 3. Технологический стек
@@ -195,7 +195,7 @@ adaptive-topologies-mas/
 | Таблица | Ключевые поля | Назначение |
 |---|---|---|
 | `experiments` | id, name, config_snapshot (jsonb), git_sha, started_at, finished_at, total_cost | Метаданные грид-запуска |
-| `runs` | id, exp_id, topology, task_id, agent_set, human_role, seed, model, status, budget_spent_usd, quality_score, wall_time_s, iterations | Один прогон |
+| `runs` | id, exp_id, topology, task_id, agent_set, human_role, seed, model, **models_by_role_json**, **model_version_snapshot**, **sandbox_image_digest**, status, **finish_reason**, budget_spent_usd, quality_score, wall_time_s, iterations | Один прогон. Жирным — поля для reproducibility bundle (arch.md §14.4) и attribution остановки (arch.md §7.1 stopping precedence) |
 | `phases` | id, run_id, phase_name, started_at, ended_at, entry_reason, topology_used | Для Adaptive: переходы |
 | `human_interactions` | id, run_id, role, requested_at, answered_at, context_ref, answer_ref, tlx_scores (jsonb) | HITL-логи |
 | `checkpoints` | таблицы LangGraph checkpointer | Автоматически |
@@ -244,14 +244,25 @@ task:
   limit: 50
 
 model:
-  primary: "gpt-4o"
-  judge: "gpt-4o"
-  summarizer: "gpt-4o-mini"
+  # per-role модели; дешёвые на worker-ролях, умные на проверке/судействе.
+  # Полная схема — arch.md §12.1 ModelCfg.
+  default: "openai:gpt-4o-mini"           # fallback для неуказанных ролей
+  by_role:
+    planner:      "openai:gpt-4o-mini"
+    researcher:   "openai:gpt-4o-mini"
+    executor:     "openai:gpt-4o-mini"
+    critic:       "openai:gpt-4o"
+    debater:      "openai:gpt-4o-mini"
+    coordinator:  "openai:gpt-4o"
+  judge:      "openai:gpt-4o"             # LLM-as-judge в evaluation (не Critic-агент)
+  summarizer: "openai:gpt-4o-mini"        # scratchpad policy C
+  router:     "openai:gpt-4o-mini"        # PhaseRouter/TopologyRouter при llm-режиме
+  prompt_cache_scope: "per_run"           # per_run | per_task | off (arch.md §12.1, §17)
   provider_opts:
     prompt_cache: true
 
 observability:
-  callback_sync: true
+  callback_sync: false          # async с буфером + mandatory flush (см. arch.md §10.3); true — только для отладочных unit-тестов
   parquet_dir: "data/experiments"
   pg_dsn: ${oc.env:PG_DSN}
 ```
@@ -272,11 +283,22 @@ class Topology(Protocol):
 | **Chain** | Planner → Executor → Critic → [loop if not approved / END] | Critic.approve или max_iter | Линейный pipeline; при отклонении возврат к Executor |
 | **Mesh** | Broadcast-bus; все агенты читают bus, пишут bus; round-robin активации | `max_rounds` ИЛИ `consensus_threshold` голосов | Круги фиксированы; опц. голосование за финал |
 | **Debate** | Debater_pro + Debater_contra (параллельно) → Critic (judge) | `max_rounds` или Judge.decide | Debater-ы параметризуются `stance` |
-| **Hierarchical** | Top-Coord → 2 Sub-Coord → воркеры; каждый sub — subgraph | Top-Coord.finalize | Subgraph per sub-команда (LangGraph feature) |
+| **Hierarchical** | Top-Coord → 2 Sub-Coord → воркеры; **ровно 2 уровня**; каждый sub — compiled subgraph | Top-Coord.finalize | Subgraph per sub-команда (LangGraph feature); 3-й уровень не предусмотрен (arch.md §7.6) |
 | **Adaptive (L2)** | Мета-граф: START → PhaseRouter → TopologyRouter → {5 subgraph} → TransitionGate → loop/END. Топология меняется и внутри фазы по сигналам агентов. Tick-granularity. Monotonic phases. Superset of 7 agent roles. | `phase == done` или budget/iter exceeded | 3 режима TopologyRouter (rule / llm / oracle); SwitchGuards против thrashing; `TopologyTransition` пишется каждый тик (включая no-change). Подробности — `arch.md §7.7, §8, §8bis` |
 
 **Условия активации агентов в Mesh:**
 - round-robin по умолчанию, опц. priority-based (Critic первым если есть сообщения с `type=draft`)
+
+**Stopping criteria — единая precedence для всех топологий** (полная спека — arch.md §7.1):
+
+```
+1. BudgetExceededError         → status='budget_exceeded' (hard stop)
+2. Global max_iter             → status='completed', finish_reason='max_iter'
+3. Topology-specific success   → critic.approved / consensus / judge.decide / finalize
+4. Topology-specific max       → max_rounds / max_exec_iter (последний страж)
+```
+
+Реализация — helper `_should_stop(state) -> (bool, reason)`, общий для всех топологий; `reason` пишется в `runs.finish_reason`.
 
 **PhaseManager FSM** (для Adaptive и не только):
 - States: `planning` → `execution` → `verification` → `done`
@@ -344,9 +366,13 @@ class Topology(Protocol):
   - [ ] `llm/providers/openai.py` (wrapper вокруг `init_chat_model("openai:gpt-4o")`)
   - [ ] `llm/providers/anthropic.py`
   - [ ] `llm/providers/vllm.py` (для локальных через OpenAI-compatible endpoint)
-  - [ ] Моки для тестов (`FakeLLM` с детерминированными ответами)
-  - [ ] Unit-тесты: usage tracking, budget cutoff, retry
-- **Exit:** `LLMWrapper("openai:gpt-4o-mini").ainvoke(...)` возвращает ответ + корректный cost; budget-exceed останавливает
+  - [ ] `FakeLLM` (контракт — arch.md §4.4):
+    - режимы: `scripted` (YAML-fixture `(role, step_idx) → response`), `replay` (из llm_calls.parquet), `echo`
+    - **streaming не поддерживается** (`astream` → `NotImplementedError`)
+    - tool_calls сценируются в fixture; cost/tokens эмулируются
+    - fixture-файлы в `tests/fixtures/llm/<test_name>.yaml`
+  - [ ] Unit-тесты: usage tracking, budget cutoff, retry, FakeLLM определённость
+- **Exit:** `LLMWrapper("openai:gpt-4o-mini").ainvoke(...)` возвращает ответ + корректный cost; budget-exceed останавливает; FakeLLM даёт битово идентичные ответы на идентичной fixture+seed
 
 ### M3 — Storage & Observability (2 дня) ∥ частично с M2
 
@@ -356,9 +382,9 @@ class Topology(Protocol):
   - [ ] `storage/models.py`: SQLAlchemy-модели всех таблиц (см. §5.1)
   - [ ] Alembic migration для всех таблиц
   - [ ] `storage/session.py`: async engine, session factory
-  - [ ] `storage/parquet_writer.py`: write_llm_call, write_message, write_tool_call, write_scratchpad, write_phase — синхронные (простой вариант)
-  - [ ] `observability/callbacks.py`: `ExperimentCallbackHandler(BaseCallbackHandler)` — on_llm_start/end/error, on_tool_start/end, on_chain_start/end → Postgres + Parquet
-  - [ ] `storage/checkpointer.py`: обёртка `langgraph-checkpoint-postgres`, общий session
+  - [ ] `storage/parquet_writer.py`: write_llm_call, write_message, write_tool_call, write_scratchpad, write_phase — с in-memory буфером и `flush()` (инварианты flush — arch.md §11.2, §17/#2)
+  - [ ] `observability/callbacks.py`: `ExperimentCallbackHandler(AsyncCallbackHandler)` — on_llm_start/end/error, on_tool_start/end, on_chain_start/end, on_custom_event → Postgres + Parquet (async); sync-flush на границах run-а и transitions
+  - [ ] `storage/checkpointer.py`: обёртка `langgraph-checkpoint-postgres` с **отдельным** async-engine (autocommit=True); бизнес-БД идёт через отдельный SQLAlchemy engine (two pools — arch.md §11.3, §17/#3)
   - [ ] Unit-тесты writer-ов + integration-тест: smoke-run фиктивного графа → проверка, что всё записалось
 - **Exit:** 1 fake-run создаёт корректные строки в PG + parquet-файлы читаются pandas-ом
 
@@ -370,10 +396,12 @@ class Topology(Protocol):
   - [ ] `tools/base.py`: `Tool` Protocol (`name`, `schema`, `ainvoke`), `ToolRegistry`
   - [ ] Global: `calculator`, `duckduckgo_search`, `url_fetch`, `file_read`
   - [ ] `tools/sandbox/base.py`: `CodeSandbox` Protocol (`execute(lang, code, files, timeout) -> ExecResult`)
-  - [ ] `tools/sandbox/docker_sandbox.py`:
+  - [ ] `tools/sandbox/docker_sandbox.py` (hardening — arch.md §5.2, §17/#7):
     - префетч базовых образов (python:3.11-slim, node:20-slim)
-    - монтирование tmpfs для рабочей директории
+    - tmpfs для рабочей директории + read-only rootfs
+    - `cap_drop: [ALL]`, `security_opt: ["no-new-privileges", "seccomp=<custom-profile>"]` (блок ptrace/mount/unshare/keyctl/bpf)
     - resource limits (cpu, mem, pids, network=none)
+    - опциональный rootless-режим (для prod)
     - cleanup контейнеров по timeout
   - [ ] `tools/sandbox/subprocess_sandbox.py` — для dev-режима, без изоляции
   - [ ] Local tools:
@@ -498,14 +526,21 @@ class Topology(Protocol):
 - **Зависимости:** M6, M3 (checkpointer)
 - **Задачи:**
   - [ ] `human/gateway.py`:
-    - `class HumanGateway(Protocol): async def request(role, context) -> HumanResponse`
-    - `HumanContext` / `HumanResponse` модели
+    - `class HumanGateway(Protocol): async def request(ctx, *, request_id) -> HumanResponse` с идемпотентностью по `(run_id, request_id)` (arch.md §9.1)
+    - `HumanContext` / `HumanResponse` модели (поля `timed_out`, `source` — arch.md §3.1)
   - [ ] `human/llm_simulated.py`: LLM с системным промптом "ты — {role}, оцениваешь/руководишь/критикуешь..."
   - [ ] `human/cli_gateway.py` (минимальный rich-prompt, для отладки)
-  - [ ] Интеграция в топологии: `interrupt()` в местах human-участия, затем resume из checkpointer
+  - [ ] **Timeout + fallback-policy** (arch.md §9.1):
+    - `asyncio.wait_for` с `deadline_s = HumanCfg.timeout_s` (default 900)
+    - policies: `fail` / `llm_fallback` / `skip` — обрабатывается **топологией**, не gateway-ем
+    - при timeout `HumanResponse(timed_out=True, source='timeout', action='timeout')`; `llm_fallback` → повторный вызов через LLMSimulatedGateway с `source='fallback'`
+  - [ ] Интеграция в топологии: `interrupt()` в местах human-участия, затем resume из checkpointer; обработка timeout-ответа по `timeout_policy`
   - [ ] 5 ролей (Coordinator, Reviewer, Judge, Peer, Monitor) — системные промпты + правила активации в каждой топологии
-  - [ ] Integration-тест: run с Reviewer через LLMSimulatedGateway — interaction пишется в `human_interactions`
-- **Exit:** топология Chain + human-as-Reviewer успешно работает через LLM-симулятора
+  - [ ] Integration-тесты:
+    - run с Reviewer через LLMSimulatedGateway — interaction пишется в `human_interactions`
+    - timeout-тест: CLIGateway + deadline 1s + policy='llm_fallback' → run завершается успешно с `source='fallback'`
+    - idempotency-тест: resume после interrupt не даёт дубль-записи в `human_interactions`
+- **Exit:** Chain + human-as-Reviewer работает через LLM-симулятора; timeout+fallback отрабатывает; одна запись в `human_interactions` на один логический interrupt
 
 ### M10 — Tasks & datasets (2 дня) ∥ с M9
 
@@ -605,7 +640,9 @@ M0 → M1 → M2 ─┬─ M3 ─┐
 - **Task mix в benchmark-датасете** — конкретные задачи analysis/creative. Собираем после M10 в отдельной итерации.
 - **Протокол human studies** (сколько участников, какие задачи, IRB) — отдельно на этапе 2 диплома.
 - **Adaptive router: rule-based vs LLM-based** — сравнить в ablation, выбрать по результатам.
-- **Hierarchical — 2 уровня хватит или нужен 3-й?** — решим на M7 после первого прототипа.
+- ~~Hierarchical — 2 vs 3 уровня~~ — **[Resolved: ровно 2 уровня, arch.md §7.6, §18/#5]**
+- **LLM-judge: self-consistency + pairwise — как комбинировать** — pilot на M11.
+- **Parquet row-group tuning** — профилирование на M13.
 - **Streamlit vs Gradio** для human UI — посмотрим на M14.
 - **Ray** для масштабного грида — включим если станет узким местом на M12.
 
