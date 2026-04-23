@@ -22,7 +22,7 @@
 14. [Cross-cutting concerns](#14-cross-cutting-concerns)
 15. [Extensibility](#15-extensibility)
 16. [Диаграммы](#16-диаграммы)
-17. [Architectural deviations from PLAN.md](#17-architectural-deviations-from-planmd)
+17. [Architectural decisions refining PLAN.md](#17-architectural-decisions-refining-planmd)
 18. [Open architectural questions](#18-open-architectural-questions)
 
 ---
@@ -185,7 +185,12 @@ class MessageKind(str, Enum):
 
 
 class Message(BaseModel):
-    """Межагентское сообщение. Immutable."""
+    """Межагентское сообщение. Immutable. Доменная модель, параллельна LangChain BaseMessage.
+
+    Граница с LangChain — строго на `LLMWrapper.ainvoke`/`from_lc`:
+    топология и агенты работают только с `Message`; адаптер вызывается
+    на точке вызова LLM.
+    """
     model_config = ConfigDict(frozen=True)
 
     id: UUID = Field(default_factory=uuid4)
@@ -196,6 +201,24 @@ class Message(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     refs: tuple[UUID, ...] = ()              # reply-to chain
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    def to_lc(self) -> "BaseMessage":
+        """Адаптер в LangChain BaseMessage для передачи в LLM.
+        Маппинг kind → LC-type:
+          request/draft/critique → HumanMessage (роль = sender)
+          decision               → AIMessage
+          broadcast              → HumanMessage с metadata={'channel':'broadcast'}
+          phase_emit             → SystemMessage (мета-событие)
+        """
+        ...
+
+    @classmethod
+    def from_lc(cls, lc_msg: "BaseMessage", *, sender: str, kind: MessageKind) -> "Message":
+        """Обратный адаптер. Контракт: LC-специфичные поля (tool_calls, additional_kwargs)
+        едут в `payload` под ключом '_lc'. Ответственность вызывающего — выдергивать
+        их оттуда, если нужны (не доступны как первоклассные атрибуты Message).
+        """
+        ...
 
 
 class ToolCall(BaseModel):
@@ -259,11 +282,13 @@ class HumanContext(BaseModel):
 class HumanResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    action: str                              # один из allowed_actions
+    action: str                              # один из allowed_actions ИЛИ служебный 'timeout'/'cancelled'
     comment: Optional[str] = None
     payload: dict[str, Any] = Field(default_factory=dict)    # структурированные правки
     answered_at: datetime = Field(default_factory=datetime.utcnow)
     tlx_scores: Optional[dict[str, int]] = None              # 6 шкал NASA-TLX, 0..100
+    timed_out: bool = False                                  # True если gateway вернул timeout-response
+    source: Literal["human", "llm_sim", "fallback", "timeout"] = "human"
 
 
 class TaskSpec(BaseModel):
@@ -352,7 +377,7 @@ class BudgetEvent(BaseModel):
 
 ### 3.2 LangGraph state (`src/atm/core/state.py`)
 
-Используется **TypedDict** (не `BaseModel`): это рекомендованный в 2026 путь для state-schema LangGraph, т.к. `BaseModel` как state всё ещё имеет известный issue с потерей `tool_calls` при `model_dump` ([langgraph#6675](https://github.com/langchain-ai/langgraph/issues/6675)).
+Используется **TypedDict** (не `BaseModel`). Официальные LangGraph docs 2026 называют TypedDict primary, Pydantic BaseModel — "supported with caveats": валидация перед каждым вызовом ноды = заметный overhead на гриде; `langchain.create_agent` не поддерживает Pydantic state; есть открытые баги с generic-типами ([langgraph#4060](https://github.com/langchain-ai/langgraph/issues/4060), [#1977](https://github.com/langchain-ai/langgraph/issues/1977)). Все **данные внутри state** — Pydantic v2 (`Message`, `LLMResponse`, `ToolCall` и т.п.): валидация на границах. Полное обоснование и code-правило — §17.
 
 ```python
 from __future__ import annotations
@@ -588,8 +613,12 @@ Async SQLAlchemy 2.x, Mapped-style. Ключевые таблицы:
 |  | agent_set | `VARCHAR(64)` | no | |
 |  | human_role | `VARCHAR(32)` | yes | |
 |  | seed | `INTEGER` | no | |
-|  | model | `VARCHAR(64)` | no | |
+|  | model | `VARCHAR(64)` | no | primary model_id из конфига (для обратной совместимости; детали — models_by_role_json) |
+|  | models_by_role_json | `JSONB` | no default '{}' | снимок `ModelCfg.by_role` — per-role модели на момент run-а |
+|  | model_version_snapshot | `JSONB` | no default '{}' | `{model_id: version}` (напр. `{"openai:gpt-4o":"2024-11-20"}`) — для exact replay |
+|  | sandbox_image_digest | `VARCHAR(80)` | yes | sha256:… докер-образа sandbox; null для dev subprocess_sandbox |
 |  | status | `VARCHAR(16)` | no | idx |
+|  | finish_reason | `VARCHAR(32)` | yes | enum(`success`,`max_iter`,`topology_max`,`budget_exceeded`,`error`,`human_timeout`) |
 |  | budget_spent_usd | `NUMERIC(10,4)` | no | |
 |  | quality_score | `DOUBLE PRECISION` | yes | |
 |  | wall_time_s | `DOUBLE PRECISION` | yes | |
@@ -666,22 +695,26 @@ DDL-эквивалент для `runs` (для понимания):
 
 ```sql
 CREATE TABLE runs (
-    id               UUID PRIMARY KEY,
-    exp_id           UUID NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
-    topology         VARCHAR(32) NOT NULL,
-    task_id          VARCHAR(128) NOT NULL,
-    agent_set        VARCHAR(64) NOT NULL,
-    human_role       VARCHAR(32),
-    seed             INTEGER NOT NULL,
-    model            VARCHAR(64) NOT NULL,
-    status           VARCHAR(16) NOT NULL,
-    budget_spent_usd NUMERIC(10,4) NOT NULL DEFAULT 0,
-    quality_score    DOUBLE PRECISION,
-    wall_time_s      DOUBLE PRECISION,
-    iterations       INTEGER,
-    started_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    finished_at      TIMESTAMPTZ,
-    error            TEXT
+    id                     UUID PRIMARY KEY,
+    exp_id                 UUID NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+    topology               VARCHAR(32) NOT NULL,
+    task_id                VARCHAR(128) NOT NULL,
+    agent_set              VARCHAR(64) NOT NULL,
+    human_role             VARCHAR(32),
+    seed                   INTEGER NOT NULL,
+    model                  VARCHAR(64) NOT NULL,
+    models_by_role_json    JSONB NOT NULL DEFAULT '{}',
+    model_version_snapshot JSONB NOT NULL DEFAULT '{}',
+    sandbox_image_digest   VARCHAR(80),
+    status                 VARCHAR(16) NOT NULL,
+    finish_reason          VARCHAR(32),
+    budget_spent_usd       NUMERIC(10,4) NOT NULL DEFAULT 0,
+    quality_score          DOUBLE PRECISION,
+    wall_time_s            DOUBLE PRECISION,
+    iterations             INTEGER,
+    started_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at            TIMESTAMPTZ,
+    error                  TEXT
 );
 CREATE INDEX runs_exp_id_idx    ON runs(exp_id);
 CREATE INDEX runs_topology_idx  ON runs(topology);
@@ -977,18 +1010,58 @@ class FakeLLM:
     """Детерминированный stub.
 
     Режимы:
-      - scripted: сценарий из list[dict] — каждый ainvoke отдаёт следующий элемент.
-      - replay: читает llm_calls.parquet прошлого run-а по (agent_id, step) и возвращает идентичный ответ.
-      - echo: возвращает 'ECHO: <last user msg>' + фиксированный usage.
+      - scripted: YAML/dict-fixture с ключом (role, step_idx) → response.
+        Каждый ainvoke для данного agent_id (role) отдаёт response по внутреннему
+        step-счётчику этого агента. Отсутствующий ключ → AssertionError (fail-loud).
+      - replay: читает llm_calls.parquet прошлого run-а по (agent_id, step)
+        и возвращает идентичный LLMResponse.
+      - echo: возвращает 'ECHO: <last user msg>' + фиксированный usage (для smoke).
+
+    **Tool-calls:** сценируются в fixture как часть response; `response.tool_calls` —
+    сразу готовая tuple[ToolCall, ...]. Tool-выполнение самого sandbox-а не мокаем
+    (sandbox детерминируется docker-digest + seed).
+
+    **Streaming: не поддерживается** (`astream` бросает NotImplementedError).
+    Streaming — только у реальных провайдеров; тесты работают через `ainvoke`.
+
+    **Cost/tokens:** эмулируются из fixture (`usage: TokenUsage`, `cost_usd: float`).
+    Это позволяет budget-тестам гонять граничные случаи exceed без реальных LLM.
+    Если в fixture не указано — `cost_usd=0.0`, `usage=TokenUsage(0,0,0,0)`.
 
     Инварианты:
-      - Идентичный seed + идентичный скрипт/replay → идентичные ответы.
-      - cost = 0 (pricing 'fake:deterministic').
-      - Tool-calls тоже сценируются по шагам.
+      - Идентичный seed + идентичная fixture → битово идентичные LLMResponse
+        (кроме `id`/`latency_ms` — эти стабилизируются через seed).
+      - Детерминизм не зависит от порядка asyncio-корутин: fixture-lookup идёт
+        по `(agent_id, self._step[agent_id])`, инкрементируется под локом.
     """
+
+    async def ainvoke(self, messages, *, agent_id: str, **kw) -> LLMResponse: ...
+    async def astream(self, *args, **kw):
+        raise NotImplementedError("FakeLLM: streaming не поддерживается; используйте ainvoke")
 ```
 
-FakeLLM используется во всех unit/integration-тестах, где не тестируется сам LLM-провайдер. Тесты на `ainvoke` против OpenAI — помечены `@pytest.mark.live` и пропускаются в CI.
+FakeLLM используется во всех unit/integration-тестах, где не тестируется сам LLM-провайдер. Тесты на `ainvoke` против реальных провайдеров — помечены `@pytest.mark.live` и пропускаются в CI.
+
+**Fixture-файлы** — `tests/fixtures/llm/<test_name>.yaml`:
+
+```yaml
+# пример
+planner:
+  0:
+    text: "Step 1: ..."
+    finish_reason: "stop"
+    usage: { prompt_tokens: 120, completion_tokens: 80, cached_input_tokens: 0 }
+    cost_usd: 0.0015
+executor:
+  0:
+    tool_calls:
+      - tool_name: "code_run"
+        args: { lang: "python", code: "print(1+1)" }
+    finish_reason: "tool_calls"
+  1:
+    text: "Done. Result was 2."
+    finish_reason: "stop"
+```
 
 ---
 
@@ -1297,6 +1370,23 @@ class Topology(Protocol):
         ...
 ```
 
+**Stopping criteria — единая precedence во всех топологиях (включая subgraph-ы Adaptive):**
+
+```
+1. BudgetExceededError на любом уровне (call/run/exp)  → hard stop, status='budget_exceeded'
+2. Global max_iter  (TopologyConfig.max_iterations)    → status='completed', finish='max_iter'
+3. Topology-specific:
+     Star:         coordinator → END (critic.approved или explicit finalize)
+     Chain:        critic.approved
+     Mesh:         consensus_votes ≥ threshold  (приоритет выше max_rounds)
+     Debate:       judge.decide
+     Hierarchical: top_coordinator.finalize
+     Adaptive:     shared.phase == DONE  (после PhaseRouter advance)
+4. Topology-specific max (max_rounds / max_exec_iter / …) — последний страж.
+```
+
+Семантика: budget > global_max_iter > topology-success > topology-max. Фиксируется в `_should_stop(state) -> tuple[bool, reason]` helper-е, общем для всех топологий. Reason пишется в `runs.finish_reason` (enum: `budget_exceeded | max_iter | success | topology_max | error`).
+
 ### 7.2 Star
 
 ```
@@ -1382,6 +1472,8 @@ Debater_pro  Debater_contra
 ```
 
 Каждый `SubCoord_X` — отдельный **compiled subgraph** (`StateGraph().compile()`), инстанциируемый с собственным набором агентов. Связь через "wrap subgraph in node" паттерн (см. [LangGraph subgraphs docs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs)): parent-node принимает parent-state, трансформирует в sub-state, зовёт `subgraph.ainvoke(...)`, маппит результат обратно. Checkpointer наследуется parent-графом — sub-graph также получает persistence (необходимо для interrupt внутри sub-team).
+
+**Глубина — ровно 2 уровня (Top-Coordinator + SubCoord × N + Workers).** 3-й уровень не предусмотрен: 2 уровня покрывают все целевые сценарии диплома (координация двух параллельных команд с подзадачами), а 3-й уровень дал бы квадратичный рост стоимости + размытие signal-to-noise для RQ-анализа. Рекурсивная расширяемость сохраняется (subgraph поддерживает вложение), но в рамках этапа 1 не задействуется.
 
 ### 7.7 Adaptive — meta-graph (L2: runtime topology switching)
 
@@ -1752,8 +1844,11 @@ topology_router:
 ### 9.1 Protocol
 
 ```python
-from typing import Protocol
+from typing import Literal, Protocol
 from atm.core.types import HumanContext, HumanResponse
+
+
+TimeoutPolicy = Literal["fail", "llm_fallback", "skip"]
 
 
 class HumanGateway(Protocol):
@@ -1765,9 +1860,28 @@ class HumanGateway(Protocol):
         request_id должен вернуть тот же ответ (или ждать, если ещё не готов).
         Это нужно для корректной обработки LangGraph re-execution после resume.
       - Gateway НЕ пишет в БД; это делает observability callback.
+
+    **Timeout-контракт:**
+      - Если `ctx.deadline_s` задан и человек не ответил до deadline — gateway
+        возвращает `HumanResponse(timed_out=True, source='timeout', action='timeout', …)`.
+      - Решение о дальнейшей судьбе run-а принимает ТОПОЛОГИЯ по `timeout_policy`
+        из `HumanCfg` (ниже), а НЕ сам gateway.
+      - LLMSimulatedGateway: timeout практически недостижим (один LLM-call),
+        но контрактно реализует тот же путь.
+      - CLIGateway: реальный timeout через `asyncio.wait_for`.
+      - StreamlitGateway: timeout через UI-очередь с heartbeat.
     """
     async def request(self, ctx: HumanContext, *, request_id: str) -> HumanResponse:
         ...
+
+
+# В ExperimentConfig (§12.1) HumanCfg расширен:
+#   timeout_s: int | None = 900      # 15 мин дефолт; None = без таймаута
+#   timeout_policy: TimeoutPolicy = "llm_fallback"
+#     - "fail":         run → status='failed', error='human_timeout'
+#     - "llm_fallback": автоматически подставляем LLMSimulatedGateway ответ; source='fallback'
+#     - "skip":         проигнорировать human-узел (только там, где это семантически валидно —
+#                       напр. Monitor-роль, observation-only)
 ```
 
 ### 9.2 Три реализации
@@ -1974,10 +2088,31 @@ class BudgetCfg(BaseModel):
 
 
 class ModelCfg(BaseModel):
-    primary: str                             # e.g. "openai:gpt-4o"
-    judge: str
-    summarizer: str | None = None
-    provider_opts: dict[str, Any] = {}
+    """Per-role модель. Дефолты экономичные (GPT-4o-mini для worker-ролей,
+    GPT-4o только для Critic/Judge/Coordinator и judge). Сплит ≈5× удешевляет грид.
+
+    Резолв: `get_model_for(role)` → `by_role.get(role) or default`.
+    """
+    default: str = "openai:gpt-4o-mini"
+    by_role: dict[str, str] = Field(default_factory=lambda: {
+        "planner":      "openai:gpt-4o-mini",
+        "researcher":   "openai:gpt-4o-mini",
+        "executor":     "openai:gpt-4o-mini",
+        "critic":       "openai:gpt-4o",
+        "debater":      "openai:gpt-4o-mini",
+        "coordinator":  "openai:gpt-4o",
+    })
+    judge:      str = "openai:gpt-4o"         # LLM-as-judge в evaluation (отдельно от Critic-агента)
+    summarizer: str = "openai:gpt-4o-mini"    # scratchpad policy C
+    router:     str = "openai:gpt-4o-mini"    # LLM-based PhaseRouter/TopologyRouter
+    provider_opts: dict[str, Any] = Field(default_factory=dict)
+    prompt_cache_scope: Literal["per_run", "per_task", "off"] = "per_run"
+    """Scope prompt-cache LLM-провайдера (OpenAI/Anthropic).
+      per_run  — cache_key = f"{run_id}_{agent_id}" (дефолт, безопасно, независимость runs)
+      per_task — cache_key = f"{exp_id}_{task_id}_{agent_id}" (cross-run within one task;
+                 экономия +, но искажает timing-метрики и correlated seeds — для production/demo)
+      off      — cache отключён (для метрик, чувствительных к latency)
+    """
 
 
 class ScratchpadCfg(BaseModel):
@@ -2008,6 +2143,8 @@ class HumanCfg(BaseModel):
     gateway: Literal["none", "llm_simulated", "cli", "streamlit"] = "none"
     roles: list[str] = []                    # какие роли активны; подмножество HumanRole
     model: str | None = None                 # для llm_simulated
+    timeout_s: int | None = 900              # дедлайн одного запроса; None — без таймаута
+    timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
 
 
 class TaskCfg(BaseModel):
@@ -2261,7 +2398,29 @@ class NasaTLX(BaseModel):
 - Ключи НЕ логируются: `structlog` процессор `filter_secrets` убирает их из event dict. В LLM-payloads ключи не появляются (они в HTTP headers провайдера).
 - Sandbox: см. §5.2. Plus audit-log: каждая `DockerSandbox.execute` пишет в `tool_calls.parquet` SHA-256 от кода — для post-hoc поиска попыток эксплойтов.
 
-### 14.4 Логирование
+### 14.4 Reproducibility bundle
+
+Минимальный набор, необходимый и достаточный для exact replay одного run-а:
+
+| Артефакт | Где хранится | Кто пишет | Для чего |
+|---|---|---|---|
+| `config_snapshot` (полный рекурсивный Pydantic-dump ExperimentConfig) | `experiments.config_snapshot` JSONB + `data/experiments/{exp_id}/metadata.json` | ExperimentRunner при старте | Pin всех параметров |
+| `seed` | `runs.seed` | Runner | `seed_all` при replay |
+| `git_sha` | `experiments.git_sha` | Runner (git rev-parse HEAD) | Привязка к версии кода |
+| `model_version_snapshot` (`{model_id: version}`) | `runs.model_version_snapshot` JSONB | `LLMWrapper` на первом вызове читает `response.model` (конкретный `gpt-4o-2024-11-20`) и сохраняет | Без этого «gpt-4o» меняется между снапшотами провайдера |
+| `models_by_role_json` | `runs.models_by_role_json` JSONB | Runner при старте | Per-role модели на момент run-а (конфиг мог поменяться) |
+| `sandbox_image_digest` (`sha256:…`) | `runs.sandbox_image_digest` | DockerSandbox при старте run-а | Стабильность code-execution между replay |
+| `llm_calls.parquet` | `data/experiments/{exp_id}/runs/{run_id}/llm_calls.parquet` | ObservabilityCallback | Источник для `FakeLLM replay` — дословное восстановление LLM-ответов |
+| checkpoints | PG (AsyncPostgresSaver) | LangGraph | Промежуточные state — для replay with HITL-resume |
+
+**Replay режимы:**
+1. **Deterministic replay (unit/integration):** `FakeLLM(mode='replay', src=runs/{run_id}/llm_calls.parquet)` → идентичные вызовы LLM; sandbox детерминируется docker-digest. Bit-exact (кроме timestamp-полей).
+2. **Re-run семантический:** тот же config + seed + model_version → близкий, но не битово идентичный результат (LLM провайдер не детерминирован при `temperature>0` даже при одинаковых промптах).
+3. **Re-run semantic с новой моделью:** меняем `model` в конфиге, сохраняем seed/task/topology → ablation.
+
+CLI: `atm replay <run_id> [--mode deterministic|semantic]`.
+
+### 14.5 Логирование
 
 **Выбрано: `structlog`** ([structlog async support](https://www.structlog.org/en/stable/logging-best-practices.html)) поверх stdlib. Причины:
 - Native async API (`await log.ainfo(...)`) для callback-ов.
@@ -2457,21 +2616,32 @@ Agent.step(state)
 
 ---
 
-## 17. Architectural deviations from PLAN.md
+## 17. Architectural decisions refining PLAN.md
 
-Ниже — решения, расходящиеся с PLAN.md или уточняющие его.
+Ниже — решения, явно принятые на уровне арх-документа. Не «отклонения» (PLAN.md в актуальной редакции синхронизирован), а детализированные обоснования и ответы на вопросы, которые PLAN.md оставлял открытыми.
 
 1. **State schema: TypedDict, не Pydantic `BaseModel`.**
-   PLAN.md формально не фиксировал, но §5 намекает на Pydantic. Выбираем TypedDict из-за активного issue [langgraph#6675](https://github.com/langchain-ai/langgraph/issues/6675) (drop tool_calls при `model_dump`). Все **данные в state** остаются Pydantic-моделями (`Message`, `LLMResponse` и т.п.) — только контейнер-state — TypedDict.
+   PLAN.md M1 (§8 checklist) указывает TypedDict — здесь фиксируется **обоснование**.
 
-2. **Observability: async writes (с буфером), не строго sync.**
-   PLAN.md: `callback_sync: true` как дефолт. Меняем на **async по умолчанию** с конфиг-флагом для включения sync в тестах. Обоснование в §10.3. Sync остаётся доступным через `observability.callback_sync: true`.
+   **Rationale:**
+   - Официальные LangGraph docs 2026 называют TypedDict primary, Pydantic BaseModel — "supported with caveats": валидация перед каждым вызовом ноды даёт заметный overhead на гриде; `langchain.create_agent` из `langchain` не поддерживает Pydantic state (закрывает возможный baseline).
+   - Известные баги с generic-типами в Pydantic state: [langgraph#4060](https://github.com/langchain-ai/langgraph/issues/4060), [#1977](https://github.com/langchain-ai/langgraph/issues/1977).
+   - Value-типы внутри state (`Message`, `ToolCall`, `LLMResponse`, `HumanContext`, scratchpad entries) — Pydantic v2 BaseModel: валидация на границах, единые модели с бизнес-слоем.
 
-3. **Two pools для checkpointer и бизнес-БД.**
-   PLAN.md: "общий session" для checkpointer. `AsyncPostgresSaver` требует `autocommit=True` — это плохо сочетается с SQLAlchemy-транзакционной моделью. Разделение — рекомендованный паттерн ([LangGraph production tutorial 2026](https://rapidclaw.dev/blog/deploy-langgraph-production-tutorial-2026)).
+   **Code-правило:** внутри node-функций **не вызывать `state.model_dump()`** — передавать поля адресно (`{"messages": state["messages"]}`). Закрывает класс ошибок Pydantic-сериализации полиморфных полей ([langgraph#6675](https://github.com/langchain-ai/langgraph/issues/6675) — closed 2026-01-30 как не-баг LangGraph; стандартное поведение Pydantic с `list[BaseMessage]`). При необходимости сериализации полиморфных полей внутри value-моделей — `SerializeAsAny[BaseMessage]`.
 
-4. **`structlog` как выбор для логирования.**
-   PLAN.md не фиксирует. Выбираем осознанно (§14.4).
+2. **Observability writes — async с буфером и обязательным sync-flush в критических точках.**
+   PLAN.md в актуальной редакции синхронизирован (callback_sync: false). Инварианты flush (обязательны):
+   - (a) `on_chain_end` корневого run-а — перед финализацией `runs.status`;
+   - (b) любой transition фазы/топологии — перед записью `PhaseTransition` / `TopologyTransition`;
+   - (c) `on_chain_error` на корневом chain — flush до re-raise;
+   - (d) достижение `max_buffer_size` — авто-flush.
+   `runs.status='completed'` пишется атомарно только после подтверждённого flush. Без этих инвариантов async теряет преимущество над sync (подробнее — §10.3).
+
+3. **Two connection pools для checkpointer и бизнес-БД.**
+   `AsyncPostgresSaver` требует `autocommit=True`; бизнес-модели через SQLAlchemy идут в транзакциях — их нельзя делить один pool. Паттерн подтверждён в [deploy LangGraph production tutorial 2026](https://rapidclaw.dev/blog/deploy-langgraph-production-tutorial-2026). PLAN.md в актуальной редакции синхронизирован (M3).
+
+4. **`structlog` как выбор для логирования** (отдельно от observability-persistence). PLAN.md не фиксирует — выбираем осознанно (§14.5).
 
 5. **Pydantic v2 везде, кроме интероп-точек с LangChain Tools.**
    PLAN.md: "Pydantic" без версии. Фиксируем v2; LangChain Tool API поддерживает v2 напрямую с 2025 ([changelog Langchain](https://changelog.langchain.com/announcements/improved-pydantic-2-support-with-langchain-tool-apis)).
@@ -2514,11 +2684,9 @@ Agent.step(state)
 3. **FakeLLM replay-точность для tool-calling.**
    Нужно ли реплеить только ответы LLM, или ещё и tool-outputs (детерминированный sandbox не гарантирован)? Решим при написании M2/M5 тестов.
 
-4. **Budget-exceed race в grid.**
-   Между `check_before_call` и `record` другой процесс может успеть потратить — формально можем слегка превысить experiment-limit. Нужно ли строгое ограничение через PG advisory-lock или достаточно soft-overshoot ≤ 5%? Открыто до первого live grid.
+4. ~~**Budget-exceed race в grid.**~~ **[Resolved]** Soft-overshoot политика: разрешён overshoot ≤5%; `BudgetTracker.persist()` атомарно читает/пишет `experiments.total_cost` через `UPDATE ... RETURNING`, без advisory-lock. Если текущий snapshot + est_cost > limit × 1.10 — пишем event `warn="overshoot_critical"` и триггерим preemptive-stop новых runs (существующие доделываются). Мотивация: lock-contention на гриде в 1000 runs × 10 LLM-calls дороже, чем случайные +5% перерасхода.
 
-5. **Hierarchical — 2 или 3 уровня.**
-   PLAN.md также помечает. Архитектурно: 2 уровня закрывают требования; 3-й — тривиально добавляется рекурсивно (subgraph внутри subgraph), но даст ли он осмысленную вариативность в экспериментах — неизвестно. Решение по M7 прототипу.
+5. ~~**Hierarchical — 2 или 3 уровня.**~~ **[Resolved — 2 уровня фиксировано]** См. §7.6. 3-й уровень не предусмотрен: квадратичный рост стоимости + размытие signal-to-noise для RQ-анализа. Рекурсивная расширяемость сохранена в коде (subgraph-внутри-subgraph), но в этапе 1 не задействуется.
 
 6. **LLM-judge bias correction между self-consistency и pairwise.**
    Комбинировать через usal mean или weighted? Какие шкалы лучше для creative vs analysis? Требует pilot run на M11.
