@@ -1,0 +1,29 @@
+# Environment — never commit real secrets
+.env
+# but keep the example template:
+!.env.example
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv virtual environment (lock file IS committed — it pins the dependency graph)
+.venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data / runtime directories
+data/
+!data/.gitkeep
+
+# OS artefacts
+.DS_Store
+Thumbs.db

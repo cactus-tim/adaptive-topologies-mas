@@ -1,0 +1,31 @@
+# Docker Compose configuration for Adaptive Topologies MAS development environment.
+# Provides a Postgres 16 instance for local development and Alembic migrations.
+#
+# Usage:
+#   cp .env.example .env   # fill in credentials
+#   docker compose up -d
+#   # wait ~15s for healthy status
+#   docker compose ps
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: atm-postgres
+    restart: unless-stopped
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:
