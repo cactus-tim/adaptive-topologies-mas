@@ -40,6 +40,14 @@ ignore = ["E501"]  # line length is controlled by the formatter
 [tool.ruff.format]
 # defaults
 
+[tool.pytest.ini_options]
+# M0: error-on-warning оставлено сознательно; в M1+ может потребоваться ослабление
+# (например, при появлении sqlalchemy MovedIn20Warning или pytest-asyncio deprecations).
+filterwarnings = ["error"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
