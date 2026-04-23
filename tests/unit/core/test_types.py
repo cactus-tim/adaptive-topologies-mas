@@ -454,25 +454,34 @@ def test_all_models_are_frozen() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 14. CI-2: to_lc / from_lc stubs must raise NotImplementedError with "M2"
+# 14. CI-2 (M2): to_lc / from_lc are implemented (no longer raise NotImplementedError)
 # ---------------------------------------------------------------------------
 
 
-def test_to_lc_raises_not_implemented_with_m2() -> None:
-    """CI-2: Message.to_lc() must raise NotImplementedError containing 'M2'."""
+def test_to_lc_returns_lc_message() -> None:
+    """CI-2 (M2): Message.to_lc() is implemented and returns a BaseMessage."""
+    from langchain_core.messages import BaseMessage, HumanMessage
+
     from atm.core.types import Message, MessageKind
 
     msg = Message(sender="a", kind=MessageKind.REQUEST, content="hi")
-    with pytest.raises(NotImplementedError, match="M2"):
-        msg.to_lc()
+    result = msg.to_lc()
+    assert isinstance(result, BaseMessage)
+    assert isinstance(result, HumanMessage)
+    assert result.content == "hi"
 
 
-def test_from_lc_raises_not_implemented_with_m2() -> None:
-    """CI-2: Message.from_lc(None, sender=..., kind=...) must raise NotImplementedError containing 'M2'."""
+def test_from_lc_returns_message() -> None:
+    """CI-2 (M2): Message.from_lc() is implemented and returns a Message."""
+    from langchain_core.messages import HumanMessage
+
     from atm.core.types import Message, MessageKind
 
-    with pytest.raises(NotImplementedError, match="M2"):
-        Message.from_lc(None, sender="a", kind=MessageKind.REQUEST)  # type: ignore[arg-type]
+    lc = HumanMessage(content="hello")
+    msg = Message.from_lc(lc, sender="a", kind=MessageKind.REQUEST)
+    assert isinstance(msg, Message)
+    assert msg.content == "hello"
+    assert msg.sender == "a"
 
 
 # ---------------------------------------------------------------------------

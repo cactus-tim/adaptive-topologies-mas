@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from langchain_core.messages import (  # type: ignore[import-not-found]  # not installed until M2
+    from langchain_core.messages import (
         BaseMessage,
     )
 
@@ -107,10 +107,30 @@ class Message(BaseModel):
           decision               → AIMessage
           broadcast              → HumanMessage with metadata={'channel':'broadcast'}
           phase_emit             → SystemMessage (meta-event)
-
-        NOTE: Implemented in M2.
         """
-        raise NotImplementedError("Message.to_lc is not implemented until M2")
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        if self.kind in (
+            MessageKind.REQUEST,
+            MessageKind.DRAFT,
+            MessageKind.CRITIQUE,
+        ):
+            return HumanMessage(content=self.content)
+
+        if self.kind == MessageKind.DECISION:
+            return AIMessage(content=self.content)
+
+        if self.kind == MessageKind.BROADCAST:
+            return HumanMessage(
+                content=self.content,
+                additional_kwargs={"channel": "broadcast"},
+            )
+
+        if self.kind == MessageKind.PHASE_EMIT:
+            return SystemMessage(content=self.content)
+
+        # Fallback: treat unknown kinds as HumanMessage
+        return HumanMessage(content=self.content)  # pragma: no cover
 
     @classmethod
     def from_lc(
@@ -125,10 +145,38 @@ class Message(BaseModel):
         Contract: LC-specific fields (tool_calls, additional_kwargs) go into
         `payload` under key '_lc'. Callers are responsible for extracting them
         if needed (they are not first-class Message attributes).
-
-        NOTE: Implemented in M2.
         """
-        raise NotImplementedError("Message.from_lc is not implemented until M2")
+        # Extract text content — content may be str or list of blocks
+        if isinstance(lc_msg.content, str):
+            content = lc_msg.content
+        else:
+            # List of content blocks: concatenate text blocks
+            parts: list[str] = []
+            for block in lc_msg.content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif isinstance(block, str):
+                    parts.append(block)
+            content = "".join(parts)
+
+        # Collect LC-specific extras into payload['_lc']
+        lc_extras: dict[str, Any] = {}
+        if lc_msg.additional_kwargs:
+            lc_extras["additional_kwargs"] = dict(lc_msg.additional_kwargs)
+
+        # Handle tool_calls (present on AIMessage)
+        tool_calls = getattr(lc_msg, "tool_calls", None)
+        if tool_calls:
+            lc_extras["tool_calls"] = list(tool_calls)
+
+        payload: dict[str, Any] = {"_lc": lc_extras} if lc_extras else {"_lc": {}}
+
+        return cls(
+            sender=sender,
+            kind=kind,
+            content=content,
+            payload=payload,
+        )
 
 
 class ToolCall(BaseModel):
