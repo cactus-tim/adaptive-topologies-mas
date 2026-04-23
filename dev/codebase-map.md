@@ -139,6 +139,7 @@
 - **FakeLLM:** Deterministic mock LLM — reads responses from YAML fixtures by (role, step_idx); used in unit tests to make runs reproducible.
 - **Fixtures location:** `tests/fixtures/llm/<test_name>.yaml` — scripted LLM responses; isolated, no real API calls.
 - **Smoke test:** Single integration test in M0 (test_atm_package_importable) — verifies package version.
+- **Current unit tests (M1):** 138 tests covering errors hierarchy (20), types/enums (31), reducers with monoid invariants (24), state TypedDicts (24), public API (35), plus M0 smoke.
 
 ### Async Patterns
 - **Agents & topologies:** All state updates are async; agents emit state updates; LangGraph compiles graph with async node functions.
