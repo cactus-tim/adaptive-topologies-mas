@@ -1,0 +1,43 @@
+# ATM LLM Pricing Table
+# Source: OpenAI https://openai.com/api/pricing/ and Anthropic https://www.anthropic.com/pricing
+# Check-date: 2026-04; mark uncertain values with # VERIFY
+version: 1
+
+models:
+  openai:gpt-4o:
+    # GPT-4o — standard token pricing
+    # Source: OpenAI pricing page (2026-04)
+    input_per_1k: 0.0025
+    output_per_1k: 0.010
+    cached_input_per_1k: 0.00125  # 50 % discount for cached prompt tokens
+
+  openai:gpt-4o-mini:
+    # GPT-4o mini — lower cost tier
+    # Source: OpenAI pricing page (2026-04)
+    input_per_1k: 0.00015
+    output_per_1k: 0.00060
+    cached_input_per_1k: 0.000075  # 50 % discount for cached prompt tokens
+
+  anthropic:claude-3-5-sonnet-latest:
+    # Claude 3.5 Sonnet — standard token pricing
+    # Source: Anthropic pricing page (2026-04)
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    cache_read_per_1k: 0.0003    # Prompt Cache read
+    cache_write_per_1k: 0.00375  # Prompt Cache write (1.25× input rate)
+
+  anthropic:claude-3-5-haiku-latest:
+    # Claude 3.5 Haiku — lower cost tier
+    # Source: Anthropic pricing page (2026-04)
+    input_per_1k: 0.00080  # VERIFY — Haiku pricing adjusted as of late 2025
+    output_per_1k: 0.00400
+    cache_read_per_1k: 0.000080   # Prompt Cache read
+    cache_write_per_1k: 0.0010    # Prompt Cache write
+
+  fake:deterministic:
+    # FakeLLM used in all unit/integration tests — zero cost
+    input_per_1k: 0.0
+    output_per_1k: 0.0
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0

@@ -4,7 +4,16 @@ version = "0.1.0"
 description = "Adaptive Topologies MAS — multi-agent LLM framework with HITL"
 requires-python = ">=3.11"
 readme = "README.md"
-dependencies = []
+dependencies = [
+    "langchain>=0.3,<0.4",
+    "langchain-anthropic>=0.3,<0.4",
+    "langchain-core>=0.3,<0.4",
+    "langchain-openai>=0.3,<0.4",
+    "pyarrow>=16",
+    "pydantic>=2.7,<3",
+    "pyyaml>=6",
+    "tiktoken>=0.8",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -21,6 +30,7 @@ dev = [
     "mypy>=1.14",
     "ruff>=0.9",
     "sqlalchemy[asyncio]>=2.0",
+    "types-pyyaml>=6.0.12.20260408",
 ]
 test = [
     "pytest>=8.3",
