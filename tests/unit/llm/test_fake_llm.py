@@ -71,7 +71,10 @@ async def test_scripted_basic_returns_llm_response() -> None:
     response = await llm.ainvoke(messages=[], agent_id="planner_1")
 
     assert isinstance(response, LLMResponse)
-    assert response.text == "Plan: Step 1 — gather requirements. Step 2 — design solution. Step 3 — implement."
+    assert (
+        response.text
+        == "Plan: Step 1 — gather requirements. Step 2 — design solution. Step 3 — implement."
+    )
     assert response.latency_ms == 0
     assert response.model == "fake:deterministic"
     assert response.finish_reason == "stop"

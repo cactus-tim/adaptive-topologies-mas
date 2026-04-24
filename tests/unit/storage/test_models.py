@@ -23,7 +23,6 @@ from atm.storage.models import (
     TopologyTransition,
 )
 
-
 # ---------------------------------------------------------------------------
 # FinishReason enum — arch.md §3.4 canonical values
 # ---------------------------------------------------------------------------

@@ -9,13 +9,12 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.storage.session import create_engine, create_session_factory, session_scope
-
 
 # ---------------------------------------------------------------------------
 # Test 1: create_engine returns AsyncEngine without connecting

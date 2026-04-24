@@ -398,8 +398,12 @@ def test_phase_transition_json_fields_deterministic() -> None:
     run_id = _make_run_id()
     transition = _make_phase_transition()
     ended = _utcnow()
-    row1 = phase_transition_to_row(run_id=run_id, transition=transition, topology_used="star", ended_at=ended)  # type: ignore[arg-type]
-    row2 = phase_transition_to_row(run_id=run_id, transition=transition, topology_used="star", ended_at=ended)  # type: ignore[arg-type]
+    row1 = phase_transition_to_row(
+        run_id=run_id, transition=transition, topology_used="star", ended_at=ended
+    )  # type: ignore[arg-type]
+    row2 = phase_transition_to_row(
+        run_id=run_id, transition=transition, topology_used="star", ended_at=ended
+    )  # type: ignore[arg-type]
     assert row1["entry_reason"] == row2["entry_reason"]
     assert row1["phase_name"] == row2["phase_name"]
 
@@ -541,7 +545,9 @@ def test_tool_result_error_none_to_empty_string() -> None:
     from atm.observability.serializers import tool_call_to_row
 
     call = ToolCall(tool_name="noop", args={}, issued_by="a", issued_at=_utcnow())
-    result = ToolResult(call_id=call.id, ok=True, output=None, error=None, latency_ms=1, finished_at=_utcnow())
+    result = ToolResult(
+        call_id=call.id, ok=True, output=None, error=None, latency_ms=1, finished_at=_utcnow()
+    )
     row = tool_call_to_row(run_id=_make_run_id(), agent_id="a", call=call, result=result)
     assert row["error"] == ""
 

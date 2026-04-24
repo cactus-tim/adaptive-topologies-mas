@@ -47,9 +47,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from atm.core.types import Message, MessageKind, Phase, PhaseTransition
 from atm.observability.callbacks import ExperimentCallbackHandler
 from atm.storage.checkpointer import checkpointer_scope
-from atm.storage.models import Base, BudgetEvent, Experiment
+from atm.storage.models import Base, BudgetEvent, Experiment, Run
 from atm.storage.models import Phase as PhaseModel
-from atm.storage.models import Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_session_factory, session_scope
 
@@ -193,9 +192,7 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
 
     # --- Assertions: PostgreSQL rows ---
     async with session_scope(factory) as session:
-        phase_result = await session.execute(
-            select(PhaseModel).where(PhaseModel.run_id == run_id)
-        )
+        phase_result = await session.execute(select(PhaseModel).where(PhaseModel.run_id == run_id))
         phases = phase_result.scalars().all()
         assert len(phases) >= 1, f"Expected >= 1 Phase row, got {len(phases)}"
 
@@ -225,9 +222,7 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
     )
 
     phases_df = pd.read_parquet(run_dir / "phases.parquet")
-    assert phases_df.shape[0] >= 1, (
-        f"Expected >= 1 phase row in Parquet, got {phases_df.shape[0]}"
-    )
+    assert phases_df.shape[0] >= 1, f"Expected >= 1 phase row in Parquet, got {phases_df.shape[0]}"
 
     # --- Assertions: checkpointer setup (arch.md §11.3, two pools) ---
     pg_dsn = str(pg_engine_fast.url)
@@ -295,14 +290,10 @@ async def test_alembic_equivalence(pg_engine_alembic: AsyncEngine) -> None:
         runs_columns = {row[0] for row in result}
 
     missing_cols = required_runs_columns - runs_columns
-    assert not missing_cols, (
-        f"Missing columns in 'runs' table: {missing_cols}"
-    )
+    assert not missing_cols, f"Missing columns in 'runs' table: {missing_cols}"
 
     # DDL equivalence: Base.metadata table names must match alembic-created tables
     orm_table_names = {t.name for t in Base.metadata.sorted_tables}
     # business tables in ORM must all be present in DB
     orm_missing = orm_table_names - db_tables
-    assert not orm_missing, (
-        f"ORM tables not found in DB after alembic upgrade: {orm_missing}"
-    )
+    assert not orm_missing, f"ORM tables not found in DB after alembic upgrade: {orm_missing}"

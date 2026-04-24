@@ -20,6 +20,7 @@ is acceptable for the buffer sizes used in experiments (buffer_rows defaults to 
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,8 @@ from atm.storage.schemas import (
     TOOL_CALL_SCHEMA,
     TOPOLOGY_TRANSITION_SCHEMA,
 )
+
+_SAFE_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 @dataclass
@@ -176,6 +179,10 @@ class ParquetWriter:
 
     async def write_scratchpad(self, agent_id: str, row: dict) -> None:  # type: ignore[type-arg]
         """Buffer a row for the per-agent scratchpad stream."""
+        if not _SAFE_AGENT_ID_RE.match(agent_id):
+            raise ValueError(
+                f"Invalid agent_id {agent_id!r}: must match [A-Za-z0-9_-]{{1,64}}"
+            )
         state = await self._get_scratchpad_stream(agent_id)
         await self._append(state, row)
 

@@ -133,7 +133,9 @@ async def test_tz_aware_roundtrip(tmp_path: Path) -> None:
     await writer.flush()
     await writer.close()
 
-    expected_path = tmp_path / "experiments" / str(exp_id) / "runs" / str(run_id) / "llm_calls.parquet"
+    expected_path = (
+        tmp_path / "experiments" / str(exp_id) / "runs" / str(run_id) / "llm_calls.parquet"
+    )
     assert expected_path.exists()
 
     table = pq.read_table(expected_path)
@@ -314,7 +316,24 @@ async def test_multi_stream_concurrency(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 8: all stream write methods + flush work without error
+# Test 8: write_scratchpad rejects path traversal / unsafe agent_id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_write_scratchpad_rejects_path_traversal(tmp_path: Path) -> None:
+    """write_scratchpad must raise ValueError for agent_id values that fail safety regex."""
+    from atm.storage.parquet_writer import ParquetWriter
+
+    writer = ParquetWriter(tmp_path, uuid4(), uuid4())
+    for bad in ["../evil", "agent/../..", "", "agent\0", "ab/cd", "." * 100]:
+        with pytest.raises(ValueError):
+            await writer.write_scratchpad(bad, _sample_scratchpad_row(str(uuid4())))
+    await writer.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 9: all stream write methods + flush work without error
 # ---------------------------------------------------------------------------
 
 

@@ -8,7 +8,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
 import pyarrow as pa
 
 # ---------------------------------------------------------------------------
@@ -19,13 +18,13 @@ import pyarrow as pa
 def test_import_all_schemas() -> None:
     """All 6 schemas and _TS_UTC alias must be importable."""
     from atm.storage.schemas import (  # noqa: F401
+        _TS_UTC,
         LLM_CALL_SCHEMA,
         MESSAGE_SCHEMA,
-        TOOL_CALL_SCHEMA,
         PHASE_SCHEMA,
-        TOPOLOGY_TRANSITION_SCHEMA,
         SCRATCHPAD_SCHEMA,
-        _TS_UTC,
+        TOOL_CALL_SCHEMA,
+        TOPOLOGY_TRANSITION_SCHEMA,
     )
 
 
@@ -99,46 +98,89 @@ def test_schemas_field_names_match_expected() -> None:
     from atm.storage.schemas import (
         LLM_CALL_SCHEMA,
         MESSAGE_SCHEMA,
-        TOOL_CALL_SCHEMA,
         PHASE_SCHEMA,
-        TOPOLOGY_TRANSITION_SCHEMA,
         SCRATCHPAD_SCHEMA,
+        TOOL_CALL_SCHEMA,
+        TOPOLOGY_TRANSITION_SCHEMA,
     )
 
     llm_names = set(LLM_CALL_SCHEMA.names)
     assert llm_names == {
-        "run_id", "agent_id", "model", "at", "input_tokens", "output_tokens",
-        "cache_hit_tokens", "cost_usd", "latency_ms", "cache_scope", "fingerprint",
+        "run_id",
+        "agent_id",
+        "model",
+        "at",
+        "input_tokens",
+        "output_tokens",
+        "cache_hit_tokens",
+        "cost_usd",
+        "latency_ms",
+        "cache_scope",
+        "fingerprint",
     }, f"LLM_CALL_SCHEMA field names mismatch: {llm_names}"
 
     msg_names = set(MESSAGE_SCHEMA.names)
     assert msg_names == {
-        "run_id", "message_id", "at", "from_agent", "to_agent", "mtype", "payload_json",
+        "run_id",
+        "message_id",
+        "at",
+        "from_agent",
+        "to_agent",
+        "mtype",
+        "payload_json",
     }, f"MESSAGE_SCHEMA field names mismatch: {msg_names}"
 
     tool_names = set(TOOL_CALL_SCHEMA.names)
     assert tool_names == {
-        "run_id", "agent_id", "tool_name", "at", "latency_ms", "ok", "args_json",
-        "result_json", "error",
+        "run_id",
+        "agent_id",
+        "tool_name",
+        "at",
+        "latency_ms",
+        "ok",
+        "args_json",
+        "result_json",
+        "error",
     }, f"TOOL_CALL_SCHEMA field names mismatch: {tool_names}"
 
     phase_names = set(PHASE_SCHEMA.names)
     assert phase_names == {
-        "run_id", "phase_name", "from_phase", "started_at", "ended_at",
-        "entry_reason", "topology_used", "decided_by",
+        "run_id",
+        "phase_name",
+        "from_phase",
+        "started_at",
+        "ended_at",
+        "entry_reason",
+        "topology_used",
+        "decided_by",
     }, f"PHASE_SCHEMA field names mismatch: {phase_names}"
 
     topo_names = set(TOPOLOGY_TRANSITION_SCHEMA.names)
     assert topo_names == {
-        "run_id", "from_topology", "to_topology", "phase_at_decision",
-        "iter_within_phase", "iter_within_topology", "decided_by", "reason",
-        "considered_alternatives_json", "guards_applied_json", "signals_snapshot_json",
-        "router_cost_usd", "at",
+        "run_id",
+        "from_topology",
+        "to_topology",
+        "phase_at_decision",
+        "iter_within_phase",
+        "iter_within_topology",
+        "decided_by",
+        "reason",
+        "considered_alternatives_json",
+        "guards_applied_json",
+        "signals_snapshot_json",
+        "router_cost_usd",
+        "at",
     }, f"TOPOLOGY_TRANSITION_SCHEMA field names mismatch: {topo_names}"
 
     scratch_names = set(SCRATCHPAD_SCHEMA.names)
     assert scratch_names == {
-        "run_id", "agent_id", "step_idx", "at", "role", "content", "tool_calls_json",
+        "run_id",
+        "agent_id",
+        "step_idx",
+        "at",
+        "role",
+        "content",
+        "tool_calls_json",
     }, f"SCRATCHPAD_SCHEMA field names mismatch: {scratch_names}"
 
 
@@ -152,7 +194,7 @@ def test_ts_utc_alias_type() -> None:
     from atm.storage.schemas import _TS_UTC
 
     expected = pa.timestamp("us", tz="UTC")
-    assert _TS_UTC == expected
+    assert expected == _TS_UTC
 
 
 # ---------------------------------------------------------------------------

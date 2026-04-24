@@ -306,7 +306,9 @@ async def test_budget_warn_branching() -> None:
     mock_result2.scalar_one = MagicMock(side_effect=scalar_values_call2)
 
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[mock_result1, mock_result1, mock_result2, mock_result2])
+    session.execute = AsyncMock(
+        side_effect=[mock_result1, mock_result1, mock_result2, mock_result2]
+    )
     session.add = MagicMock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
@@ -333,7 +335,8 @@ async def test_budget_warn_branching() -> None:
 
     add_calls = session.add.call_args_list
     warn_inserts = [
-        c for c in add_calls
+        c
+        for c in add_calls
         if isinstance(c.args[0], BudgetEventModel) and c.args[0].event == "warn"
     ]
     assert len(warn_inserts) == 1, f"Expected 1 warn insert, got {len(warn_inserts)}"
@@ -344,7 +347,8 @@ async def test_budget_warn_branching() -> None:
 
     add_calls2 = session.add.call_args_list
     warn_inserts2 = [
-        c for c in add_calls2
+        c
+        for c in add_calls2
         if isinstance(c.args[0], BudgetEventModel) and c.args[0].event == "warn"
     ]
     assert len(warn_inserts2) == 0, "Duplicate warn should not be inserted"
@@ -390,7 +394,8 @@ async def test_budget_exceed_branching() -> None:
 
     add_calls = session.add.call_args_list
     exceed_inserts = [
-        c for c in add_calls
+        c
+        for c in add_calls
         if isinstance(c.args[0], BudgetEventModel) and c.args[0].event == "exceed"
     ]
     assert len(exceed_inserts) == 1, f"Expected 1 exceed insert, got {len(exceed_inserts)}"
@@ -495,6 +500,7 @@ async def test_phase_transition_prev_ended_at_update() -> None:
     call_count = 0
 
     session = AsyncMock()
+
     async def mock_execute(*args: object, **kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
@@ -640,7 +646,10 @@ async def test_exception_in_hook_is_swallowed() -> None:
 
 @pytest.mark.asyncio
 async def test_on_tool_end_latency_computed() -> None:
-    """on_tool_start followed by on_tool_end produces a row with latency_ms > 0 and < 1000."""
+    """on_tool_start followed by on_tool_end produces a row with latency_ms > 0 and < 1000,
+    tool_name and agent_id propagated from on_tool_start, result_json is valid JSON."""
+    import json
+
     from atm.observability.callbacks import ExperimentCallbackHandler
 
     parquet_writer = AsyncMock()
@@ -652,17 +661,17 @@ async def test_on_tool_end_latency_computed() -> None:
     tool_run_id = uuid4()
 
     await handler.on_tool_start(  # type: ignore[union-attr]
-        serialized={"name": "my_tool"},
-        input_str="arg1",
+        serialized={"name": "search"},
+        input_str="q",
         run_id=tool_run_id,
-        parent_run_id=uuid4(),
+        metadata={"agent_id": "agent-1"},
     )
 
     # Small sleep to ensure measurable latency
     await asyncio.sleep(0.001)
 
     await handler.on_tool_end(  # type: ignore[union-attr]
-        output="result text",
+        output="result",
         run_id=tool_run_id,
         parent_run_id=uuid4(),
     )
@@ -673,6 +682,9 @@ async def test_on_tool_end_latency_computed() -> None:
     assert written_row["latency_ms"] < 1000, "latency_ms should be < 1000 for a trivial tool call"
     assert written_row["ok"] is True
     assert written_row["error"] == ""
+    assert written_row["tool_name"] == "search", f"Expected 'search', got {written_row['tool_name']!r}"
+    assert written_row["agent_id"] == "agent-1", f"Expected 'agent-1', got {written_row['agent_id']!r}"
+    assert json.loads(written_row["result_json"]) == "result", "result_json should be valid JSON encoding the output string"
 
 
 # ---------------------------------------------------------------------------
@@ -709,7 +721,46 @@ async def test_on_tool_error_writes_row() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 14. message_emit custom event
+# 14. on_tool_error propagates tool_name, agent_id from on_tool_start
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_on_tool_error_records_error() -> None:
+    """on_tool_start + on_tool_error: row has ok=False, error string, and tool_name/agent_id from start."""
+    parquet_writer = AsyncMock()
+    parquet_writer.write_tool_call = AsyncMock()
+
+    handler = _make_handler(parquet_writer=parquet_writer)
+
+    tool_run_id = uuid4()
+    await handler.on_tool_start(  # type: ignore[union-attr]
+        serialized={"name": "failing_tool"},
+        input_str="some_arg",
+        run_id=tool_run_id,
+        metadata={"agent_id": "agent-error"},
+    )
+
+    await handler.on_tool_error(  # type: ignore[union-attr]
+        error=RuntimeError("network timeout"),
+        run_id=tool_run_id,
+        parent_run_id=uuid4(),
+    )
+
+    parquet_writer.write_tool_call.assert_awaited_once()
+    written_row = parquet_writer.write_tool_call.call_args.args[0]
+    assert written_row["ok"] is False
+    assert "network timeout" in written_row["error"]
+    assert written_row["tool_name"] == "failing_tool", (
+        f"Expected 'failing_tool', got {written_row['tool_name']!r}"
+    )
+    assert written_row["agent_id"] == "agent-error", (
+        f"Expected 'agent-error', got {written_row['agent_id']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 16. message_emit custom event
 # ---------------------------------------------------------------------------
 
 

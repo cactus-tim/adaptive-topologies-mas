@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from atm.core.types import Message, PhaseTransition
 from atm.core.types import TopologyTransition as TopologyTransitionDomain
 from atm.observability.serializers import (
+    _dumps,
     message_to_row,
     phase_transition_to_row,
     topology_transition_to_row,
@@ -82,8 +83,8 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         self._root_run_id: UUID | None = None  # set on first root on_chain_start
         self._warn_emitted: bool = False
         self._exceed_emitted: bool = False
-        # Maps tool run_id → monotonic start time for latency calculation
-        self._tool_starts: dict[UUID, float] = {}
+        # Maps tool run_id → start info dict for latency calculation and metadata
+        self._tool_starts: dict[UUID, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Chain hooks
@@ -188,7 +189,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
 
         # Atomic budget update (arch.md §4.2, §18/#4)
         try:
-            cost_delta_decimal = Decimal(str(float((response.llm_output or {}).get("cost_usd", 0.0))))
+            cost_delta_decimal = Decimal(
+                str(float((response.llm_output or {}).get("cost_usd", 0.0)))
+            )
             await self._update_budget(cost_delta_decimal)
         except Exception:
             self._log.critical("on_llm_end: budget update failed", exc_info=True)
@@ -267,10 +270,19 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         *,
         run_id: UUID,
         parent_run_id: UUID | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        inputs: Any | None = None,
         **kwargs: Any,
     ) -> None:
-        """Record tool start time for latency calculation."""
-        self._tool_starts[run_id] = time.monotonic()
+        """Record tool start time, tool_name, agent_id and args for latency/row population."""
+        self._tool_starts[run_id] = {
+            "started_at": time.monotonic(),
+            "tool_name": serialized.get("name", "") if serialized else "",
+            "agent_id": (metadata or {}).get("agent_id", ""),
+            "args_json": _dumps(inputs) if inputs is not None else (input_str if isinstance(input_str, str) else ""),
+            "at": datetime.now(UTC),
+        }
 
     async def on_tool_end(
         self,
@@ -283,17 +295,17 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Write tool call row to Parquet with ok=True."""
         try:
             start = self._tool_starts.pop(run_id, None)
-            latency_ms = (time.monotonic() - start) * 1000.0 if start is not None else 0.0
+            latency_ms = (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
 
             row = {
                 "run_id": str(self._run_id),
-                "agent_id": "",
-                "tool_name": "",
-                "at": _now_utc(),
+                "agent_id": start["agent_id"] if start is not None else "",
+                "tool_name": start["tool_name"] if start is not None else "",
+                "at": start["at"] if start is not None else _now_utc(),
                 "latency_ms": latency_ms,
                 "ok": True,
-                "args_json": "{}",
-                "result_json": str(output),
+                "args_json": start["args_json"] if start is not None else "{}",
+                "result_json": _dumps(output),
                 "error": "",
             }
             await self._parquet_writer.write_tool_call(row)
@@ -311,16 +323,16 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Write tool call row to Parquet with ok=False."""
         try:
             start = self._tool_starts.pop(run_id, None)
-            latency_ms = (time.monotonic() - start) * 1000.0 if start is not None else 0.0
+            latency_ms = (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
 
             row = {
                 "run_id": str(self._run_id),
-                "agent_id": "",
-                "tool_name": "",
-                "at": _now_utc(),
+                "agent_id": start["agent_id"] if start is not None else "",
+                "tool_name": start["tool_name"] if start is not None else "",
+                "at": start["at"] if start is not None else _now_utc(),
                 "latency_ms": latency_ms,
                 "ok": False,
-                "args_json": "{}",
+                "args_json": start["args_json"] if start is not None else "{}",
                 "result_json": "",
                 "error": str(error),
             }
@@ -396,7 +408,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                     id=uuid.uuid4(),
                     run_id=self._run_id,
                     phase_name=str(transition.to_phase),
-                    from_phase=str(transition.from_phase) if transition.from_phase is not None else None,
+                    from_phase=str(transition.from_phase)
+                    if transition.from_phase is not None
+                    else None,
                     started_at=transition.at,
                     ended_at=None,
                     entry_reason=transition.entry_reason,
@@ -409,9 +423,7 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             row = phase_transition_to_row(self._run_id, transition)
             await self._parquet_writer.write_phase(row)
         except Exception:
-            self._log.critical(
-                "on_custom_event[phase_transition]: pg insert failed", exc_info=True
-            )
+            self._log.critical("on_custom_event[phase_transition]: pg insert failed", exc_info=True)
 
     async def _handle_topology_transition(self, data: Any) -> None:
         """Invariant (b): flush Parquet FIRST, then INSERT topology_transition into PG."""
