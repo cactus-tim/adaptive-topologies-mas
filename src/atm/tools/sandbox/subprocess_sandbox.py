@@ -47,6 +47,9 @@ class SubprocessSandbox:
       and removed in a ``finally`` block, even on error.
     - On timeout the process tree is killed and ``timed_out=True`` is returned.
     - ``oom_killed`` is always ``False`` — subprocess sandbox does not track OOM.
+    - **Environment stripping**: the subprocess environment is reduced to
+      ``{"PATH": ...}`` only.  Dependencies must be available in stdlib or
+      globally installed — venv/project-local packages may not be accessible.
     """
 
     IS_ISOLATED: ClassVar[bool] = False
