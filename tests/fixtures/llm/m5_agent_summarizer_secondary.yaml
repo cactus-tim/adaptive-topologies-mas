@@ -1,0 +1,9 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: p1_summarizer
+    role: summarizer
+    step_idx: 0
+    content: "SUMMARY_TEXT"
+    tool_calls: []
+    finish_reason: stop
