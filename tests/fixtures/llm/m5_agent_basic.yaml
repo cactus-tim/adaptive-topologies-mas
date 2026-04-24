@@ -1,0 +1,9 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: p1
+    role: planner
+    step_idx: 0
+    content: "Plan: step 1"
+    tool_calls: []
+    finish_reason: stop

@@ -1,0 +1,31 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: e1
+    role: executor
+    step_idx: 0
+    model: fake:deterministic
+    content: "I will run print(1+1) to verify."
+    tool_calls:
+      - name: code_run
+        args:
+          lang: python
+          code: "print(1+1)"
+    finish_reason: tool_calls
+    usage:
+      input_tokens: 42
+      output_tokens: 18
+      total_tokens: 60
+      cached_tokens: 0
+  - agent_id: e1
+    role: executor
+    step_idx: 1
+    model: fake:deterministic
+    content: "Successfully executed; the output was 2."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 65
+      output_tokens: 12
+      total_tokens: 77
+      cached_tokens: 0

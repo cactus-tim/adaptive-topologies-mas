@@ -1,0 +1,27 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: p1
+    role: planner
+    step_idx: 0
+    content: "I will call the dummy tool first time."
+    tool_calls:
+      - name: dummy_tool
+        args:
+          query: "first"
+    finish_reason: tool_calls
+  - agent_id: p1
+    role: planner
+    step_idx: 1
+    content: "Now calling the dummy tool second time."
+    tool_calls:
+      - name: dummy_tool
+        args:
+          query: "second"
+    finish_reason: tool_calls
+  - agent_id: p1
+    role: planner
+    step_idx: 2
+    content: "Both tool calls done. Finished."
+    tool_calls: []
+    finish_reason: stop
