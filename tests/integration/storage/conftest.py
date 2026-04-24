@@ -60,12 +60,11 @@ async def pg_engine_alembic(pg_dsn: str) -> AsyncGenerator[AsyncEngine, None]:
 
     Session-scoped — used only for the DDL equivalence smoke test.
     DSN is passed via PG_DSN env var (as expected by alembic/env.py).
+    alembic/env.py builds an async engine via async_engine_from_config,
+    so the asyncpg driver suffix (postgresql+asyncpg://) MUST be kept.
     """
-    # Derive psycopg-compatible DSN for alembic (it uses synchronous psycopg)
-    psycopg_dsn = pg_dsn.replace("postgresql+asyncpg://", "postgresql://")
-
     env = os.environ.copy()
-    env["PG_DSN"] = psycopg_dsn
+    env["PG_DSN"] = pg_dsn
 
     subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
