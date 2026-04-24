@@ -40,9 +40,7 @@ def corpus_dir(tmp_path: Path) -> Path:
 
 
 class TestBuildDefaultRegistry:
-    def test_prod_mode_rejects_subprocess(
-        self, workspace: Path, corpus_dir: Path
-    ) -> None:
+    def test_prod_mode_rejects_subprocess(self, workspace: Path, corpus_dir: Path) -> None:
         """prod_mode=True with non-isolated sandbox must raise ToolError."""
         sandbox = SubprocessSandbox()
         assert sandbox.IS_ISOLATED is False
@@ -58,9 +56,7 @@ class TestBuildDefaultRegistry:
         error_msg = str(exc_info.value)
         assert "isolated" in error_msg.lower()
 
-    def test_prod_mode_accepts_docker(
-        self, workspace: Path, corpus_dir: Path
-    ) -> None:
+    def test_prod_mode_accepts_docker(self, workspace: Path, corpus_dir: Path) -> None:
         """prod_mode=True with IS_ISOLATED=True sandbox must succeed."""
 
         class FakeDockerSandbox:
@@ -79,9 +75,7 @@ class TestBuildDefaultRegistry:
         assert registry is not None
         assert len(registry.names()) == 12
 
-    def test_default_registry_has_all_tools(
-        self, workspace: Path, corpus_dir: Path
-    ) -> None:
+    def test_default_registry_has_all_tools(self, workspace: Path, corpus_dir: Path) -> None:
         """Registry built with SubprocessSandbox should have all 12 tool names."""
         registry = build_default_registry(
             workspace=workspace,
@@ -108,9 +102,7 @@ class TestBuildDefaultRegistry:
         }
         assert set(names) == expected
 
-    def test_dev_mode_does_not_reject_subprocess(
-        self, workspace: Path, corpus_dir: Path
-    ) -> None:
+    def test_dev_mode_does_not_reject_subprocess(self, workspace: Path, corpus_dir: Path) -> None:
         """prod_mode=False (default) must accept non-isolated sandbox."""
         registry = build_default_registry(
             workspace=workspace,

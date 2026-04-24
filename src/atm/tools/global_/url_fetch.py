@@ -128,7 +128,7 @@ class UrlFetchTool:
             # Extract the message portion after "Tool 'url_fetch' failed: "
             prefix = "Tool 'url_fetch' failed: "
             if msg.startswith(prefix):
-                msg = msg[len(prefix):]
+                msg = msg[len(prefix) :]
             return ToolResult(
                 call_id=call_id,
                 ok=False,

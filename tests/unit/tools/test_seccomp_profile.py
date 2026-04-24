@@ -17,7 +17,9 @@ import pathlib
 
 import pytest
 
-SECCOMP_PATH = pathlib.Path(__file__).parent.parent.parent.parent / "conf" / "sandbox" / "seccomp.json"
+SECCOMP_PATH = (
+    pathlib.Path(__file__).parent.parent.parent.parent / "conf" / "sandbox" / "seccomp.json"
+)
 
 # Must match DENY_SET in scripts/derive_seccomp.py exactly.
 DENY_SET: frozenset[str] = frozenset(
@@ -71,8 +73,7 @@ def test_seccomp_json_is_valid(seccomp_profile: dict) -> None:  # type: ignore[t
 def test_default_action_is_errno(seccomp_profile: dict) -> None:  # type: ignore[type-arg]
     """defaultAction must be SCMP_ACT_ERRNO (deny-by-default)."""
     assert seccomp_profile.get("defaultAction") == "SCMP_ACT_ERRNO", (
-        f"Expected defaultAction='SCMP_ACT_ERRNO', "
-        f"got {seccomp_profile.get('defaultAction')!r}"
+        f"Expected defaultAction='SCMP_ACT_ERRNO', got {seccomp_profile.get('defaultAction')!r}"
     )
 
 

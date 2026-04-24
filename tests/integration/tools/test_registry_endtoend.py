@@ -161,7 +161,7 @@ class TestRegistryEndToEnd:
         call = ToolCall(
             tool_name="lint",
             issued_by="test_agent",
-            args={"code": 'x = 1\nprint(x)\n'},
+            args={"code": "x = 1\nprint(x)\n"},
         )
         result = run(registry.ainvoke_by_name("lint", call))
         assert result.ok is True

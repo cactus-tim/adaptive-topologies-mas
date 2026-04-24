@@ -39,9 +39,7 @@ async def test_todo_write_no_signals_in_shared() -> None:
     from atm.tools.local_.todo_write import TodoWriteTool
 
     tool = TodoWriteTool()
-    result = await tool.ainvoke(
-        {"todos": [{"id": "1", "content": "x", "status": "open"}]}
-    )
+    result = await tool.ainvoke({"todos": [{"id": "1", "content": "x", "status": "open"}]})
     shared = result.output["state_update"]["shared"]
     assert "signals" not in shared
 
@@ -53,9 +51,7 @@ async def test_todo_write_invalid_todo_missing_required_field() -> None:
 
     tool = TodoWriteTool()
     # Missing 'id' field
-    result = await tool.ainvoke(
-        {"todos": [{"content": "no id here", "status": "open"}]}
-    )
+    result = await tool.ainvoke({"todos": [{"content": "no id here", "status": "open"}]})
     assert result.ok is False
 
 

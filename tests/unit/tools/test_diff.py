@@ -11,9 +11,7 @@ async def test_diff_basic_change() -> None:
     from atm.tools.local_.diff import DiffTool
 
     tool = DiffTool()
-    result = await tool.ainvoke(
-        {"before": "hello\nworld\n", "after": "hello\npython\n"}
-    )
+    result = await tool.ainvoke({"before": "hello\nworld\n", "after": "hello\npython\n"})
     assert result.ok is True
     diff = result.output["diff"]
     assert "-world" in diff
@@ -37,9 +35,7 @@ async def test_diff_hunk_header_present() -> None:
     from atm.tools.local_.diff import DiffTool
 
     tool = DiffTool()
-    result = await tool.ainvoke(
-        {"before": "line1\nline2\n", "after": "line1\nline3\n"}
-    )
+    result = await tool.ainvoke({"before": "line1\nline2\n", "after": "line1\nline3\n"})
     assert result.ok is True
     assert "@@" in result.output["diff"]
 
@@ -50,9 +46,7 @@ async def test_diff_default_filenames_in_header() -> None:
     from atm.tools.local_.diff import DiffTool
 
     tool = DiffTool()
-    result = await tool.ainvoke(
-        {"before": "a\n", "after": "b\n"}
-    )
+    result = await tool.ainvoke({"before": "a\n", "after": "b\n"})
     assert result.ok is True
     diff = result.output["diff"]
     assert "before" in diff

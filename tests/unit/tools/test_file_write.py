@@ -173,7 +173,9 @@ async def test_file_write_parent_created_when_create_parents_true(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_file_write_atomic_on_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_file_write_atomic_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """If os.replace raises, no tmp file should remain in the workspace."""
     tool = _tool(tmp_path)
 

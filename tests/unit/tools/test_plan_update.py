@@ -39,9 +39,7 @@ async def test_plan_update_no_signals_in_shared() -> None:
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
-    result = await tool.ainvoke(
-        {"steps": [{"id": "1", "title": "x", "status": "open"}]}
-    )
+    result = await tool.ainvoke({"steps": [{"id": "1", "title": "x", "status": "open"}]})
     shared = result.output["state_update"]["shared"]
     assert "signals" not in shared
 
@@ -53,9 +51,7 @@ async def test_plan_update_invalid_step_missing_required_field() -> None:
 
     tool = PlanUpdateTool()
     # Missing 'id' field
-    result = await tool.ainvoke(
-        {"steps": [{"title": "no id", "status": "open"}]}
-    )
+    result = await tool.ainvoke({"steps": [{"title": "no id", "status": "open"}]})
     assert result.ok is False
 
 
@@ -65,9 +61,7 @@ async def test_plan_update_invalid_status_returns_error() -> None:
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
-    result = await tool.ainvoke(
-        {"steps": [{"id": "1", "title": "bad", "status": "flying"}]}
-    )
+    result = await tool.ainvoke({"steps": [{"id": "1", "title": "bad", "status": "flying"}]})
     assert result.ok is False
 
 

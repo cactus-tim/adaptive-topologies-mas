@@ -142,9 +142,7 @@ class FileWriteTool:
         overwrite: bool = bool(args.get("overwrite", False))
         # Per-call create_parents may override the constructor default if
         # the caller passes it explicitly in args.
-        create_parents: bool = bool(
-            args.get("create_parents", self._create_parents)
-        )
+        create_parents: bool = bool(args.get("create_parents", self._create_parents))
 
         # 1. Reject absolute paths in the input
         if raw_path.startswith("/"):

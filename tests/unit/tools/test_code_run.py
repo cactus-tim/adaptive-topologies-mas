@@ -55,9 +55,7 @@ async def test_code_run_nonzero_exit(tool: CodeRunTool) -> None:
 @pytest.mark.asyncio
 async def test_code_run_timeout(tool: CodeRunTool) -> None:
     """Infinite loop with timeout=1 should produce ok=False and timed_out=True."""
-    result = await tool.ainvoke(
-        {"lang": "python", "code": "while True: pass", "timeout_s": 1.0}
-    )
+    result = await tool.ainvoke({"lang": "python", "code": "while True: pass", "timeout_s": 1.0})
     assert result.ok is False
     assert result.output["timed_out"] is True
 

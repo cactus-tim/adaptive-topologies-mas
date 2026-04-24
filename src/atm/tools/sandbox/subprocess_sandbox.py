@@ -85,9 +85,7 @@ class SubprocessSandbox:
             If *lang* is not ``"python"`` or ``"node"``.
         """
         if lang not in _LANG_FILENAME:
-            raise ValueError(
-                f"Unsupported language: {lang!r}. Supported: {sorted(_LANG_FILENAME)}"
-            )
+            raise ValueError(f"Unsupported language: {lang!r}. Supported: {sorted(_LANG_FILENAME)}")
 
         tmpdir = tempfile.mkdtemp(prefix="atm_subprocess_")
         t0 = time.monotonic()

@@ -77,11 +77,7 @@ def resolve_and_validate_url(url: str, allow_private: bool = False) -> str:
             ) from exc
 
         if not allow_private and (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
+            ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
         ):
             raise ToolError(
                 tool_name="url_fetch",

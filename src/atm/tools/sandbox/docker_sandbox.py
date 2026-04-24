@@ -105,9 +105,7 @@ class DockerSandbox:
         ExecResult
         """
         effective_timeout = timeout if timeout is not None else self._config.timeout_s
-        return await asyncio.to_thread(
-            self._execute_sync, lang, code, files, effective_timeout
-        )
+        return await asyncio.to_thread(self._execute_sync, lang, code, files, effective_timeout)
 
     def _make_archive(self, code: str, lang: str, files: dict[str, str] | None) -> bytes:
         """Build a tar archive containing main code + optional extra files."""
@@ -219,9 +217,7 @@ class DockerSandbox:
             # Check OOM
             try:
                 container.reload()
-                oom_killed: bool = bool(
-                    container.attrs.get("State", {}).get("OOMKilled", False)
-                )
+                oom_killed: bool = bool(container.attrs.get("State", {}).get("OOMKilled", False))
             except Exception:
                 oom_killed = False
 

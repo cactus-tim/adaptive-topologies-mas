@@ -45,9 +45,7 @@ class TodoWriteTool:
             "M5 reducer is responsible for merging (append semantics)."
         ),
         parameters={
-            "todos": (
-                "list of {id: str, content: str, status: 'open'|'done'|'in_progress'}"
-            ),
+            "todos": ("list of {id: str, content: str, status: 'open'|'done'|'in_progress'}"),
         },
         returns={"state_update": "object (reducer-consumed)"},
     )

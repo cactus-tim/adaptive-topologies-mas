@@ -48,7 +48,9 @@ def _make_tool(allow_private: bool = False, max_bytes: int = 1_000_000) -> UrlFe
     )
 
 
-def _mock_transport_200(body: bytes = b"Hello, world!", content_type: str = "text/plain") -> httpx.MockTransport:
+def _mock_transport_200(
+    body: bytes = b"Hello, world!", content_type: str = "text/plain"
+) -> httpx.MockTransport:
     """Return a MockTransport that responds 200 OK with the given body."""
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -62,8 +62,7 @@ def build_default_registry(
         raise ToolError(
             tool_name="build_default_registry",
             message=(
-                "prod_mode requires an isolated sandbox (DockerSandbox); "
-                "got non-isolated sandbox"
+                "prod_mode requires an isolated sandbox (DockerSandbox); got non-isolated sandbox"
             ),
         )
 

@@ -15,7 +15,9 @@ _NETWORK_ENABLED = os.environ.get("ATM_ENABLE_NETWORK_TESTS") == "1"
 
 
 @pytest.mark.network
-@pytest.mark.skipif(not _NETWORK_ENABLED, reason="Network tests disabled (set ATM_ENABLE_NETWORK_TESTS=1)")
+@pytest.mark.skipif(
+    not _NETWORK_ENABLED, reason="Network tests disabled (set ATM_ENABLE_NETWORK_TESTS=1)"
+)
 @pytest.mark.asyncio
 async def test_fetch_example_com() -> None:
     """Fetch https://example.com and assert status=200."""

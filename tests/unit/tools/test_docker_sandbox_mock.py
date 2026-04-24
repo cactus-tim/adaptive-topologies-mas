@@ -123,8 +123,9 @@ def test_prefetch_false_no_pull(seccomp_json: str, sandbox_config: SandboxConfig
     """When prefetch=False and ATM_AUTO_PULL_IMAGES != '1', no pull should occur."""
     fake_client = _make_fake_docker_client(_make_fake_container())
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -132,7 +133,9 @@ def test_prefetch_false_no_pull(seccomp_json: str, sandbox_config: SandboxConfig
             prefetch=False,
         )
 
-    assert not fake_client.images.pull.called, "images.pull should NOT be called when prefetch=False"
+    assert not fake_client.images.pull.called, (
+        "images.pull should NOT be called when prefetch=False"
+    )
     _ = sandbox
 
 
@@ -140,8 +143,9 @@ def test_auto_pull_env_triggers_pull(seccomp_json: str, sandbox_config: SandboxC
     """When ATM_AUTO_PULL_IMAGES='1', images.pull should be called even without prefetch=True."""
     fake_client = _make_fake_docker_client(_make_fake_container())
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "1"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "1"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -149,7 +153,9 @@ def test_auto_pull_env_triggers_pull(seccomp_json: str, sandbox_config: SandboxC
             prefetch=False,
         )
 
-    assert fake_client.images.pull.called, "images.pull should be called when ATM_AUTO_PULL_IMAGES=1"
+    assert fake_client.images.pull.called, (
+        "images.pull should be called when ATM_AUTO_PULL_IMAGES=1"
+    )
     _ = sandbox
 
 
@@ -166,8 +172,9 @@ async def test_container_run_kwargs_hardening(
     fake_container = _make_fake_container(stdout=b"2\n")
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -203,8 +210,9 @@ async def test_container_run_working_dir(seccomp_json: str, sandbox_config: Sand
     fake_container = _make_fake_container(stdout=b"")
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -223,8 +231,9 @@ async def test_container_run_mem_and_pids(seccomp_json: str, sandbox_config: San
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -244,8 +253,9 @@ async def test_container_run_detach_true(seccomp_json: str, sandbox_config: Sand
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -271,8 +281,9 @@ async def test_container_remove_called_on_success(
     fake_container = _make_fake_container(stdout=b"ok\n")
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -292,8 +303,9 @@ async def test_container_remove_called_on_wait_exception(
     fake_container = _make_fake_container(raise_wait=RuntimeError("wait failed"))
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -328,8 +340,9 @@ async def test_timeout_kills_container_and_sets_timed_out(
 
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -356,8 +369,9 @@ async def test_exec_result_stdout_captured(
     fake_container = _make_fake_container(stdout=b"hello\n", exit_code=0)
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -371,15 +385,14 @@ async def test_exec_result_stdout_captured(
 
 
 @pytest.mark.asyncio
-async def test_exec_result_oom_killed(
-    seccomp_json: str, sandbox_config: SandboxConfig
-) -> None:
+async def test_exec_result_oom_killed(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
     """oom_killed must be True when OOMKilled is set in container state."""
     fake_container = _make_fake_container(exit_code=137, oom_killed=True)
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -397,15 +410,14 @@ async def test_exec_result_oom_killed(
 
 
 @pytest.mark.asyncio
-async def test_default_image_map_python(
-    seccomp_json: str, sandbox_config: SandboxConfig
-) -> None:
+async def test_default_image_map_python(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
     """Default image for 'python' lang must be python:3.11-slim."""
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,
@@ -421,17 +433,16 @@ async def test_default_image_map_python(
 
 
 @pytest.mark.asyncio
-async def test_custom_image_map_overrides(
-    seccomp_json: str, sandbox_config: SandboxConfig
-) -> None:
+async def test_custom_image_map_overrides(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
     """Custom image_map should override the default for that language."""
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
 
     custom_image = "my-python:custom"
 
-    with patch("docker.from_env", return_value=fake_client), patch.dict(
-        "os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
     ):
         sandbox = DockerSandbox(
             config=sandbox_config,

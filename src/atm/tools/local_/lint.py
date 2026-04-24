@@ -144,9 +144,7 @@ class LintTool:
 
         return data
 
-    async def _run_pylint(
-        self, code: str, filename: str
-    ) -> tuple[list[Any] | None, str | None]:
+    async def _run_pylint(self, code: str, filename: str) -> tuple[list[Any] | None, str | None]:
         """Run pylint on *code* via stdin flag ``--from-stdin``.
 
         Returns ``(diagnostics, skipped_reason)``.

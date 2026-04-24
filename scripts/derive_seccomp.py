@@ -75,7 +75,7 @@ OUTPUT_PATH = pathlib.Path(__file__).parent.parent / "conf" / "sandbox" / "secco
 
 def _fetch(url: str) -> dict:  # type: ignore[type-arg]
     """Fetch JSON from *url* and return the parsed object."""
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=30) as response:
         return json.loads(response.read())
 
 

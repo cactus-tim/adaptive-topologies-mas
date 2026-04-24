@@ -67,7 +67,9 @@ def _syscall_test_code(syscall_name: str, call_code: str) -> str:
     """)
 
 
-async def _assert_syscall_blocked(sandbox: DockerSandbox, syscall_name: str, call_code: str) -> None:
+async def _assert_syscall_blocked(
+    sandbox: DockerSandbox, syscall_name: str, call_code: str
+) -> None:
     """Run the syscall test code and assert it reports BLOCKED_OK."""
     code = _syscall_test_code(syscall_name, call_code)
     result = await sandbox.execute(lang="python", code=code)
