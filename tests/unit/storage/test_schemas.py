@@ -130,8 +130,10 @@ def test_schemas_field_names_match_expected() -> None:
 
     topo_names = set(TOPOLOGY_TRANSITION_SCHEMA.names)
     assert topo_names == {
-        "run_id", "at_iter", "at", "from_topology", "to_topology",
-        "decided_by", "considered_alternatives_json", "rationale", "cost_usd", "guarded",
+        "run_id", "from_topology", "to_topology", "phase_at_decision",
+        "iter_within_phase", "iter_within_topology", "decided_by", "reason",
+        "considered_alternatives_json", "guards_applied_json", "signals_snapshot_json",
+        "router_cost_usd", "at",
     }, f"TOPOLOGY_TRANSITION_SCHEMA field names mismatch: {topo_names}"
 
     scratch_names = set(SCRATCHPAD_SCHEMA.names)
@@ -170,12 +172,12 @@ def test_llm_call_schema_numeric_types() -> None:
 
 
 def test_topology_transition_schema_types() -> None:
-    """TOPOLOGY_TRANSITION_SCHEMA: at_iter=int32, cost_usd=float64, guarded=bool."""
+    """TOPOLOGY_TRANSITION_SCHEMA: iter_within_phase/iter_within_topology=int32, router_cost_usd=float64."""
     from atm.storage.schemas import TOPOLOGY_TRANSITION_SCHEMA
 
-    assert TOPOLOGY_TRANSITION_SCHEMA.field("at_iter").type == pa.int32()
-    assert TOPOLOGY_TRANSITION_SCHEMA.field("cost_usd").type == pa.float64()
-    assert TOPOLOGY_TRANSITION_SCHEMA.field("guarded").type == pa.bool_()
+    assert TOPOLOGY_TRANSITION_SCHEMA.field("iter_within_phase").type == pa.int32()
+    assert TOPOLOGY_TRANSITION_SCHEMA.field("iter_within_topology").type == pa.int32()
+    assert TOPOLOGY_TRANSITION_SCHEMA.field("router_cost_usd").type == pa.float64()
 
 
 def test_scratchpad_schema_step_idx_type() -> None:

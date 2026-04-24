@@ -87,15 +87,18 @@ def _sample_phase_row(run_id: str) -> dict:  # type: ignore[type-arg]
 def _sample_topology_transition_row(run_id: str) -> dict:  # type: ignore[type-arg]
     return {
         "run_id": run_id,
-        "at_iter": 1,
-        "at": _utcnow(),
         "from_topology": "star",
         "to_topology": "mesh",
-        "decided_by": "coordinator",
+        "phase_at_decision": "planning",
+        "iter_within_phase": 1,
+        "iter_within_topology": 0,
+        "decided_by": "rule",
+        "reason": "test",
         "considered_alternatives_json": "[]",
-        "rationale": "test",
-        "cost_usd": 0.001,
-        "guarded": False,
+        "guards_applied_json": "[]",
+        "signals_snapshot_json": "{}",
+        "router_cost_usd": 0.001,
+        "at": _utcnow(),
     }
 
 

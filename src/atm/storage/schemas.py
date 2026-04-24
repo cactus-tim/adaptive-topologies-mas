@@ -4,12 +4,18 @@ MINOR CORRECTION vs arch.md §3.5: all timestamp columns use pa.timestamp('us', 
 instead of naive pa.timestamp('us'). Preserves tzinfo round-trip; required for
 pytest filterwarnings=['error'] compatibility with pydantic timezone-aware datetimes.
 
+RECONCILIATION NOTE (step 4.1): TOPOLOGY_TRANSITION_SCHEMA field names updated from
+draft names (at_iter, rationale, cost_usd, guarded) to arch.md §3.4 canonical names
+(iter_within_phase, iter_within_topology, reason, router_cost_usd) matching the
+TopologyTransition pydantic model in core/types.py. Lists serialized to JSON strings:
+considered_alternatives_json, guards_applied_json, signals_snapshot_json.
+
 Six schemas are defined:
 - LLM_CALL_SCHEMA     — per-call LLM invocation data
 - MESSAGE_SCHEMA      — inter-agent messages
 - TOOL_CALL_SCHEMA    — tool invocation records
 - PHASE_SCHEMA        — phase lifecycle records
-- TOPOLOGY_TRANSITION_SCHEMA — topology switch events
+- TOPOLOGY_TRANSITION_SCHEMA — topology switch events (arch.md §3.4 canonical fields)
 - SCRATCHPAD_SCHEMA   — per-agent scratchpad entries
 """
 
@@ -82,16 +88,22 @@ PHASE_SCHEMA: pa.Schema = pa.schema(
 
 TOPOLOGY_TRANSITION_SCHEMA: pa.Schema = pa.schema(
     [
+        # Reconciled to arch.md §3.4 / TopologyTransition pydantic model field names.
+        # Previous draft used at_iter/rationale/cost_usd/guarded — replaced in step 4.1
+        # with the canonical names from the SQLAlchemy model and pydantic domain type.
         ("run_id", pa.string()),
-        ("at_iter", pa.int32()),
-        ("at", _TS_UTC),
         ("from_topology", pa.string()),
         ("to_topology", pa.string()),
+        ("phase_at_decision", pa.string()),
+        ("iter_within_phase", pa.int32()),
+        ("iter_within_topology", pa.int32()),
         ("decided_by", pa.string()),
+        ("reason", pa.string()),
         ("considered_alternatives_json", pa.string()),
-        ("rationale", pa.string()),
-        ("cost_usd", pa.float64()),
-        ("guarded", pa.bool_()),
+        ("guards_applied_json", pa.string()),
+        ("signals_snapshot_json", pa.string()),
+        ("router_cost_usd", pa.float64()),
+        ("at", _TS_UTC),
     ]
 )
 
