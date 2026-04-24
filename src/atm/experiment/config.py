@@ -42,16 +42,7 @@ class ModelCfg(BaseModel):
     """
 
     default: str = "openai:gpt-4o-mini"
-    by_role: dict[str, str] = Field(
-        default_factory=lambda: {
-            "planner": "openai:gpt-4o-mini",
-            "researcher": "openai:gpt-4o-mini",
-            "executor": "openai:gpt-4o-mini",
-            "critic": "openai:gpt-4o",
-            "debater": "openai:gpt-4o-mini",
-            "coordinator": "openai:gpt-4o",
-        }
-    )
+    by_role: dict[str, str] = Field(default_factory=dict)
     judge: str = "openai:gpt-4o"
     summarizer: str = "openai:gpt-4o-mini"
     router: str = "openai:gpt-4o-mini"
