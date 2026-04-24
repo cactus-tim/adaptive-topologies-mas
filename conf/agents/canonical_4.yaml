@@ -1,0 +1,6 @@
+set: canonical_4
+agents:
+  - planner
+  - executor
+  - critic
+  - researcher
