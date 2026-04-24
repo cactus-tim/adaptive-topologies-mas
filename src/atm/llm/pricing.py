@@ -87,8 +87,7 @@ class Pricing(BaseModel):
         raw_models: dict[str, Any] = raw.get("models", {})
 
         models: dict[str, ModelPricing] = {
-            model_id: ModelPricing(**rates)
-            for model_id, rates in raw_models.items()
+            model_id: ModelPricing(**rates) for model_id, rates in raw_models.items()
         }
 
         return cls(version=version, models=models)
@@ -185,10 +184,7 @@ class Pricing(BaseModel):
             )
 
         # --- No cache: all prompt tokens at input rate ---
-        return (
-            self._per_1k(prompt, mp.input_per_1k)
-            + self._per_1k(completion, mp.output_per_1k)
-        )
+        return self._per_1k(prompt, mp.input_per_1k) + self._per_1k(completion, mp.output_per_1k)
 
     def estimate(
         self,
