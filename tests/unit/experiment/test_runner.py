@@ -295,9 +295,12 @@ def _patch_run_one_common(
     mock_pw_cls.return_value = mock_pw
 
     # Topology registry
+    # BUG-4 fix: runner now does cls = registry.get(name); instance = cls(); instance.build(...)
+    # So get() must return a callable (class mock) whose return_value is the instance.
     mock_topo_instance = Mock()
     mock_topo_instance.build = Mock(return_value=mock_graph)
-    mock_reg.get.return_value = mock_topo_instance
+    mock_topo_cls = Mock(return_value=mock_topo_instance)
+    mock_reg.get.return_value = mock_topo_cls
 
     # Checkpointer scope context manager
     mock_cp = AsyncMock()
@@ -585,3 +588,173 @@ def test_run_result_fields() -> None:
     assert result.metrics["cost_usd"] == 0.01
     assert result.metrics["iters"] == 3
     assert result.final_answer == "The answer is 55"
+
+
+# ---------------------------------------------------------------------------
+# Test: _build_agents uses role name as dict key (BUG-1 regression)
+# ---------------------------------------------------------------------------
+
+
+def test_build_agents_keys_by_role_name() -> None:
+    """_build_agents must return dict keyed by role name (not 'role_agent').
+
+    BUG-1 fix: topology nodes look up agents by role (e.g. agents["critic"]),
+    not by the old convention of f"{role}_agent".
+    """
+    from atm.experiment.runner import _build_agents
+
+    cfg = _make_cfg()
+
+    # Build a minimal pricing and budget so LLMWrapper doesn't fail
+    from atm.llm.budget import BudgetTracker
+    from atm.llm.fake import FakeLLM
+    from atm.llm.pricing import Pricing
+    from atm.llm.wrapper import LLMWrapper
+
+    fake_llm = LLMWrapper(
+        model_id="fake:echo",
+        pricing=Pricing(version=1, models={}),
+        budget=BudgetTracker(per_call_usd=1.0, per_run_usd=10.0, per_experiment_usd=100.0),
+        llm=FakeLLM(mode="echo"),
+    )
+    llms = {
+        "planner": fake_llm,
+        "executor": fake_llm,
+        "critic": fake_llm,
+        "researcher": fake_llm,
+    }
+
+    # Find the conf dir
+    from pathlib import Path as _Path
+    conf_dir = _Path(__file__).parent.parent.parent.parent / "conf"
+
+    agents = _build_agents(cfg, llms, conf_dir=conf_dir)
+
+    # Keys must be role names, not "planner_agent" etc.
+    for key in agents:
+        assert not key.endswith("_agent"), (
+            f"_build_agents dict key must be role name, got '{key}'. "
+            "Expected one of: 'planner', 'executor', 'critic', 'researcher'."
+        )
+    # At least the three core roles should be present
+    for role in ["planner", "executor", "critic"]:
+        assert role in agents, (
+            f"Expected agents['{role}'] to exist; got keys: {list(agents.keys())}"
+        )
+
+
+def test_build_agents_critic_is_critic_subclass() -> None:
+    """_build_agents must instantiate Critic for the 'critic' role (BUG-3 fix).
+
+    The Critic subclass overrides step() to emit DECISION messages.
+    """
+    from atm.agents.critic import Critic
+    from atm.experiment.runner import _build_agents
+    from atm.llm.budget import BudgetTracker
+    from atm.llm.fake import FakeLLM
+    from atm.llm.pricing import Pricing
+    from atm.llm.wrapper import LLMWrapper
+
+    cfg = _make_cfg()
+
+    fake_llm = LLMWrapper(
+        model_id="fake:echo",
+        pricing=Pricing(version=1, models={}),
+        budget=BudgetTracker(per_call_usd=1.0, per_run_usd=10.0, per_experiment_usd=100.0),
+        llm=FakeLLM(mode="echo"),
+    )
+    llms = {
+        "planner": fake_llm,
+        "executor": fake_llm,
+        "critic": fake_llm,
+        "researcher": fake_llm,
+    }
+
+    from pathlib import Path as _Path
+    conf_dir = _Path(__file__).parent.parent.parent.parent / "conf"
+
+    agents = _build_agents(cfg, llms, conf_dir=conf_dir)
+
+    assert "critic" in agents, "agents['critic'] must exist"
+    assert isinstance(agents["critic"], Critic), (
+        f"agents['critic'] must be Critic instance, got {type(agents['critic'])}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test: run_one instantiates topology class (BUG-4 regression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_one_instantiates_topology_class() -> None:
+    """run_one must call topology_cls() before topology_instance.build().
+
+    BUG-4 fix: TopologyRegistry.get() returns the CLASS, not an instance.
+    Runner must instantiate it: cls = get(name); instance = cls(); instance.build(...)
+    """
+    cfg = _make_cfg()
+    final_state = _make_final_state(final_answer="The answer is 55")
+
+    instantiation_log: list[str] = []
+
+    class _FakeTopo:
+        def __init__(self) -> None:
+            instantiation_log.append("instantiated")
+
+        def build(self, agents: Any, cfg: Any, **kw: Any) -> AsyncMock:
+            instantiation_log.append("build_called")
+            mock = AsyncMock()
+            mock.ainvoke = AsyncMock(return_value=final_state)
+            return mock
+
+    with (
+        patch("atm.experiment.runner.create_engine") as mock_ce,
+        patch("atm.experiment.runner.create_session_factory") as mock_csf,
+        patch("atm.experiment.runner.Base.metadata.create_all"),
+        patch("atm.experiment.runner._ensure_experiment", new_callable=AsyncMock) as mock_ee,
+        patch("atm.experiment.runner._insert_run", new_callable=AsyncMock) as mock_ir,
+        patch("atm.experiment.runner._update_run_success", new_callable=AsyncMock),
+        patch("atm.experiment.runner.ParquetWriter") as mock_pw_cls,
+        patch("atm.experiment.runner.ExperimentCallbackHandler"),
+        patch("atm.experiment.runner._build_agents", return_value={}),
+        patch("atm.experiment.runner.TopologyRegistry") as mock_reg,
+        patch("atm.experiment.runner.checkpointer_scope") as mock_cp_scope,
+        patch("atm.experiment.runner._load_pricing", return_value=MagicMock()),
+    ):
+        exp_id = uuid.uuid4()
+        run_id = uuid.uuid4()
+        mock_pw = _make_mock_parquet_writer()
+        mock_ee.return_value = exp_id
+        mock_ir.return_value = run_id
+
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_ce.return_value = mock_engine
+        mock_csf.return_value = MagicMock()
+        mock_pw_cls.return_value = mock_pw
+
+        # Registry returns the CLASS (not an instance) — runner must instantiate it
+        mock_reg.get.return_value = _FakeTopo
+
+        mock_cp = AsyncMock()
+
+        async def _cp_aenter(self: Any) -> Any:
+            return mock_cp
+
+        async def _cp_aexit(self: Any, *args: Any) -> bool:
+            return False
+
+        mock_cp_scope.return_value.__aenter__ = _cp_aenter
+        mock_cp_scope.return_value.__aexit__ = _cp_aexit
+
+        await run_one(cfg)
+
+    # The topology class must have been instantiated (constructor called)
+    assert "instantiated" in instantiation_log, (
+        "Topology class must be instantiated (cls()) before build() is called. "
+        f"Calls seen: {instantiation_log}"
+    )
+    assert "build_called" in instantiation_log, (
+        "topology_instance.build() must be called after instantiation."
+    )

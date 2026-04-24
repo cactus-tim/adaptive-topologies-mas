@@ -39,10 +39,24 @@ class ModelCfg(BaseModel):
     """Per-role model assignment (arch.md §12.1).
 
     Resolution: get_model_for(role) -> by_role.get(role) or default.
+
+    fake_fixtures: Optional mapping from role name to fixture file path.
+    Used by _build_llm_wrappers when model_id starts with "fake:scripted".
+    If empty for scripted mode, falls back to FakeLLM(mode="echo") with a warning.
+
+    Example::
+
+        model:
+          default: "fake:scripted"
+          fake_fixtures:
+            planner: "tests/fixtures/llm/m6_chain_planner.yaml"
+            executor: "tests/fixtures/llm/m6_chain_executor.yaml"
+            critic:   "tests/fixtures/llm/m6_chain_critic.yaml"
     """
 
     default: str = "openai:gpt-4o-mini"
     by_role: dict[str, str] = Field(default_factory=dict)
+    fake_fixtures: dict[str, str] = Field(default_factory=dict)
     judge: str = "openai:gpt-4o"
     summarizer: str = "openai:gpt-4o-mini"
     router: str = "openai:gpt-4o-mini"

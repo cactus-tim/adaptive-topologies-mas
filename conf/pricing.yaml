@@ -41,3 +41,19 @@ models:
     cached_input_per_1k: 0.0
     cache_read_per_1k: 0.0
     cache_write_per_1k: 0.0
+
+  fake:scripted:
+    # FakeLLM scripted mode — used in M6 E2E and runner integration tests
+    input_per_1k: 0.0
+    output_per_1k: 0.0
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0
+
+  fake:echo:
+    # FakeLLM echo mode — used in runner unit tests
+    input_per_1k: 0.0
+    output_per_1k: 0.0
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0

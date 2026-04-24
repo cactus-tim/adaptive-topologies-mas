@@ -46,7 +46,7 @@ from atm.core.types import Phase
 from atm.experiment._evaluator import evaluate
 from atm.experiment.config import ExperimentConfig
 from atm.llm.budget import BudgetLevel, BudgetTracker
-from atm.llm.fake import FakeLLM
+from atm.llm.factory import build_llm
 from atm.llm.pricing import Pricing
 from atm.llm.wrapper import LLMWrapper
 from atm.observability.callbacks import ExperimentCallbackHandler
@@ -310,8 +310,13 @@ def _build_llm_wrappers(
 ) -> dict[str, LLMWrapper]:
     """Build one LLMWrapper per role from cfg.model.by_role + default fallback.
 
-    For "fake:scripted" and "fake:echo" providers, injects a FakeLLM instance.
-    For real providers, init_chat_model is used (via LLMWrapper default).
+    For "fake:scripted" providers, fixture paths are resolved from
+    ``cfg.model.fake_fixtures`` (a dict mapping role → path string). If no
+    fixture is configured for a scripted role, falls back to FakeLLM(mode="echo")
+    with a warning log.
+
+    For "fake:echo" providers, injects FakeLLM(mode="echo").
+    For real providers, init_chat_model is used (via build_llm / LLMWrapper).
 
     Returns:
         Dict mapping role name to LLMWrapper.
@@ -322,18 +327,27 @@ def _build_llm_wrappers(
     for role in roles:
         model_id = cfg.model.get_model_for(role)
         provider = model_id.split(":", 1)[0] if ":" in model_id else model_id
+        bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
 
-        if provider == "fake":
-            # Inject FakeLLM (echo mode for runner — scripted requires fixture path)
-            fake_llm = FakeLLM(mode="echo")
-            wrappers[role] = LLMWrapper(
+        if provider == "fake" and bare_model == "scripted":
+            # Resolve fixture path from cfg.model.fake_fixtures if available
+            fixture_str = cfg.model.fake_fixtures.get(role)
+            if fixture_str is None:
+                logger.warning(
+                    "fake:scripted model requested but no fixture configured; "
+                    "falling back to FakeLLM(mode='echo')",
+                    role=role,
+                    hint="Set model.fake_fixtures.<role>=<path> in experiment config",
+                )
+            fixture_path = Path(fixture_str) if fixture_str else None
+            wrappers[role] = build_llm(
                 model_id=model_id,
                 pricing=pricing,
                 budget=budget,
-                llm=fake_llm,
+                fixture_path=fixture_path,
             )
         else:
-            wrappers[role] = LLMWrapper(
+            wrappers[role] = build_llm(
                 model_id=model_id,
                 pricing=pricing,
                 budget=budget,
@@ -353,16 +367,25 @@ def _build_agents(
     For M6, the 3 active agents are Planner, Executor, Critic.
     Researcher is instantiated but unreferenced by Star/Chain graphs.
 
+    Dict keys are the role names (e.g. "planner", "executor", "critic") so that
+    topology nodes can look up agents by role directly (e.g. agents["critic"]).
+    The agent_id attribute on each Agent instance is also set to the role name.
+
+    The "critic" role is instantiated as a ``Critic`` subclass so that
+    Agent.step() emits MessageKind.DECISION (required by _critic_postprocess).
+    All other roles use the base ``Agent`` class.
+
     Args:
         cfg:      Experiment configuration.
         llms:     Dict of role → LLMWrapper.
         conf_dir: Root directory for conf/ files (defaults to project root).
 
     Returns:
-        Dict mapping agent_id to Agent instance.
+        Dict mapping role name to Agent instance.
     """
     from atm.agents.base import Agent
     from atm.agents.config import load_agent_config
+    from atm.agents.critic import Critic
     from atm.tools.base import ToolRegistry
 
     if conf_dir is None:
@@ -397,9 +420,12 @@ def _build_agents(
             continue
 
         tools = ToolRegistry()
-        agent_id = f"{role}_agent"
-        agents[agent_id] = Agent(
-            agent_id=agent_id,
+        # Use role name as both the dict key and the agent_id so topology nodes
+        # (e.g. state["agents"]["critic"]) can find the agent by role directly.
+        # BUG-3 fix: use Critic subclass for the critic role so step() emits DECISION.
+        agent_cls: type = Critic if role == "critic" else Agent
+        agents[role] = agent_cls(
+            agent_id=role,
             cfg=agent_cfg,
             llm=llm,
             tools=tools,
@@ -503,7 +529,10 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         final_state: dict[str, Any]
 
         async with checkpointer_scope(pg_dsn) as checkpointer:
-            topology_instance = TopologyRegistry.get(cfg.topology.name)
+            # BUG-4 fix: TopologyRegistry.get() returns the CLASS, not an instance.
+            # Instantiate the class before calling build() so that self is bound.
+            topology_cls = TopologyRegistry.get(cfg.topology.name)
+            topology_instance = topology_cls()
             compiled_graph = topology_instance.build(
                 agents,
                 topology_cfg,
