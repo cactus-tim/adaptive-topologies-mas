@@ -181,7 +181,7 @@ class TestCriticPostprocessApproved:
             critic_outbox=[_make_decision_msg(approved=True)],
             executor_outbox=[_make_draft_msg(content="my draft")],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is True
 
     def test_populates_final_answer_from_draft_payload(self) -> None:
@@ -190,7 +190,7 @@ class TestCriticPostprocessApproved:
             critic_outbox=[_make_decision_msg(approved=True)],
             executor_outbox=[_make_draft_msg(draft="fib(10)=55", content="other")],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["final_answer"] == "fib(10)=55"
 
     def test_populates_final_answer_from_msg_content_fallback(self) -> None:
@@ -199,7 +199,7 @@ class TestCriticPostprocessApproved:
             critic_outbox=[_make_decision_msg(approved=True)],
             executor_outbox=[_make_draft_msg(content="content_fallback")],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["final_answer"] == "content_fallback"
 
     def test_final_answer_incomplete_when_no_executor_draft(self) -> None:
@@ -208,7 +208,7 @@ class TestCriticPostprocessApproved:
             critic_outbox=[_make_decision_msg(approved=True)],
             executor_outbox=[],  # no DRAFT messages
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["final_answer"] == "<incomplete>"
 
     def test_phase_pinned_to_execution(self) -> None:
@@ -217,7 +217,7 @@ class TestCriticPostprocessApproved:
             critic_outbox=[_make_decision_msg(approved=True)],
             executor_outbox=[_make_draft_msg(content="x")],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["phase"] == "execution"
 
     def test_uses_last_decision_message_from_outbox(self) -> None:
@@ -228,7 +228,7 @@ class TestCriticPostprocessApproved:
             critic_outbox=[earlier_reject, later_approve],
             executor_outbox=[_make_draft_msg(draft="result_55")],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is True
         assert delta["shared"]["final_answer"] == "result_55"
 
@@ -246,7 +246,7 @@ class TestCriticPostprocessRejected:
         state = _make_state(
             critic_outbox=[_make_decision_msg(approved=False)],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is False
 
     def test_malformed_payload_treated_as_rejected(self) -> None:
@@ -254,13 +254,13 @@ class TestCriticPostprocessRejected:
         state = _make_state(
             critic_outbox=[_make_malformed_decision_msg()],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is False
 
     def test_no_decision_message_treated_as_rejected(self) -> None:
         """Empty outbox → no DECISION found → critic_approved=False."""
         state = _make_state(critic_outbox=[])
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is False
 
     def test_rejected_does_not_set_final_answer(self) -> None:
@@ -268,7 +268,7 @@ class TestCriticPostprocessRejected:
         state = _make_state(
             critic_outbox=[_make_decision_msg(approved=False)],
         )
-        delta = asyncio.get_event_loop().run_until_complete(_critic_postprocess(state))
+        delta = asyncio.run(_critic_postprocess(state))
         # final_answer should be None — not set on rejection
         assert delta["shared"].get("final_answer") is None
 

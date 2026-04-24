@@ -84,6 +84,7 @@ filterwarnings = [
     "error",
     "ignore::RuntimeWarning:ddgs",
     "ignore::ResourceWarning:docker.*",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 testpaths = ["tests"]
 asyncio_mode = "auto"
