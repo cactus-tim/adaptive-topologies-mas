@@ -225,7 +225,8 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
     assert phases_df.shape[0] >= 1, f"Expected >= 1 phase row in Parquet, got {phases_df.shape[0]}"
 
     # --- Assertions: checkpointer setup (arch.md §11.3, two pools) ---
-    pg_dsn = str(pg_engine_fast.url)
+    # `str(engine.url)` masks the password as ***; render with full credentials.
+    pg_dsn = pg_engine_fast.url.render_as_string(hide_password=False)
     async with checkpointer_scope(pg_dsn) as saver:
         count = 0
         async for _ in saver.alist({"configurable": {"thread_id": str(run_id)}}):
