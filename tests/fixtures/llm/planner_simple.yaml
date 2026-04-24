@@ -1,0 +1,14 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: planner_1
+    role: planner
+    step_idx: 0
+    content: "Plan: Step 1 — gather requirements. Step 2 — design solution. Step 3 — implement."
+    tool_calls: []
+    usage:
+      input_tokens: 50
+      output_tokens: 20
+      total_tokens: 70
+    model: "fake:deterministic"
+    finish_reason: "stop"

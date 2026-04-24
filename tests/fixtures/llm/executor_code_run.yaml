@@ -1,0 +1,31 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: executor_1
+    role: executor
+    step_idx: 0
+    content: ""
+    tool_calls:
+      - id: "call_1"
+        name: "code_run"
+        args:
+          code: "print(1+1)"
+          lang: "python"
+    usage:
+      input_tokens: 60
+      output_tokens: 15
+      total_tokens: 75
+    model: "fake:deterministic"
+    finish_reason: "tool_calls"
+
+  - agent_id: executor_1
+    role: executor
+    step_idx: 1
+    content: "Done. The result of print(1+1) is 2."
+    tool_calls: []
+    usage:
+      input_tokens: 80
+      output_tokens: 12
+      total_tokens: 92
+    model: "fake:deterministic"
+    finish_reason: "stop"
