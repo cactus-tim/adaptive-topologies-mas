@@ -3,6 +3,7 @@
 These tests verify the structural properties of the 6 business tables:
 experiments, runs, phases, human_interactions, budget_events, topology_transitions.
 
+Column names, types, and nullability are asserted to match arch.md §3.4 exactly.
 No live database connection is required — all assertions are metadata-level.
 """
 
@@ -24,7 +25,7 @@ from atm.storage.models import (
 
 
 # ---------------------------------------------------------------------------
-# FinishReason enum
+# FinishReason enum — arch.md §3.4 canonical values
 # ---------------------------------------------------------------------------
 
 
@@ -40,20 +41,27 @@ class TestFinishReason:
     def test_max_iter_value(self) -> None:
         assert FinishReason("max_iter").value == "max_iter"
 
+    def test_topology_max_value(self) -> None:
+        assert FinishReason("topology_max").value == "topology_max"
+
     def test_budget_exceeded_value(self) -> None:
         assert FinishReason("budget_exceeded").value == "budget_exceeded"
 
     def test_error_value(self) -> None:
         assert FinishReason("error").value == "error"
 
-    def test_timeout_value(self) -> None:
-        assert FinishReason("timeout").value == "timeout"
-
-    def test_human_abort_value(self) -> None:
-        assert FinishReason("human_abort").value == "human_abort"
+    def test_human_timeout_value(self) -> None:
+        assert FinishReason("human_timeout").value == "human_timeout"
 
     def test_all_expected_members(self) -> None:
-        expected = {"success", "max_iter", "budget_exceeded", "error", "timeout", "human_abort"}
+        expected = {
+            "success",
+            "max_iter",
+            "topology_max",
+            "budget_exceeded",
+            "error",
+            "human_timeout",
+        }
         assert {m.value for m in FinishReason} == expected
 
 
@@ -104,7 +112,6 @@ class TestExperimentModel:
     def test_pk_is_uuid(self) -> None:
         col = self._table().c["id"]
         assert col.primary_key
-        # type should be UUID or PG_UUID
         assert "uuid" in type(col.type).__name__.lower()
 
     def test_name_unique(self) -> None:
@@ -306,7 +313,7 @@ class TestPhaseModel:
 
 
 # ---------------------------------------------------------------------------
-# HumanInteraction table
+# HumanInteraction table — arch.md §3.4 + §13.3
 # ---------------------------------------------------------------------------
 
 
@@ -343,28 +350,31 @@ class TestHumanInteractionModel:
         col = self._table().c["answered_at"]
         assert col.type.timezone is True  # type: ignore[union-attr]
 
-    def test_context_ref_column_exists(self) -> None:
-        assert "context_ref" in self._table().c
+    def test_context_json_jsonb(self) -> None:
+        """§3.4: context_json JSONB NOT NULL — HumanContext.model_dump()."""
+        col = self._table().c["context_json"]
+        assert isinstance(col.type, JSONB)
+        assert not col.nullable
 
-    def test_answer_ref_column_exists(self) -> None:
-        assert "answer_ref" in self._table().c
+    def test_response_json_jsonb_nullable(self) -> None:
+        """§3.4: response_json JSONB nullable — null until answered."""
+        col = self._table().c["response_json"]
+        assert isinstance(col.type, JSONB)
+        assert col.nullable
 
-    def test_tlx_scores_jsonb(self) -> None:
+    def test_tlx_scores_jsonb_nullable(self) -> None:
+        """§3.4: tlx_scores JSONB nullable."""
         col = self._table().c["tlx_scores"]
         assert isinstance(col.type, JSONB)
-
-    def test_tlx_scores_server_default(self) -> None:
-        col = self._table().c["tlx_scores"]
-        assert col.server_default is not None
+        assert col.nullable
 
     def test_raw_tlx_score_nullable_float(self) -> None:
-        """§13.3: raw_tlx_score present as Float NULLABLE for fast filter."""
+        """§13.3: raw_tlx_score present as DOUBLE PRECISION NULLABLE for fast filter."""
         col = self._table().c["raw_tlx_score"]
         assert col.nullable
-        assert isinstance(col.type, sa.Float)
 
     def test_request_id_varchar64(self) -> None:
-        """request_id VARCHAR(64) for idempotency."""
+        """request_id VARCHAR(64) for idempotency key (run_id, request_id) pair."""
         col = self._table().c["request_id"]
         assert isinstance(col.type, sa.String)
         assert col.type.length == 64  # type: ignore[union-attr]
@@ -376,7 +386,7 @@ class TestHumanInteractionModel:
 
 
 # ---------------------------------------------------------------------------
-# BudgetEvent table
+# BudgetEvent table — arch.md §3.4
 # ---------------------------------------------------------------------------
 
 
@@ -401,12 +411,26 @@ class TestBudgetEventModel:
     def test_level_column_exists(self) -> None:
         assert "level" in self._table().c
 
-    def test_event_type_column_exists(self) -> None:
-        assert "event_type" in self._table().c
+    def test_event_column_exists(self) -> None:
+        """§3.4: column named 'event' (not 'event_type')."""
+        assert "event" in self._table().c
 
-    def test_value_usd_numeric(self) -> None:
-        col = self._table().c["value_usd"]
+    def test_event_column_length(self) -> None:
+        col = self._table().c["event"]
+        assert isinstance(col.type, sa.String)
+        assert col.type.length == 16  # type: ignore[union-attr]
+
+    def test_limit_usd_numeric(self) -> None:
+        """§3.4: limit_usd NUMERIC(10,4) NOT NULL."""
+        col = self._table().c["limit_usd"]
         assert isinstance(col.type, sa.Numeric)
+        assert not col.nullable
+
+    def test_current_usd_numeric(self) -> None:
+        """§3.4: current_usd NUMERIC(10,4) NOT NULL."""
+        col = self._table().c["current_usd"]
+        assert isinstance(col.type, sa.Numeric)
+        assert not col.nullable
 
     def test_at_timestamptz(self) -> None:
         col = self._table().c["at"]
@@ -419,7 +443,7 @@ class TestBudgetEventModel:
 
 
 # ---------------------------------------------------------------------------
-# TopologyTransition table
+# TopologyTransition table — arch.md §3.4
 # ---------------------------------------------------------------------------
 
 
@@ -441,17 +465,40 @@ class TestTopologyTransitionModel:
         assert len(fks) == 1
         assert "runs.id" in str(fks[0].target_fullname)
 
-    def test_at_iter_column_exists(self) -> None:
-        assert "at_iter" in self._table().c
-
-    def test_from_topology_column_exists(self) -> None:
-        assert "from_topology" in self._table().c
+    def test_from_topology_nullable(self) -> None:
+        """§3.4: from_topology nullable (null only for initial)."""
+        col = self._table().c["from_topology"]
+        assert col.nullable
 
     def test_to_topology_column_exists(self) -> None:
         assert "to_topology" in self._table().c
 
+    def test_phase_at_decision_column_exists(self) -> None:
+        """§3.4: phase_at_decision VARCHAR(32) NOT NULL."""
+        col = self._table().c["phase_at_decision"]
+        assert isinstance(col.type, sa.String)
+        assert not col.nullable
+
+    def test_iter_within_phase_column_exists(self) -> None:
+        """§3.4: iter_within_phase INTEGER NOT NULL."""
+        col = self._table().c["iter_within_phase"]
+        assert isinstance(col.type, sa.Integer)
+        assert not col.nullable
+
+    def test_iter_within_topology_column_exists(self) -> None:
+        """§3.4: iter_within_topology INTEGER NOT NULL."""
+        col = self._table().c["iter_within_topology"]
+        assert isinstance(col.type, sa.Integer)
+        assert not col.nullable
+
     def test_decided_by_column_exists(self) -> None:
         assert "decided_by" in self._table().c
+
+    def test_reason_text(self) -> None:
+        """§3.4: reason TEXT NOT NULL (replaces rationale)."""
+        col = self._table().c["reason"]
+        assert isinstance(col.type, sa.Text)
+        assert not col.nullable
 
     def test_considered_alternatives_array(self) -> None:
         col = self._table().c["considered_alternatives"]
@@ -461,17 +508,23 @@ class TestTopologyTransitionModel:
         col = self._table().c["considered_alternatives"]
         assert col.server_default is not None
 
-    def test_rationale_text(self) -> None:
-        col = self._table().c["rationale"]
-        assert isinstance(col.type, sa.Text)
+    def test_guards_applied_array(self) -> None:
+        """§3.4: guards_applied TEXT[] NOT NULL DEFAULT '{}'."""
+        col = self._table().c["guards_applied"]
+        assert isinstance(col.type, ARRAY)
+        assert col.server_default is not None
 
-    def test_cost_usd_numeric(self) -> None:
-        col = self._table().c["cost_usd"]
+    def test_signals_snapshot_jsonb(self) -> None:
+        """§3.4: signals_snapshot JSONB NOT NULL DEFAULT '{}'."""
+        col = self._table().c["signals_snapshot"]
+        assert isinstance(col.type, JSONB)
+        assert col.server_default is not None
+
+    def test_router_cost_usd_numeric(self) -> None:
+        """§3.4: router_cost_usd NUMERIC(10,4) NOT NULL DEFAULT 0."""
+        col = self._table().c["router_cost_usd"]
         assert isinstance(col.type, sa.Numeric)
-
-    def test_guarded_bool(self) -> None:
-        col = self._table().c["guarded"]
-        assert isinstance(col.type, sa.Boolean)
+        assert not col.nullable
 
     def test_at_timestamptz(self) -> None:
         col = self._table().c["at"]

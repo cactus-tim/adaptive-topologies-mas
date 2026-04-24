@@ -9,7 +9,7 @@
   - topology_transitions — TopologyRouter decisions §3.4 / RQ2
 
 All datetime columns use TIMESTAMPTZ.
-JSONB columns use server_default=sa.text("'{}'::jsonb").
+JSONB columns use server_default=sa.text("'{}'::jsonb") where arch.md requires it.
 ARRAY(String) columns use server_default=sa.text("'{}'::text[]").
 All relationships use lazy="raise".
 """
@@ -28,7 +28,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 # ---------------------------------------------------------------------------
-# FinishReason — StrEnum with canonical values
+# FinishReason — StrEnum with canonical values (arch.md §3.4)
 # ---------------------------------------------------------------------------
 
 
@@ -37,10 +37,10 @@ class FinishReason(StrEnum):
 
     SUCCESS = "success"
     MAX_ITER = "max_iter"
+    TOPOLOGY_MAX = "topology_max"
     BUDGET_EXCEEDED = "budget_exceeded"
     ERROR = "error"
-    TIMEOUT = "timeout"
-    HUMAN_ABORT = "human_abort"
+    HUMAN_TIMEOUT = "human_timeout"
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ class Experiment(Base):
         nullable=False,
         server_default=sa.text("'{}'::jsonb"),
     )
-    git_sha: Mapped[str] = mapped_column(sa.String(40), nullable=False)
+    git_sha: Mapped[Optional[str]] = mapped_column(sa.String(40), nullable=True)
     started_at: Mapped[sa.DateTime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
@@ -164,11 +164,11 @@ class Run(Base):
         server_default=sa.text("0"),
     )
     quality_score: Mapped[Optional[float]] = mapped_column(
-        sa.Float,
+        sa.Double(),
         nullable=True,
     )
     wall_time_s: Mapped[Optional[float]] = mapped_column(
-        sa.Float,
+        sa.Double(),
         nullable=True,
     )
     iterations: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
@@ -268,8 +268,10 @@ class HumanInteraction(Base):
     """One HITL event — a human was asked for input and (optionally) responded.
 
     NASA-TLX data (§13.3):
-      - tlx_scores: raw 6-scale JSONB
+      - tlx_scores: raw 6-scale JSONB (NasaTLX.model_dump())
       - raw_tlx_score: aggregated float for fast filter queries
+    Idempotency:
+      - request_id: VARCHAR(64) — idempotency key paired with run_id
     """
 
     __tablename__ = "human_interactions"
@@ -296,20 +298,25 @@ class HumanInteraction(Base):
         sa.DateTime(timezone=True),
         nullable=True,
     )
-    context_ref: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
-    answer_ref: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
-    tlx_scores: Mapped[dict[str, Any]] = mapped_column(
+    context_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
-        nullable=False,
-        server_default=sa.text("'{}'::jsonb"),
+        nullable=False,  # §3.4: HumanContext.model_dump()
+    )
+    response_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=True,  # §3.4: HumanResponse.model_dump(); null until answered
+    )
+    tlx_scores: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=True,  # §3.4: nullable
     )
     raw_tlx_score: Mapped[Optional[float]] = mapped_column(
-        sa.Float,
-        nullable=True,  # §13.3: nullable — may be absent before TLX is filled
+        sa.Double(),
+        nullable=True,  # §13.3: aggregated float for fast filter; null before TLX filled
     )
     request_id: Mapped[Optional[str]] = mapped_column(
-        sa.String(64),  # idempotency key (run_id, request_id) pair
-        nullable=True,
+        sa.String(64),
+        nullable=True,  # idempotency key (run_id, request_id) pair
     )
 
     # Relationships
@@ -343,8 +350,12 @@ class BudgetEvent(Base):
         nullable=False,
     )
     level: Mapped[str] = mapped_column(sa.String(16), nullable=False)
-    event_type: Mapped[str] = mapped_column(sa.String(16), nullable=False)
-    value_usd: Mapped[Decimal] = mapped_column(
+    event: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    limit_usd: Mapped[Decimal] = mapped_column(
+        sa.Numeric(10, 4),
+        nullable=False,
+    )
+    current_usd: Mapped[Decimal] = mapped_column(
         sa.Numeric(10, 4),
         nullable=False,
     )
@@ -392,25 +403,41 @@ class TopologyTransition(Base):
         sa.ForeignKey("runs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    at_iter: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    from_topology: Mapped[Optional[str]] = mapped_column(sa.String(32), nullable=True)
-    to_topology: Mapped[str] = mapped_column(sa.String(32), nullable=False)
-    decided_by: Mapped[str] = mapped_column(sa.String(24), nullable=False)
+    from_topology: Mapped[Optional[str]] = mapped_column(
+        sa.String(32),
+        nullable=True,  # §3.4: null only for initial
+    )
+    to_topology: Mapped[str] = mapped_column(
+        sa.String(32),
+        nullable=False,  # §3.4: == from_topology if no-change
+    )
+    phase_at_decision: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    iter_within_phase: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    iter_within_topology: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    decided_by: Mapped[str] = mapped_column(
+        sa.String(24),
+        nullable=False,  # enum: rule|llm_router|oracle|guard_override|initial
+    )
+    reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
     considered_alternatives: Mapped[list[str]] = mapped_column(
         ARRAY(sa.String),
         nullable=False,
         server_default=sa.text("'{}'::text[]"),
     )
-    rationale: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default=sa.text("''"))
-    cost_usd: Mapped[Decimal] = mapped_column(
+    guards_applied: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.String),
+        nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    )
+    signals_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+    router_cost_usd: Mapped[Decimal] = mapped_column(
         sa.Numeric(10, 4),
         nullable=False,
         server_default=sa.text("0"),
-    )
-    guarded: Mapped[bool] = mapped_column(
-        sa.Boolean,
-        nullable=False,
-        server_default=sa.text("false"),
     )
     at: Mapped[sa.DateTime] = mapped_column(
         sa.DateTime(timezone=True),
