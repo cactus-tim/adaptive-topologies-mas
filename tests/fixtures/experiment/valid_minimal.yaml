@@ -1,0 +1,44 @@
+# Minimal valid ExperimentConfig fixture used in unit tests.
+# All required fields are present; optional fields use defaults.
+
+name: "test_minimal"
+seed: 0
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.20
+  per_experiment_usd: 10.0
+  warn_ratio: 0.8
+
+model:
+  default: "fake:scripted"
+  by_role:
+    planner: "fake:scripted"
+    executor: "fake:scripted"
+    critic: "fake:scripted"
+  judge: "fake:scripted"
+  summarizer: "fake:scripted"
+  router: "fake:scripted"
+  prompt_cache_scope: "off"
+
+agents:
+  set: "canonical_4"
+  scratchpad:
+    policy: "window_only"
+    window_size: 3
+
+topology:
+  name: "chain"
+  max_iterations: 5
+  extra: {}
+
+task:
+  name: "smoke_test"
+  input: "Write a function that returns 42."
+  split: "test"
+  limit: 1
+
+observability:
+  parquet_dir: "data/test_experiments"
+  pg_dsn: "postgresql://test:test@localhost:5432/test_db"
+  callback_sync: true
