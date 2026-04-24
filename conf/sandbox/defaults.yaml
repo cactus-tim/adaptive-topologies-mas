@@ -1,0 +1,76 @@
+# Sandbox default configuration for DockerSandbox.
+# Values here are used as baseline defaults in SandboxConfig.
+# Override individual fields per-invocation via SandboxConfig constructor arguments.
+
+# ------------------------------------------------------------------
+# Resource limits
+# ------------------------------------------------------------------
+
+# CPU quota as a fraction of one CPU core (0.5 = 50% of one core).
+# Passed to Docker as nano_cpus = cpu_quota * 1e9.
+cpu_quota: 0.5
+
+# Maximum memory the container may use (Docker memory limit string).
+mem_limit: "128m"
+
+# Maximum number of processes/threads inside the container.
+pids_limit: 64
+
+# Hard wall-clock timeout in seconds before the container is killed.
+timeout_s: 30
+
+# Maximum size of any file written to the workdir (soft limit enforced
+# by the tool layer, not the kernel).
+workdir_size: "64m"
+
+# ------------------------------------------------------------------
+# Filesystem hardening
+# ------------------------------------------------------------------
+
+# Mount the container rootfs as read-only.
+read_only: true
+
+# tmpfs mounts injected into the container.
+# Format: { mount_point: mount_options }
+# /work   — primary code workspace; noexec + nosuid for safety.
+# /tmp    — Python's tempfile and pyc compilation require a writable /tmp.
+tmpfs_mounts:
+  /work: "size=64m,noexec,nosuid,uid=1000,gid=1000"
+  /tmp: "size=64m,noexec,nosuid"
+
+# ------------------------------------------------------------------
+# Capabilities and privileges
+# ------------------------------------------------------------------
+
+# Drop all Linux capabilities inside the container.
+cap_drop:
+  - ALL
+
+# Prevent container processes from gaining new privileges via setuid/setgid.
+# Pass seccomp profile via the seccomp= option (path resolved at runtime).
+security_opt:
+  - no-new-privileges
+  - "seccomp=<path>"   # placeholder; replaced at runtime with actual JSON string
+
+# ------------------------------------------------------------------
+# Network
+# ------------------------------------------------------------------
+
+# Disable all network access inside the container.
+network_mode: none
+
+# ------------------------------------------------------------------
+# User
+# ------------------------------------------------------------------
+
+# Run the container process as UID:GID 1000:1000 (unprivileged).
+user: "1000:1000"
+
+# ------------------------------------------------------------------
+# Image defaults
+# ------------------------------------------------------------------
+
+# Default image map from language name to Docker image tag.
+image_map:
+  python: "python:3.11-slim"
+  node: "node:20-slim"
