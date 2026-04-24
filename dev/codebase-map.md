@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-04-23*
+*Auto-generated. Last updated: 2026-04-24*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -64,60 +64,39 @@
 - **Status:** M2 complete.
 
 ### Tools & Sandbox (`tools/`)
+- **Purpose:** Tool protocol, registry, 12 concrete implementations (4 global, 8 local), sandbox abstraction with dev (subprocess) and prod (Docker) modes.
+- **Key interfaces:** `Tool` (runtime_checkable Protocol), `ToolSchema` (frozen Pydantic, describes I/O schema + name), `ToolRegistry` (ainvoke_by_name with latency tracking via time.monotonic), `CodeSandbox` (Protocol with IS_ISOLATED ClassVar), `ExecResult` (frozen: stdout/stderr/exit_code/timed_out/duration_ms/oom_killed), `SandboxConfig` (tmpfs mount limits).
+- **Factory:** `build_default_registry(workspace, corpus_dir, sandbox, prod_mode=False)` — registers all 12 tools; fail-closed (raises ToolError if prod_mode=True and sandbox.IS_ISOLATED=False).
+- **Exports:** `Tool`, `ToolRegistry`, `ToolSchema`, `CodeSandbox`, `ExecResult`, `SandboxConfig`, `SubprocessSandbox`, `DockerSandbox`, all 12 tool classes, `build_default_registry`, `resolve_and_validate_url`, `with_tool_retry`.
+- **Submodules:**
+  - `base.py` — `Tool` Protocol (name, schema, ainvoke), `ToolSchema` (frozen: name, description, parameters, returns), `ToolRegistry`.
+  - `_safety.py` — `resolve_and_validate_url` (SSRF guard: scheme allowlist {http,https}, socket.getaddrinfo, IP-check for private/loopback/link_local/reserved/multicast).
+  - `_retry.py` — `with_tool_retry` (wraps `with_retry` from llm/, translates LLMError → ToolError).
+  - `defaults.py` — `build_default_registry` factory (lazy imports to prevent circular deps).
+  - `sandbox/base.py` — `CodeSandbox` Protocol, `ExecResult` frozen, `SandboxConfig` (timeouts, tmpfs /work + /tmp size/mode).
+  - `sandbox/subprocess_sandbox.py` — dev-mode sandbox (IS_ISOLATED=False, asyncio.create_subprocess_exec, tempdir cleanup, timeout kill).
+  - `sandbox/docker_sandbox.py` — prod sandbox (IS_ISOLATED=True, hardened: seccomp profile via JSON string, cap_drop=["ALL"], read_only=True, network_mode="none", user="1000:1000", tmpfs /work + /tmp with noexec/nosuid).
+  - `global_/calculator.py` — `CalculatorTool` (safe AST-walker, no eval/exec, whitelisted BinOp/UnaryOp/Constant + math.* functions).
+  - `global_/file_read.py` — `FileReadTool` (workspace-scoped read, path traversal + symlink-outside-workspace protection, max_bytes=1M default).
+  - `global_/search.py` — `DuckDuckGoSearchTool` (ddgs via asyncio.to_thread, maps href→url, body→snippet, with_tool_retry support).
+  - `global_/url_fetch.py` — `UrlFetchTool` (httpx async GET, SSRF-safe via resolve_and_validate_url, follow_redirects=False, aiter_bytes size limit, with_tool_retry).
+  - `local_/code_run.py` — `CodeRunTool` (delegates to CodeSandbox.execute, wraps ExecResult).
+  - `local_/test_run.py` — `TestRunTool` (sandbox-backed unittest runner, 2>&1 stderr merge, parses last stdout line as summary).
+  - `local_/file_write.py` — `FileWriteTool` (atomic write via tempfile + os.replace, workspace-scoped, path traversal guard, optional create_parents).
+  - `local_/diff.py` — `DiffTool` (difflib.unified_diff, output {"diff": str}).
+  - `local_/todo_write.py` — `TodoWriteTool` (output {"state_update": {"shared": {"todos": […]}}}, NOT signals).
+  - `local_/plan_update.py` — `PlanUpdateTool` (output {"state_update": {"shared": {"plan": …}}}, NOT signals).
+  - `local_/lint.py` — `LintTool` (ruff via asyncio.create_subprocess_exec --output-format=json, optional pylint with graceful not-installed fallback).
+  - `local_/semantic_search.py` — `SemanticSearchTool` (numpy TF-IDF, IDF=log((1+N)/(1+df))+1, L2-normalized cosine similarity, empty query → ok=False).
+- **Sandbox hardening (DockerSandbox):**
+  - seccomp profile: `conf/sandbox/seccomp.json` (generated from moby upstream via `scripts/derive_seccomp.py`; deny-list approach for 24 syscalls).
+  - cap_drop=["ALL"], read_only=True (filesystem), network_mode="none", user="1000:1000" (unprivileged).
+  - tmpfs /work (size=64m, noexec, nosuid) and /tmp (size=64m, noexec, nosuid) configured in `conf/sandbox/defaults.yaml`.
+  - Seccomp profile passed as JSON-string to docker-py (not file path — API requirement).
+- **Dependencies:** docker>=7.1, ddgs>=9.13, httpx>=0.27, numpy>=1.26; faiss-cpu available as optional extra.
+- **Test coverage:** 121 unit tests (tools/) + 13 non-docker integration tests, all passing. 29 docker/network tests gated via @pytest.mark.docker / @pytest.mark.network (ATM_ENABLE_DOCKER_TESTS, ATM_ENABLE_NETWORK_TESTS env vars). Total: 134 pass + 29 skipped.
+- **Status:** M4 complete (Steps 1–14).
 
-Реализован в M4 (см. `dev/active/m4/m4-plan.md` §Steps 1–14 и `arch/PLAN.md §M4`).
-
-**Структура пакета:**
-```
-src/atm/tools/
-├── __init__.py          — полный публичный API (все 12 инструментов + registry + helpers)
-├── base.py              — Tool Protocol (runtime_checkable), ToolSchema (frozen Pydantic), ToolRegistry
-├── _safety.py           — resolve_and_validate_url (SSRF: scheme allowlist + socket.getaddrinfo + IP-проверка)
-├── _retry.py            — with_tool_retry (адаптер над with_retry, LLMError → ToolError)
-├── defaults.py          — build_default_registry (фабрика — все 12 tools в одном вызове)
-├── sandbox/
-│   ├── base.py          — CodeSandbox Protocol (IS_ISOLATED ClassVar), ExecResult (frozen), SandboxConfig
-│   ├── subprocess_sandbox.py — SubprocessSandbox (IS_ISOLATED=False, dev-mode)
-│   └── docker_sandbox.py     — DockerSandbox (IS_ISOLATED=True, hardened: seccomp, cap_drop=ALL, read_only, tmpfs)
-├── global_/
-│   ├── calculator.py    — CalculatorTool (AST-walker, без eval/exec)
-│   ├── file_read.py     — FileReadTool (workspace-scoped, path traversal + symlink protection)
-│   ├── search.py        — DuckDuckGoSearchTool (ddgs + asyncio.to_thread + retry)
-│   └── url_fetch.py     — UrlFetchTool (SSRF-safe httpx, follow_redirects=False, size limit)
-└── local_/
-    ├── code_run.py      — CodeRunTool (delegates to CodeSandbox.execute)
-    ├── test_run.py      — TestRunTool (sandbox-backed unittest runner, 2>&1 merge)
-    ├── file_write.py    — FileWriteTool (atomic write: tmp + os.replace, workspace-scoped)
-    ├── diff.py          — DiffTool (difflib.unified_diff)
-    ├── todo_write.py    — TodoWriteTool (output: state_update.shared.todos, NOT signals)
-    ├── plan_update.py   — PlanUpdateTool (output: state_update.shared.plan, NOT signals)
-    ├── lint.py          — LintTool (ruff --output-format=json --stdin-filename + optional pylint)
-    └── semantic_search.py — SemanticSearchTool (numpy TF-IDF, IDF=log((1+N)/(1+df))+1, L2-norm)
-```
-
-**Exports из `atm.tools`:**
-`Tool`, `ToolRegistry`, `ToolSchema`, `CodeSandbox`, `ExecResult`, `SandboxConfig`,
-`SubprocessSandbox`, `DockerSandbox`,
-`CalculatorTool`, `FileReadTool`, `DuckDuckGoSearchTool`, `UrlFetchTool`,
-`CodeRunTool`, `TestRunTool`, `FileWriteTool`, `DiffTool`, `TodoWriteTool`,
-`PlanUpdateTool`, `LintTool`, `SemanticSearchTool`,
-`build_default_registry`, `resolve_and_validate_url`, `with_tool_retry`
-
-**Точка входа:** `build_default_registry(workspace, corpus_dir, sandbox, prod_mode=False)` — регистрирует все 12 инструментов; при `prod_mode=True` и `sandbox.IS_ISOLATED=False` — raise ToolError (fail-closed).
-
-**Sandbox hardening (DockerSandbox):**
-- seccomp profile: `conf/sandbox/seccomp.json` (moby upstream, deny-set из 24 syscall'ов)
-- `cap_drop=["ALL"]`, `read_only=True`, `network_mode="none"`, `user="1000:1000"`
-- tmpfs `/work` (size=64m, noexec, nosuid) и `/tmp` (size=64m, noexec, nosuid)
-- seccomp-profile передаётся как JSON-строка (не путь) — требование docker-py API
-- Подробнее: `conf/sandbox/seccomp.README.md` и `conf/sandbox/defaults.yaml`
-
-**Тесты (M4 complete):**
-- 121 unit-тест (tests/unit/tools/) — все зелёные, 1 skipped (node не установлен)
-- 13 non-docker integration-тестов (tests/integration/tools/) — все зелёные
-- 29 docker/network-тестов — корректно скипаются без ATM_ENABLE_DOCKER_TESTS=1 / ATM_ENABLE_NETWORK_TESTS=1
-
-**Status:** M4 complete (Steps 1–14).
 
 ### Agent Framework (`agents/`)
 - **Exports (M5 planned):** `Agent` base with LangGraph node signature, `Planner`, `Researcher`, `Executor`, `Critic`, `Debater` with stance parameter.
@@ -208,6 +187,13 @@ src/atm/tools/
 - **pyyaml** (≥6): Fixture + pricing config parsing.
 - **pyarrow** (≥16): Replay Table schema + bulk experiment data.
 
+### M4 additions (Tools & Sandbox)
+- **docker** (≥7.1): Container runtime for DockerSandbox.
+- **ddgs** (≥9.13): DuckDuckGo search backend.
+- **httpx** (≥0.27): Async HTTP client for UrlFetchTool.
+- **numpy** (≥1.26): TF-IDF vectorization for SemanticSearchTool.
+- **faiss-cpu** (≥1.11): Optional extra for semantic search acceleration.
+
 ### Existing (M0-M1)
 - **langgraph:** Multi-agent orchestration primitives.
 - **sqlalchemy[asyncio] + asyncpg:** Async ORM.
@@ -217,7 +203,6 @@ src/atm/tools/
 - **ruff + mypy:** Lint + type checking.
 - **alembic:** DB migrations.
 - **typer:** CLI framework (M12).
-- **docker:** Container API (M4 sandbox).
 - **huggingface-hub:** Dataset loading (M10).
 
 ### Dev
@@ -225,7 +210,8 @@ src/atm/tools/
 
 ## Test Setup
 - **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
-- **Structure:** `tests/unit/{core,llm}/`, `tests/integration/llm/`, `tests/fixtures/llm/`.
-- **Total tests:** 397 (121 unit tools + 13 non-docker integration tools + 263 legacy unit/integration).
-- **Mocking approach:** FakeLLM with YAML fixtures for unit + integration; in-memory Postgres planned for M3+.
-- **Coverage target:** All core modules + critical paths; lower coverage on M4+ until implementations exist.
+- **Structure:** `tests/unit/{core,llm,tools}/`, `tests/integration/{llm,tools}/`, `tests/fixtures/{llm,tools/corpus}/`.
+- **Total tests:** 397 (121 unit tools + 13 non-docker integration tools + 263 legacy unit/integration core+llm).
+- **M4 test markers:** `@pytest.mark.docker` and `@pytest.mark.network` gated via ATM_ENABLE_DOCKER_TESTS and ATM_ENABLE_NETWORK_TESTS env vars; 29 such tests auto-skipped otherwise.
+- **Mocking approach:** FakeLLM with YAML fixtures for unit + integration; FakeDDGS for search tool testing; mock docker for sandbox unit tests.
+- **Coverage target:** All core modules + critical paths; M4 tools fully tested; lower coverage on M5+ until implementations exist.
