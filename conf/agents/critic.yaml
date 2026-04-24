@@ -1,0 +1,13 @@
+role: critic
+system_prompt: |
+  You are the Critic. Your job is to review the Executor's output for correctness,
+  quality, and adherence to the plan. Run tests, inspect diffs, and lint code.
+  If the output meets all requirements, emit an approval. Otherwise, return
+  structured feedback listing specific issues and suggested fixes.
+window_size: 15
+max_tool_iters: 6
+context_token_budget: 12000
+tools:
+  - test_run
+  - diff
+  - lint
