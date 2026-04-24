@@ -300,3 +300,44 @@ def test_task_cfg_requires_name() -> None:
 def test_topology_cfg_requires_name() -> None:
     with pytest.raises(ValidationError):
         TopologyCfg.model_validate({})  # missing required 'name'
+
+
+# ---------------------------------------------------------------------------
+# 15. ModelCfg.fake_fixtures — BUG-2 regression
+# ---------------------------------------------------------------------------
+
+
+def test_model_cfg_fake_fixtures_default_is_empty_dict() -> None:
+    """ModelCfg.fake_fixtures defaults to an empty dict (BUG-2 fix)."""
+    m = ModelCfg(default="fake:echo")
+    assert isinstance(m.fake_fixtures, dict)
+    assert m.fake_fixtures == {}
+
+
+def test_model_cfg_fake_fixtures_roundtrip(tmp_path: Path) -> None:
+    """ModelCfg.fake_fixtures survives a YAML load → Pydantic roundtrip."""
+    yaml_content = """
+name: "fixtures_test"
+model:
+  default: "fake:scripted"
+  fake_fixtures:
+    planner: "tests/fixtures/llm/m6_chain_planner.yaml"
+    executor: "tests/fixtures/llm/m6_chain_executor.yaml"
+    critic: "tests/fixtures/llm/m6_chain_critic.yaml"
+agents:
+  set: "canonical_4"
+topology:
+  name: "chain"
+task:
+  name: "t1"
+observability:
+  pg_dsn: "postgresql://localhost/atm_test"
+"""
+    cfg_file = tmp_path / "fixtures_test.yaml"
+    cfg_file.write_text(yaml_content)
+    cfg = load_config(str(cfg_file))
+    assert cfg.model.fake_fixtures == {
+        "planner": "tests/fixtures/llm/m6_chain_planner.yaml",
+        "executor": "tests/fixtures/llm/m6_chain_executor.yaml",
+        "critic": "tests/fixtures/llm/m6_chain_critic.yaml",
+    }

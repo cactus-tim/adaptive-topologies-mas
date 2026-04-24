@@ -8,37 +8,14 @@ Tests run ``run_one(cfg)`` through the full lifecycle with:
 
 Skipped unless ``ATM_ENABLE_PG_TESTS=1`` is set.
 
-KNOWN LIMITATIONS / BUGS IN M6 RUNNER (do NOT modify runner.py per plan):
-  BUG-1: ``_build_agents`` uses ``agent_id = f"{role}_agent"`` but
-    topologies expect keys ``"planner"``, ``"executor"``, ``"critic"``.
-    Workaround: patch ``_build_agents`` to return role-keyed agents.
+NOTE-4: FakeLLM is NOT a LangChain BaseChatModel, so LangChain's
+  on_llm_end callback is NOT triggered. ``llm_calls.parquet``,
+  ``messages.parquet``, ``tool_calls.parquet``, and scratchpad parquet
+  files will NOT be written.
+  Parquet assertions (10-14) are relaxed accordingly.
 
-  BUG-2: ``_build_llm_wrappers`` always uses FakeLLM(mode="echo") for
-    fake providers, ignoring fixture files. Scripted fixtures can only be
-    used by patching.
-    Workaround: patch ``_build_llm_wrappers`` to inject scripted FakeLLM.
-
-  BUG-3: ``Agent.step()`` always emits ``MessageKind.DRAFT``. The
-    ``_critic_postprocess`` node expects ``MessageKind.DECISION`` in the
-    critic outbox. With no DECISION message, ``critic_approved=False``
-    always.
-    Workaround: wrap critic agent's step() to convert DRAFT → DECISION.
-
-  NOTE-4: FakeLLM is NOT a LangChain BaseChatModel, so LangChain's
-    on_llm_end callback is NOT triggered. ``llm_calls.parquet``,
-    ``messages.parquet``, ``tool_calls.parquet``, and scratchpad parquet
-    files will NOT be written.
-    Parquet assertions (10-14) are relaxed accordingly.
-
-  BUG-4: ``TopologyRegistry.get()`` returns the topology CLASS, not an
-    instance. Runner calls ``topology_instance.build(agents, topology_cfg)``
-    expecting ``topology_instance`` to be an instance (so ``self`` is auto-
-    provided), but since it's a class, ``agents`` becomes ``self`` and
-    ``cfg`` is missing.
-    Workaround: patch ``TopologyRegistry.get`` to return an instance.
-
-  NOTE-5: topology_transitions table is NOT populated in M6 (M8 scope).
-    Assertion #9 is skipped with a comment.
+NOTE-5: topology_transitions table is NOT populated in M6 (M8 scope).
+  Assertion #9 is skipped with a comment.
 """
 
 from __future__ import annotations
@@ -46,7 +23,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -62,155 +38,8 @@ _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 
 
 # ---------------------------------------------------------------------------
-# Helper: build a patched agents dict that topologies can find by role key
-# ---------------------------------------------------------------------------
-
-
-def _make_patched_agents(
-    planner_fixture: Path,
-    executor_fixture: Path,
-    critic_fixture: Path,
-) -> dict[str, Any]:
-    """Build role-keyed agents with scripted FakeLLM and correct message kinds.
-
-    Returns a dict keyed by ``"planner"``, ``"executor"``, ``"critic"`` as
-    expected by Star/Chain topology nodes (not ``"planner_agent"`` etc. which
-    runner._build_agents incorrectly produces).
-
-    The critic agent's step() is wrapped to convert the DRAFT outbox message
-    (always emitted by Agent.step()) into a DECISION message so that
-    _critic_postprocess can detect approval (BUG-3 workaround).
-    """
-    from atm.agents.base import Agent
-    from atm.agents.config import load_agent_config
-    from atm.core.types import Message, MessageKind
-    from atm.llm.budget import BudgetTracker
-    from atm.llm.fake import FakeLLM
-    from atm.llm.pricing import ModelPricing, Pricing
-    from atm.llm.wrapper import LLMWrapper
-    from atm.tools.base import ToolRegistry
-
-    conf_agents = Path("conf/agents")
-    if not conf_agents.exists():
-        # Try from project root
-        conf_agents = Path(__file__).parent.parent.parent.parent / "conf" / "agents"
-
-    # Pricing for "fake:scripted" — zero cost for all token types.
-    # Real cost is irrelevant for FakeLLM integration tests.
-    pricing = Pricing(
-        version=1,
-        models={
-            "fake:scripted": ModelPricing(
-                input_per_1k=0.0,
-                output_per_1k=0.0,
-                cached_input_per_1k=0.0,
-            )
-        },
-    )
-    budget = BudgetTracker(
-        per_call_usd=0.10,
-        per_run_usd=0.50,
-        per_experiment_usd=50.0,
-    )
-
-    agents: dict[str, Any] = {}
-
-    role_fixtures = {
-        "planner": planner_fixture,
-        "executor": executor_fixture,
-        "critic": critic_fixture,
-    }
-
-    for role, fixture_path in role_fixtures.items():
-        yaml_path = conf_agents / f"{role}.yaml"
-        if not yaml_path.exists():
-            pytest.skip(f"Agent config not found: {yaml_path}")
-
-        try:
-            agent_cfg = load_agent_config(yaml_path)
-        except Exception as exc:
-            pytest.skip(f"Failed to load agent config for {role}: {exc}")
-
-        fake_llm = FakeLLM(mode="scripted", fixture=fixture_path)
-        llm = LLMWrapper(
-            model_id="fake:scripted",
-            pricing=pricing,
-            budget=budget,
-            llm=fake_llm,
-        )
-        tools = ToolRegistry()
-
-        agent = Agent(
-            agent_id=role,  # Use role as agent_id so topology can find it
-            cfg=agent_cfg,
-            llm=llm,
-            tools=tools,
-        )
-        agents[role] = agent
-
-    # BUG-3 workaround: wrap critic's step() to emit DECISION kind message
-    # instead of DRAFT, so _critic_postprocess can detect approval.
-    original_critic = agents["critic"]
-
-    class _CriticWrapper:
-        """Wraps critic agent to emit DECISION messages for _critic_postprocess."""
-
-        def __init__(self, inner: Agent) -> None:
-            self._inner = inner
-            self.agent_id = inner.agent_id
-
-        async def step(self, state: dict[str, Any]) -> dict[str, Any]:
-            delta = await self._inner.step(state)  # type: ignore[arg-type]
-            # Convert DRAFT outbox messages to DECISION with approved=True
-            # when content starts with "APPROVE" (as per fixture).
-            agents_delta = delta.get("agents", {})
-            critic_delta = agents_delta.get(self.agent_id, {})
-            outbox = list(critic_delta.get("outbox", []))
-            messages = list(delta.get("messages", []))
-
-            new_outbox = []
-            new_messages = []
-
-            for msg in outbox:
-                content = getattr(msg, "content", "") or ""
-                approved = "APPROVE" in content.upper() or "approve" in content.lower()
-                decision_msg = Message(
-                    sender=self.agent_id,
-                    kind=MessageKind.DECISION,
-                    content=content,
-                    payload={"approved": approved, "comment": content},
-                )
-                new_outbox.append(decision_msg)
-
-            for msg in messages:
-                content = getattr(msg, "content", "") or ""
-                approved = "APPROVE" in content.upper() or "approve" in content.lower()
-                decision_msg = Message(
-                    sender=self.agent_id,
-                    kind=MessageKind.DECISION,
-                    content=content,
-                    payload={"approved": approved, "comment": content},
-                )
-                new_messages.append(decision_msg)
-
-            # Rebuild delta with DECISION messages
-            if new_outbox:
-                critic_delta = dict(critic_delta)
-                critic_delta["outbox"] = new_outbox
-                agents_delta = dict(agents_delta)
-                agents_delta[self.agent_id] = critic_delta
-                delta = dict(delta)
-                delta["agents"] = agents_delta
-                delta["messages"] = new_messages
-
-            return delta
-
-    agents["critic"] = _CriticWrapper(original_critic)
-    return agents
-
-
-# ---------------------------------------------------------------------------
-# Helper: build ExperimentConfig with correct pg_dsn and tmp parquet dir
+# Helper: build ExperimentConfig with correct pg_dsn, parquet dir, topology,
+# and scripted fixture paths.
 # ---------------------------------------------------------------------------
 
 
@@ -220,13 +49,17 @@ def _make_cfg(
     pg_dsn: str,
     parquet_dir: str,
 ) -> Any:
-    """Load smoke.yaml and override pg_dsn, parquet_dir, and topology name.
+    """Load smoke.yaml and override pg_dsn, parquet_dir, topology name, and fixtures.
 
     For Star topology, sets phase caps to 1 so each agent runs exactly once:
       planning_max_iter=1, exec_max_iter=1, verify_max_iter=1
     This ensures the scripted fixtures (with a single step each) are sufficient.
     For Chain topology, max_iterations=12 (unchanged) is fine since Chain
     terminates on first critic approval.
+
+    Fixture paths are set per-topology so the runner uses the correct
+    scripted responses. The runner's _build_llm_wrappers reads these from
+    cfg.model.fake_fixtures.
     """
     from atm.experiment.config import load_config
 
@@ -237,10 +70,19 @@ def _make_cfg(
     if not smoke_yaml.exists():
         pytest.skip(f"smoke.yaml not found at {smoke_yaml}")
 
+    # Use absolute paths for fixtures so runner can resolve them regardless of cwd
+    planner_fixture = str(_FIXTURES_DIR / f"m6_{topology_name}_planner.yaml")
+    executor_fixture = str(_FIXTURES_DIR / f"m6_{topology_name}_executor.yaml")
+    critic_fixture = str(_FIXTURES_DIR / f"m6_{topology_name}_critic.yaml")
+
     overrides = [
         f"observability.pg_dsn={pg_dsn}",
         f"observability.parquet_dir={parquet_dir}",
         f"topology.name={topology_name}",
+        f"model.fake_fixtures.planner={planner_fixture}",
+        f"model.fake_fixtures.executor={executor_fixture}",
+        f"model.fake_fixtures.critic={critic_fixture}",
+        f"model.fake_fixtures.researcher={planner_fixture}",
     ]
 
     if topology_name == "star":
@@ -273,7 +115,7 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     Uses scripted FakeLLM fixtures:
       m6_star_planner.yaml  — planner emits plan draft
       m6_star_executor.yaml — executor emits tool_call + DRAFT "fib(10)=55"
-      m6_star_critic.yaml   — critic approves (wrapped to emit DECISION)
+      m6_star_critic.yaml   — critic approves (Critic subclass emits DECISION)
 
     Assertions: 18 items (see inline comments).
     """
@@ -289,37 +131,24 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     if not _PG_TESTS_ENABLED:
         pytest.skip("ATM_ENABLE_PG_TESTS not set")
 
+    # Check fixtures exist before loading cfg
+    for fixture_name in ["m6_star_planner.yaml", "m6_star_executor.yaml", "m6_star_critic.yaml"]:
+        p = _FIXTURES_DIR / fixture_name
+        if not p.exists():
+            pytest.skip(f"Fixture not found: {p}")
+
     cfg = _make_cfg(
         topology_name="star",
         pg_dsn=ephemeral_pg_dsn,
         parquet_dir=str(tmp_path),
     )
 
-    planner_fixture = _FIXTURES_DIR / "m6_star_planner.yaml"
-    executor_fixture = _FIXTURES_DIR / "m6_star_executor.yaml"
-    critic_fixture = _FIXTURES_DIR / "m6_star_critic.yaml"
-
-    for p in [planner_fixture, executor_fixture, critic_fixture]:
-        if not p.exists():
-            pytest.skip(f"Fixture not found: {p}")
-
-    # Build patched agents (BUG-1 and BUG-3 workaround)
-    patched_agents = _make_patched_agents(planner_fixture, executor_fixture, critic_fixture)
-
-    # BUG-4 fix: TopologyRegistry.get() returns the class; runner expects an instance.
-    # Patch TopologyRegistry.get to return StarTopology() (an instance).
-    import atm.topology.star  # noqa: F401 — side-effect: registers "star"
-    from atm.topology.star import StarTopology
-
-    star_instance = StarTopology()
-
-    # Patch runner._build_agents (BUG-1 fix: role-keyed agents for topology)
-    # Patch TopologyRegistry.get (BUG-4 fix: return instance not class)
-    with (
-        patch("atm.experiment.runner._build_agents", return_value=patched_agents),
-        patch("atm.experiment.runner.TopologyRegistry.get", return_value=star_instance),
-    ):
-        result = await run_one(cfg)
+    # No workarounds needed — runner properly:
+    #   BUG-1 fixed: _build_agents keys agents by role name
+    #   BUG-2 fixed: _build_llm_wrappers uses cfg.model.fake_fixtures for scripted mode
+    #   BUG-3 fixed: Critic subclass emits DECISION messages
+    #   BUG-4 fixed: runner instantiates the topology class before calling build()
+    result = await run_one(cfg)
 
     # ── Assertion 1: result.status == "completed" ───────────────────────
     assert result.status == "completed", f"Expected status=completed, got {result.status}"
@@ -497,7 +326,7 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
     Uses scripted FakeLLM fixtures:
       m6_chain_planner.yaml  — planner emits plan draft
       m6_chain_executor.yaml — executor emits tool_call + DRAFT "fib(10)=55"
-      m6_chain_critic.yaml   — critic approves (wrapped to emit DECISION)
+      m6_chain_critic.yaml   — critic approves (Critic subclass emits DECISION)
 
     Chain first-approve scenario: iter_total == 1 (planner step is iter 0,
     executor + critic run as iter 1, critic approves → END).
@@ -515,36 +344,24 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
     if not _PG_TESTS_ENABLED:
         pytest.skip("ATM_ENABLE_PG_TESTS not set")
 
+    # Check fixtures exist before loading cfg
+    for fixture_name in ["m6_chain_planner.yaml", "m6_chain_executor.yaml", "m6_chain_critic.yaml"]:
+        p = _FIXTURES_DIR / fixture_name
+        if not p.exists():
+            pytest.skip(f"Fixture not found: {p}")
+
     cfg = _make_cfg(
         topology_name="chain",
         pg_dsn=ephemeral_pg_dsn,
         parquet_dir=str(tmp_path),
     )
 
-    planner_fixture = _FIXTURES_DIR / "m6_chain_planner.yaml"
-    executor_fixture = _FIXTURES_DIR / "m6_chain_executor.yaml"
-    critic_fixture = _FIXTURES_DIR / "m6_chain_critic.yaml"
-
-    for p in [planner_fixture, executor_fixture, critic_fixture]:
-        if not p.exists():
-            pytest.skip(f"Fixture not found: {p}")
-
-    # Build patched agents (BUG-1 and BUG-3 workaround)
-    patched_agents = _make_patched_agents(planner_fixture, executor_fixture, critic_fixture)
-
-    # BUG-4 fix: TopologyRegistry.get() returns the class; runner expects an instance.
-    import atm.topology.chain  # noqa: F401 — side-effect: registers "chain"
-    from atm.topology.chain import ChainTopology
-
-    chain_instance = ChainTopology()
-
-    # Patch runner._build_agents (BUG-1 fix: role-keyed agents for topology)
-    # Patch TopologyRegistry.get (BUG-4 fix: return instance not class)
-    with (
-        patch("atm.experiment.runner._build_agents", return_value=patched_agents),
-        patch("atm.experiment.runner.TopologyRegistry.get", return_value=chain_instance),
-    ):
-        result = await run_one(cfg)
+    # No workarounds needed — runner properly:
+    #   BUG-1 fixed: _build_agents keys agents by role name
+    #   BUG-2 fixed: _build_llm_wrappers uses cfg.model.fake_fixtures for scripted mode
+    #   BUG-3 fixed: Critic subclass emits DECISION messages
+    #   BUG-4 fixed: runner instantiates the topology class before calling build()
+    result = await run_one(cfg)
 
     # ── Assertion 1: result.status == "completed" ───────────────────────
     assert result.status == "completed", f"Expected status=completed, got {result.status}"
