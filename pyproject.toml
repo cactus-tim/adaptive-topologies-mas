@@ -27,6 +27,9 @@ dependencies = [
     "omegaconf>=2.3",
 ]
 
+[project.scripts]
+atm = "atm.experiment.cli:app"
+
 [project.optional-dependencies]
 faiss = ["faiss-cpu>=1.11"]
 
