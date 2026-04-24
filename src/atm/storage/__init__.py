@@ -5,6 +5,7 @@ NOTE: The SQLAlchemy ORM model for phase transitions is exported as ``PhaseRow``
 Import ``PhaseRow`` when you need the ORM model; import ``atm.core.types.Phase``
 when you need the enum.
 """
+
 from atm.storage.checkpointer import (
     build_checkpointer,
     checkpointer_scope,

@@ -192,9 +192,7 @@ def _parse_tool_calls(ai_msg: AIMessage, issued_by: str) -> tuple[ToolCall, ...]
 # Finish reason helper
 # ---------------------------------------------------------------------------
 
-_VALID_FINISH_REASONS = frozenset(
-    {"stop", "tool_calls", "length", "content_filter", "error"}
-)
+_VALID_FINISH_REASONS = frozenset({"stop", "tool_calls", "length", "content_filter", "error"})
 
 
 def _parse_finish_reason(ai_msg: AIMessage) -> str:
@@ -310,9 +308,7 @@ class LLMWrapper:
         async def _call() -> Any:
             # FakeLLM has its own ainvoke signature and returns LLMResponse directly
             if isinstance(self._llm, FakeLLM):
-                return await self._llm.ainvoke(
-                    list(lc_messages), agent_id=agent_id
-                )
+                return await self._llm.ainvoke(list(lc_messages), agent_id=agent_id)
             return await self._llm.ainvoke(lc_messages, **invoke_kwargs)
 
         return await with_retry(

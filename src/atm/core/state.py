@@ -91,4 +91,6 @@ class GraphState(TypedDict, total=False):
     messages: Annotated[list[Message], dedup_by_id_reducer("id", sort_by="created_at")]
     llm_calls: Annotated[list[LLMResponse], dedup_by_id_reducer("id", sort_by="started_at")]
     budget_events: Annotated[list[BudgetEvent], dedup_by_id_reducer("id", sort_by="at")]
-    topology_transitions: Annotated[list[TopologyTransition], dedup_by_id_reducer("id", sort_by="at")]
+    topology_transitions: Annotated[
+        list[TopologyTransition], dedup_by_id_reducer("id", sort_by="at")
+    ]

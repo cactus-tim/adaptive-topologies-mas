@@ -91,7 +91,7 @@ Persistence layer for experiments.
 - `models.py` — 6 SQLAlchemy 2.x models: `Experiment` (root), `Run`, `Phase` (exported as `PhaseRow` from `__init__` to avoid collision with `atm.core.types.Phase` StrEnum), `HumanInteraction`, `BudgetEvent`, `TopologyTransition`. + `FinishReason` StrEnum. Schema matches arch.md §3.4.
 - `session.py` — business DB: `create_engine`, `create_session_factory` (expire_on_commit=False), `session_scope` CM.
 - `schemas.py` — 6 pyarrow schemas. Timestamps are `pa.timestamp('us', tz='UTC')` (minor correction from arch.md §3.5 for tz-correctness).
-- `parquet_writer.py` — buffered async writer with per-stream `asyncio.Lock`; buffer_rows + buffer_seconds auto-flush (invariant (d) of arch.md §10.3).
+- `parquet_writer.py` — buffered async writer with per-stream `asyncio.Lock`; buffer_rows + buffer_seconds auto-flush (invariant (d) of arch.md §10.3). `write_scratchpad` validates `agent_id` against `^[A-Za-z0-9_-]{1,64}$` (path-traversal guard).
 - `checkpointer.py` — two-pool pattern per arch.md §11.3: `checkpointer_scope` (primary `@asynccontextmanager`), `build_checkpointer` (low-level). Uses psycopg AsyncConnectionPool with `autocommit=True, prepare_threshold=0` (langgraph #2755).
 - **Exports (from `atm.storage`):** `Base`, `BudgetEvent`, `Experiment`, `FinishReason`, `HumanInteraction`, `LLM_CALL_SCHEMA`, `MESSAGE_SCHEMA`, `PHASE_SCHEMA`, `ParquetWriter`, `PhaseRow`, `Run`, `SCRATCHPAD_SCHEMA`, `TOOL_CALL_SCHEMA`, `TOPOLOGY_TRANSITION_SCHEMA`, `TopologyTransition`, `build_checkpointer`, `checkpointer_scope`, `create_engine`, `create_session_factory`, `session_scope`.
 
@@ -104,7 +104,7 @@ Persistence layer for experiments.
 
 LangGraph callback handler + serializers.
 
-- `callbacks.py` — `ExperimentCallbackHandler(AsyncCallbackHandler)`. Implements arch.md §10.3 4 flush invariants: (a) root `on_chain_end` → close, (b) phase/topology transition → flush STRICTLY BEFORE PG INSERT, (c) root `on_chain_error` → close, (d) buffer overflow auto-flush at writer layer. Atomic `UPDATE ... RETURNING` for `runs.budget_spent_usd` and `experiments.total_cost_usd` (arch.md §4.2, §18/#4). Budget warn/exceed one-shot events.
+- `callbacks.py` — `ExperimentCallbackHandler(AsyncCallbackHandler)`. Implements arch.md §10.3 4 flush invariants: (a) root `on_chain_end` → close, (b) phase/topology transition → flush STRICTLY BEFORE PG INSERT, (c) root `on_chain_error` → close, (d) buffer overflow auto-flush at writer layer. Atomic `UPDATE ... RETURNING` for `runs.budget_spent_usd` and `experiments.total_cost_usd` (arch.md §4.2, §18/#4). Budget warn/exceed one-shot events. `on_tool_start` captures `tool_name` (from `serialized['name']`), `agent_id` (from `metadata['agent_id']`) and `args_json`; `on_tool_end/error` preserve these fields; `result_json` serialized via shared `_dumps` helper.
 - `serializers.py` — 6 pure functions (no I/O) converting pydantic domain types → parquet rows matching storage/schemas.py. `_dumps` helper: json.dumps with sort_keys=True, ensure_ascii=False, separators=(',', ':').
 - **Exports (from `atm.observability`):** `ExperimentCallbackHandler`, `llm_response_to_row`, `message_to_row`, `phase_transition_to_row`, `scratchpad_entry_to_row`, `tool_call_to_row`, `topology_transition_to_row`.
 

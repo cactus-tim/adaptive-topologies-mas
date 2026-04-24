@@ -80,9 +80,7 @@ def inject_cache_control(
 
     if isinstance(last_content, str):
         # Convert plain string to list-of-blocks with cache_control on the only block.
-        new_content = [
-            {"type": "text", "text": last_content, "cache_control": cache_block}
-        ]
+        new_content = [{"type": "text", "text": last_content, "cache_control": cache_block}]
     else:
         # Deep-copy the content list so we don't mutate the original.
         raw_copy: list[Any] = copy.deepcopy(list(last_content))

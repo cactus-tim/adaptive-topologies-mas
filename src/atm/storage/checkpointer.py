@@ -14,9 +14,10 @@ _to_psycopg_dsn     — DSN normaliser: strips +asyncpg scheme suffix
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, cast
-from urllib.parse import urlunsplit, urlsplit
+from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection

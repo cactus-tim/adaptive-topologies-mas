@@ -19,13 +19,12 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Optional
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 # ---------------------------------------------------------------------------
 # FinishReason — StrEnum with canonical values (arch.md §3.4)
@@ -73,14 +72,14 @@ class Experiment(Base):
         nullable=False,
         server_default=sa.text("'{}'::jsonb"),
     )
-    git_sha: Mapped[Optional[str]] = mapped_column(sa.String(40), nullable=True)
+    git_sha: Mapped[str | None] = mapped_column(sa.String(40), nullable=True)
     started_at: Mapped[sa.DateTime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
         index=True,
     )
-    finished_at: Mapped[Optional[sa.DateTime]] = mapped_column(
+    finished_at: Mapped[sa.DateTime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,
     )
@@ -136,7 +135,7 @@ class Run(Base):
     topology: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     task_id: Mapped[str] = mapped_column(sa.String(128), nullable=False)
     agent_set: Mapped[str] = mapped_column(sa.String(64), nullable=False)
-    human_role: Mapped[Optional[str]] = mapped_column(sa.String(32), nullable=True)
+    human_role: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
     seed: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     model: Mapped[str] = mapped_column(sa.String(64), nullable=False)
 
@@ -151,37 +150,37 @@ class Run(Base):
         nullable=False,
         server_default=sa.text("'{}'::jsonb"),
     )
-    sandbox_image_digest: Mapped[Optional[str]] = mapped_column(
+    sandbox_image_digest: Mapped[str | None] = mapped_column(
         sa.String(80),
         nullable=True,
     )
 
     status: Mapped[str] = mapped_column(sa.String(16), nullable=False)
-    finish_reason: Mapped[Optional[str]] = mapped_column(sa.String(32), nullable=True)
+    finish_reason: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
     budget_spent_usd: Mapped[Decimal] = mapped_column(
         sa.Numeric(10, 4),
         nullable=False,
         server_default=sa.text("0"),
     )
-    quality_score: Mapped[Optional[float]] = mapped_column(
+    quality_score: Mapped[float | None] = mapped_column(
         sa.Double(),
         nullable=True,
     )
-    wall_time_s: Mapped[Optional[float]] = mapped_column(
+    wall_time_s: Mapped[float | None] = mapped_column(
         sa.Double(),
         nullable=True,
     )
-    iterations: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
+    iterations: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     started_at: Mapped[sa.DateTime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
     )
-    finished_at: Mapped[Optional[sa.DateTime]] = mapped_column(
+    finished_at: Mapped[sa.DateTime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,
     )
-    error: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
     # Relationships
     experiment: Mapped[Experiment] = relationship(
@@ -234,7 +233,7 @@ class Phase(Base):
         nullable=False,
     )
     phase_name: Mapped[str] = mapped_column(sa.String(32), nullable=False)
-    from_phase: Mapped[Optional[str]] = mapped_column(
+    from_phase: Mapped[str | None] = mapped_column(
         sa.String(32),
         nullable=True,  # §3.4: None on initial init
     )
@@ -243,7 +242,7 @@ class Phase(Base):
         nullable=False,
         server_default=sa.text("now()"),
     )
-    ended_at: Mapped[Optional[sa.DateTime]] = mapped_column(
+    ended_at: Mapped[sa.DateTime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,  # §3.4: nullable — phase may still be ongoing
     )
@@ -294,7 +293,7 @@ class HumanInteraction(Base):
         nullable=False,
         server_default=sa.text("now()"),
     )
-    answered_at: Mapped[Optional[sa.DateTime]] = mapped_column(
+    answered_at: Mapped[sa.DateTime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,
     )
@@ -302,19 +301,19 @@ class HumanInteraction(Base):
         JSONB,
         nullable=False,  # §3.4: HumanContext.model_dump()
     )
-    response_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    response_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,  # §3.4: HumanResponse.model_dump(); null until answered
     )
-    tlx_scores: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    tlx_scores: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,  # §3.4: nullable
     )
-    raw_tlx_score: Mapped[Optional[float]] = mapped_column(
+    raw_tlx_score: Mapped[float | None] = mapped_column(
         sa.Double(),
         nullable=True,  # §13.3: aggregated float for fast filter; null before TLX filled
     )
-    request_id: Mapped[Optional[str]] = mapped_column(
+    request_id: Mapped[str | None] = mapped_column(
         sa.String(64),
         nullable=True,  # idempotency key (run_id, request_id) pair
     )
@@ -403,7 +402,7 @@ class TopologyTransition(Base):
         sa.ForeignKey("runs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    from_topology: Mapped[Optional[str]] = mapped_column(
+    from_topology: Mapped[str | None] = mapped_column(
         sa.String(32),
         nullable=True,  # §3.4: null only for initial
     )
