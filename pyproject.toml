@@ -61,6 +61,9 @@ filterwarnings = ["error"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
+markers = [
+    "integration: marks tests as integration tests (require external services)",
+]
 
 [tool.mypy]
 python_version = "3.11"

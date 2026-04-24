@@ -381,7 +381,7 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                     .order_by(PhaseModel.started_at.desc())
                     .limit(1)
                 )
-                prev_phase_id: UUID | None = result.scalar_one()
+                prev_phase_id: UUID | None = result.scalar_one_or_none()
 
                 # If there's a previous open phase, close it
                 if prev_phase_id is not None:
