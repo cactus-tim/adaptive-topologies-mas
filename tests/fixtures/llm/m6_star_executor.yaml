@@ -1,0 +1,41 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for StarTopology — Executor agent.
+# agent_id "executor" matches the role-keyed agent built in integration test.
+#
+# Step 0: executor emits a tool_call for code_run.
+#   finish_reason: tool_calls triggers the tool-calling loop in Agent._run_tool_loop.
+#   The ToolRegistry is empty in the test (no real sandbox), so code_run will raise
+#   ToolError, which is caught and returned as ToolResult(ok=False). A synthetic
+#   "Tool code_run result: None" message is appended, then step 1 is invoked.
+#
+# Step 1: executor emits DRAFT with "fib(10)=55" as the final answer.
+#   payload.draft is the canonical draft field for _extract_final_answer.
+entries:
+  - agent_id: executor
+    role: executor
+    step_idx: 0
+    content: "I will run the fibonacci code."
+    tool_calls:
+      - name: code_run
+        args:
+          lang: python
+          code: "def fib(n):\n    if n <= 1: return n\n    return fib(n-1) + fib(n-2)\nprint(fib(10))"
+    finish_reason: tool_calls
+    usage:
+      input_tokens: 60
+      output_tokens: 30
+      total_tokens: 90
+    model: "fake:scripted"
+
+  - agent_id: executor
+    role: executor
+    step_idx: 1
+    content: "fib(10)=55"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 10
+      total_tokens: 90
+    model: "fake:scripted"

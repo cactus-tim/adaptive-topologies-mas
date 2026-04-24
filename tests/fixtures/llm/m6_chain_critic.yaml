@@ -1,0 +1,21 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for ChainTopology — Critic agent.
+# agent_id "critic" matches the role-keyed agent built in integration test.
+#
+# Step 0: critic approves the executor output.
+# NOTE: The base Agent.step() always emits MessageKind.DRAFT; the integration
+# test's critic wrapper converts the outbox message to MessageKind.DECISION
+# with payload={"approved": True} so _critic_postprocess can parse it.
+entries:
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "APPROVE fib"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 70
+      output_tokens: 10
+      total_tokens: 80
+    model: "fake:scripted"

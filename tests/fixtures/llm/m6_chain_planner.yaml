@@ -1,0 +1,17 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for ChainTopology — Planner agent.
+# agent_id "planner" matches the role-keyed agent built in integration test.
+# Step 0: planner emits a plan draft.
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "Plan: write fib(n) function; compute fib(10). Steps: 1) define fib, 2) call fib(10)."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 50
+      output_tokens: 20
+      total_tokens: 70
+    model: "fake:scripted"
