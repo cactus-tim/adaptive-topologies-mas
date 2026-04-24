@@ -182,7 +182,9 @@ class TestLLMError:
         assert exc.attempts == 3
 
     def test_str_non_empty(self) -> None:
-        exc = LLMError(provider="anthropic", model="claude-3-5-sonnet-latest", attempts=1, message="rate limit")
+        exc = LLMError(
+            provider="anthropic", model="claude-3-5-sonnet-latest", attempts=1, message="rate limit"
+        )
         assert len(str(exc)) > 0
 
     def test_is_raiseable(self) -> None:
@@ -196,7 +198,9 @@ class TestLLMError:
         """LLMError.cause reflects __cause__ set via `raise ... from`."""
         original = TimeoutError("network timeout")
         try:
-            raise LLMError(provider="openai", model="gpt-4o", attempts=3, message="retry exhausted") from original
+            raise LLMError(
+                provider="openai", model="gpt-4o", attempts=3, message="retry exhausted"
+            ) from original
         except LLMError as exc:
             assert exc.cause is original
             assert exc.__cause__ is original

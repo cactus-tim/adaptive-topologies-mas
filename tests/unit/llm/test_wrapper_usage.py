@@ -176,11 +176,7 @@ async def test_openai_usage_with_cache_read() -> None:
 
     assert result.usage.cached_input_tokens == 40
     # Cost: 60 non-cached @ 0.00015/1k + 40 cached @ 0.000075/1k + 50 output @ 0.0006/1k
-    expected_cost = (
-        (60 * 0.00015 / 1000)
-        + (40 * 0.000075 / 1000)
-        + (50 * 0.0006 / 1000)
-    )
+    expected_cost = (60 * 0.00015 / 1000) + (40 * 0.000075 / 1000) + (50 * 0.0006 / 1000)
     assert abs(result.cost_usd - expected_cost) < 1e-10
 
 
@@ -216,10 +212,7 @@ async def test_anthropic_usage_parsed_correctly() -> None:
 
     # Cost: 85 plain @ 0.0008/1k + 10 read @ 0.00008/1k + 5 write @ 0.001/1k + 50 out @ 0.004/1k
     expected_cost = (
-        (85 * 0.0008 / 1000)
-        + (10 * 0.00008 / 1000)
-        + (5 * 0.001 / 1000)
-        + (50 * 0.004 / 1000)
+        (85 * 0.0008 / 1000) + (10 * 0.00008 / 1000) + (5 * 0.001 / 1000) + (50 * 0.004 / 1000)
     )
     assert abs(result.cost_usd - expected_cost) < 1e-10
 
