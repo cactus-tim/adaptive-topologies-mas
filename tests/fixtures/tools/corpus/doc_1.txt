@@ -1,0 +1,5 @@
+Deep learning and neural networks have revolutionized artificial intelligence.
+A neural network consists of layers of interconnected nodes that learn patterns
+from data. Convolutional neural networks excel at image recognition, while
+recurrent neural networks process sequential data such as language and time series.
+Transformer-based neural architectures now dominate natural language processing.
