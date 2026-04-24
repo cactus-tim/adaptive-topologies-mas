@@ -142,12 +142,23 @@ class DockerSandbox:
         return buf.getvalue()
 
     def _build_command(self, lang: str) -> list[str]:
-        """Build the container command for the given language."""
+        """Build the container command for the given language.
+
+        Raises
+        ------
+        ValueError
+            If *lang* is not in the configured image_map.
+        """
+        if lang not in self._image_map:
+            raise ValueError(
+                f"Unsupported language: {lang!r}. Supported: {sorted(self._image_map)}"
+            )
         if lang == "python":
             return ["python", "main.py"]
         elif lang == "node":
             return ["node", "main.js"]
         else:
+            # Custom language added via image_map override
             return [lang, f"main.{lang}"]
 
     def _execute_sync(
@@ -161,8 +172,9 @@ class DockerSandbox:
 
         Called via asyncio.to_thread to avoid blocking the event loop.
         """
-        image = self._image_map.get(lang, f"{lang}:latest")
+        # _build_command raises ValueError for unknown lang — validates before image lookup
         command = self._build_command(lang)
+        image = self._image_map[lang]
 
         security_opt = [
             "no-new-privileges",
@@ -175,10 +187,13 @@ class DockerSandbox:
         timed_out = False
 
         try:
-            container = self._client.containers.run(
+            # Create the container in stopped state first so we can upload
+            # code before the entry-point runs (avoids the race where
+            # containers.run(detach=True) starts the process before put_archive
+            # has landed the files in /work).
+            container = self._client.containers.create(
                 image,
                 command,
-                detach=True,
                 read_only=True,
                 network_mode="none",
                 cap_drop=["ALL"],
@@ -190,9 +205,12 @@ class DockerSandbox:
                 working_dir="/work",
             )
 
-            # Upload code + files into the tmpfs /work directory
+            # Upload code + files into the tmpfs /work directory BEFORE start
             archive_data = self._make_archive(code, lang, files)
             container.put_archive("/work", archive_data)
+
+            # Now start the container — files are already present in /work
+            container.start()
 
             # Wait for container to finish; catch timeout
             try:
@@ -207,12 +225,19 @@ class DockerSandbox:
                     container.kill()
                 exit_code = -1
 
-            # Gather output
+            # Gather output — fetch stdout and stderr separately so callers
+            # can distinguish between the two streams (e.g. TestRunTool parses
+            # stderr for unittest summary lines).
             try:
-                raw_logs: bytes = container.logs(stdout=True, stderr=True)
-                combined = raw_logs.decode("utf-8", errors="replace")
+                raw_stdout: bytes = container.logs(stdout=True, stderr=False)
+                stdout_str = raw_stdout.decode("utf-8", errors="replace")
             except Exception:
-                combined = ""
+                stdout_str = ""
+            try:
+                raw_stderr: bytes = container.logs(stdout=False, stderr=True)
+                stderr_str = raw_stderr.decode("utf-8", errors="replace")
+            except Exception:
+                stderr_str = ""
 
             # Check OOM
             try:
@@ -224,8 +249,8 @@ class DockerSandbox:
             duration_ms = int((time.monotonic() - t0) * 1000)
 
             return ExecResult(
-                stdout=combined,
-                stderr="",
+                stdout=stdout_str,
+                stderr=stderr_str,
                 exit_code=exit_code,
                 duration_ms=duration_ms,
                 timed_out=timed_out,

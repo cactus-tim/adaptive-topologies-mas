@@ -26,18 +26,48 @@ def _make_fake_container(
     *,
     exit_code: int = 0,
     stdout: bytes = b"",
+    stderr: bytes = b"",
     oom_killed: bool = False,
     raise_wait: Exception | None = None,
     raise_logs: Exception | None = None,
 ) -> MagicMock:
-    """Build a MagicMock that looks like a docker Container."""
+    """Build a MagicMock that looks like a docker Container.
+
+    Uses containers.create() lifecycle: create → put_archive → start → wait → logs.
+    """
     container = MagicMock()
 
-    # container.logs() returns combined bytes
+    # container.logs(stdout=True, stderr=False) / logs(stdout=False, stderr=True)
     if raise_logs:
         container.logs.side_effect = raise_logs
     else:
-        container.logs.return_value = stdout
+        def _logs_side_effect(stdout=True, stderr=True):  # type: ignore[override]
+            if stdout and not stderr:
+                return stdout if isinstance(stdout, bytes) else b""
+            if stderr and not stdout:
+                return stderr if isinstance(stderr, bytes) else b""
+            return stdout if isinstance(stdout, bytes) else b""
+
+        # Return stdout bytes for stdout=True,stderr=False; stderr bytes otherwise
+        container.logs.side_effect = lambda **kw: (
+            stdout if (kw.get("stdout") and not kw.get("stderr")) else
+            (globals()["_make_fake_container"]  # never called — just for type hints
+             if False else
+             (stderr if (kw.get("stderr") and not kw.get("stdout")) else b""))
+        )
+        # Simpler: use a closure
+        _stdout_bytes = stdout
+        _stderr_bytes = stderr
+
+        def _logs(**kw):
+            if kw.get("stdout", True) and not kw.get("stderr", True):
+                return _stdout_bytes
+            if kw.get("stderr", True) and not kw.get("stdout", True):
+                return _stderr_bytes
+            return _stdout_bytes
+
+        container.logs.side_effect = None
+        container.logs.side_effect = _logs
 
     # container.wait() returns {"StatusCode": exit_code}
     if raise_wait:
@@ -60,9 +90,12 @@ def _make_fake_container(
 
 
 def _make_fake_docker_client(container: MagicMock) -> MagicMock:
-    """Build a MagicMock docker.DockerClient with the given container."""
+    """Build a MagicMock docker.DockerClient with the given container.
+
+    Uses containers.create() (not run()) to match the fixed DockerSandbox lifecycle.
+    """
     client = MagicMock()
-    client.containers.run.return_value = container
+    client.containers.create.return_value = container
     return client
 
 
@@ -82,10 +115,6 @@ def sandbox_config() -> SandboxConfig:
         mem_limit="128m",
         pids_limit=64,
         timeout_s=10.0,
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
     )
 
 
@@ -160,15 +189,15 @@ def test_auto_pull_env_triggers_pull(seccomp_json: str, sandbox_config: SandboxC
 
 
 # ---------------------------------------------------------------------------
-# containers.run kwargs — hardening parameters
+# containers.create kwargs — hardening parameters
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_container_run_kwargs_hardening(
+async def test_container_create_kwargs_hardening(
     seccomp_json: str, sandbox_config: SandboxConfig
 ) -> None:
-    """containers.run must be called with the correct hardening kwargs."""
+    """containers.create must be called with the correct hardening kwargs."""
     fake_container = _make_fake_container(stdout=b"2\n")
     fake_client = _make_fake_docker_client(fake_container)
 
@@ -183,8 +212,8 @@ async def test_container_run_kwargs_hardening(
         )
         await sandbox.execute(lang="python", code="print(1+1)")
 
-    assert fake_client.containers.run.called, "containers.run must be called"
-    call_kwargs = fake_client.containers.run.call_args[1]  # keyword args
+    assert fake_client.containers.create.called, "containers.create must be called"
+    call_kwargs = fake_client.containers.create.call_args[1]  # keyword args
 
     # Core hardening
     assert call_kwargs.get("read_only") is True, "read_only must be True"
@@ -205,7 +234,9 @@ async def test_container_run_kwargs_hardening(
 
 
 @pytest.mark.asyncio
-async def test_container_run_working_dir(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
+async def test_container_create_working_dir(
+    seccomp_json: str, sandbox_config: SandboxConfig
+) -> None:
     """working_dir must be set to /work."""
     fake_container = _make_fake_container(stdout=b"")
     fake_client = _make_fake_docker_client(fake_container)
@@ -221,12 +252,14 @@ async def test_container_run_working_dir(seccomp_json: str, sandbox_config: Sand
         )
         await sandbox.execute(lang="python", code="x = 1")
 
-    call_kwargs = fake_client.containers.run.call_args[1]
+    call_kwargs = fake_client.containers.create.call_args[1]
     assert call_kwargs.get("working_dir") == "/work", "working_dir must be /work"
 
 
 @pytest.mark.asyncio
-async def test_container_run_mem_and_pids(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
+async def test_container_create_mem_and_pids(
+    seccomp_json: str, sandbox_config: SandboxConfig
+) -> None:
     """mem_limit and pids_limit must be forwarded from SandboxConfig."""
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
@@ -242,16 +275,25 @@ async def test_container_run_mem_and_pids(seccomp_json: str, sandbox_config: San
         )
         await sandbox.execute(lang="python", code="pass")
 
-    call_kwargs = fake_client.containers.run.call_args[1]
+    call_kwargs = fake_client.containers.create.call_args[1]
     assert call_kwargs.get("mem_limit") == sandbox_config.mem_limit
     assert call_kwargs.get("pids_limit") == sandbox_config.pids_limit
 
 
 @pytest.mark.asyncio
-async def test_container_run_detach_true(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
-    """containers.run must use detach=True."""
+async def test_lifecycle_create_then_put_archive_then_start(
+    seccomp_json: str, sandbox_config: SandboxConfig
+) -> None:
+    """Must call containers.create, then put_archive, then container.start in that order."""
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
+    call_order: list[str] = []
+
+    fake_client.containers.create.side_effect = lambda *a, **kw: (
+        call_order.append("create") or fake_container
+    )
+    fake_container.put_archive.side_effect = lambda *a, **kw: call_order.append("put_archive")
+    fake_container.start.side_effect = lambda *a, **kw: call_order.append("start")
 
     with (
         patch("docker.from_env", return_value=fake_client),
@@ -264,8 +306,9 @@ async def test_container_run_detach_true(seccomp_json: str, sandbox_config: Sand
         )
         await sandbox.execute(lang="python", code="pass")
 
-    call_kwargs = fake_client.containers.run.call_args[1]
-    assert call_kwargs.get("detach") is True, "detach must be True"
+    assert call_order[:3] == ["create", "put_archive", "start"], (
+        f"Expected create→put_archive→start, got {call_order}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +379,7 @@ async def test_timeout_kills_container_and_sets_timed_out(
         raise_wait=requests.exceptions.ReadTimeout("timed out"),
     )
     # After timeout kill, allow logs to return normally
+    fake_container.logs.side_effect = None
     fake_container.logs.return_value = b""
 
     fake_client = _make_fake_docker_client(fake_container)
@@ -426,7 +470,7 @@ async def test_default_image_map_python(seccomp_json: str, sandbox_config: Sandb
         )
         await sandbox.execute(lang="python", code="pass")
 
-    call_args = fake_client.containers.run.call_args
+    call_args = fake_client.containers.create.call_args
     # First positional arg is image
     image_used = call_args[0][0] if call_args[0] else call_args[1].get("image")
     assert image_used == "python:3.11-slim"
@@ -452,6 +496,31 @@ async def test_custom_image_map_overrides(seccomp_json: str, sandbox_config: San
         )
         await sandbox.execute(lang="python", code="pass")
 
-    call_args = fake_client.containers.run.call_args
+    call_args = fake_client.containers.create.call_args
     image_used = call_args[0][0] if call_args[0] else call_args[1].get("image")
     assert image_used == custom_image
+
+
+# ---------------------------------------------------------------------------
+# Unsupported language raises ValueError (finding #15)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unsupported_lang_raises_value_error(
+    seccomp_json: str, sandbox_config: SandboxConfig
+) -> None:
+    """An unsupported language (not in image_map) must raise ValueError."""
+    fake_client = _make_fake_docker_client(_make_fake_container())
+
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
+    ):
+        sandbox = DockerSandbox(
+            config=sandbox_config,
+            seccomp_json_str=seccomp_json,
+            prefetch=False,
+        )
+        with pytest.raises(ValueError, match="Unsupported language"):
+            await sandbox.execute(lang="pyhton", code="pass")  # intentional typo
