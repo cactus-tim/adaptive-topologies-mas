@@ -46,7 +46,7 @@ class PlanUpdateTool:
             "M5 reducer uses replace (not append) semantics."
         ),
         parameters={
-            "steps": (
+            "plan": (
                 "list of {id: str, title: str, status: 'open'|'done'|'in_progress'|'blocked'|'skipped'}"
             ),
         },
@@ -54,11 +54,11 @@ class PlanUpdateTool:
     )
 
     async def ainvoke(self, args: dict[str, Any]) -> ToolResult:
-        """Validate steps and produce the state_update payload.
+        """Validate plan steps and produce the state_update payload.
 
         Returns ToolResult with ok=False if any step fails validation.
         """
-        raw_steps: list[Any] = args.get("steps", [])
+        raw_steps: list[Any] = args.get("plan", [])
         validated: list[dict[str, Any]] = []
 
         for item in raw_steps:

@@ -7,7 +7,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_plan_update_output_shape() -> None:
-    """Valid steps list produces state_update with shared.plan key."""
+    """Valid plan list produces state_update with shared.plan key."""
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
@@ -15,7 +15,7 @@ async def test_plan_update_output_shape() -> None:
         {"id": "s1", "title": "Setup", "status": "done"},
         {"id": "s2", "title": "Implement", "status": "in_progress"},
     ]
-    result = await tool.ainvoke({"steps": steps})
+    result = await tool.ainvoke({"plan": steps})
     assert result.ok is True
     assert "state_update" in result.output
     assert "shared" in result.output["state_update"]
@@ -24,12 +24,12 @@ async def test_plan_update_output_shape() -> None:
 
 @pytest.mark.asyncio
 async def test_plan_update_steps_value_matches_input() -> None:
-    """The plan in output matches the input steps list."""
+    """The plan in output matches the input plan list."""
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
     steps = [{"id": "s1", "title": "Only step", "status": "open"}]
-    result = await tool.ainvoke({"steps": steps})
+    result = await tool.ainvoke({"plan": steps})
     assert result.output["state_update"]["shared"]["plan"] == steps
 
 
@@ -39,7 +39,7 @@ async def test_plan_update_no_signals_in_shared() -> None:
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
-    result = await tool.ainvoke({"steps": [{"id": "1", "title": "x", "status": "open"}]})
+    result = await tool.ainvoke({"plan": [{"id": "1", "title": "x", "status": "open"}]})
     shared = result.output["state_update"]["shared"]
     assert "signals" not in shared
 
@@ -51,7 +51,7 @@ async def test_plan_update_invalid_step_missing_required_field() -> None:
 
     tool = PlanUpdateTool()
     # Missing 'id' field
-    result = await tool.ainvoke({"steps": [{"title": "no id", "status": "open"}]})
+    result = await tool.ainvoke({"plan": [{"title": "no id", "status": "open"}]})
     assert result.ok is False
 
 
@@ -61,7 +61,7 @@ async def test_plan_update_invalid_status_returns_error() -> None:
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
-    result = await tool.ainvoke({"steps": [{"id": "1", "title": "bad", "status": "flying"}]})
+    result = await tool.ainvoke({"plan": [{"id": "1", "title": "bad", "status": "flying"}]})
     assert result.ok is False
 
 
@@ -77,3 +77,11 @@ def test_plan_update_schema_returns() -> None:
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     assert "state_update" in PlanUpdateTool.schema.returns
+
+
+def test_plan_update_schema_parameters_key() -> None:
+    """PlanUpdateTool.schema.parameters must use 'plan' as the key (not 'steps')."""
+    from atm.tools.local_.plan_update import PlanUpdateTool
+
+    assert "plan" in PlanUpdateTool.schema.parameters
+    assert "steps" not in PlanUpdateTool.schema.parameters
