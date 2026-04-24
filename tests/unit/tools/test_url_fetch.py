@@ -169,8 +169,8 @@ async def test_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.ok, f"Expected ok=True but got error: {result.error}"
     assert result.output is not None
     assert result.output["status"] == 200
-    assert "Hello" in result.output["body"]
-    assert result.output["bytes_read"] > 0
+    assert "Hello" in result.output["content"]
+    assert result.output["size"] > 0
 
 
 @pytest.mark.asyncio

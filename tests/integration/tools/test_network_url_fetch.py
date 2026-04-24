@@ -26,4 +26,4 @@ async def test_fetch_example_com() -> None:
     assert result.ok, f"Expected ok=True, got error: {result.error}"
     assert result.output is not None
     assert result.output["status"] == 200
-    assert len(result.output["body"]) > 0
+    assert len(result.output["content"]) > 0

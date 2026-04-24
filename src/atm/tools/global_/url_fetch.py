@@ -19,13 +19,15 @@ from atm.tools._retry import with_tool_retry
 from atm.tools._safety import resolve_and_validate_url
 from atm.tools.base import ToolSchema
 
-# Default retry policy: 2 retries, fast backoff, no jitter for predictability in tests
+# Default retry policy: 2 retries on transient network/timeout errors.
+# httpx.NetworkError covers connection refused, DNS failure, etc.
+# 5xx/429 are handled via the is_transient duck-type path in with_retry.
 _DEFAULT_RETRY_POLICY = RetryPolicy(
     max_retries=2,
     base_delay_s=0.1,
     max_delay_s=1.0,
     jitter=False,
-    retry_on=(httpx.TimeoutException,),
+    retry_on=(httpx.TimeoutException, httpx.NetworkError),
 )
 
 _CALL_ID = uuid4  # callable alias for test clarity
@@ -75,8 +77,8 @@ class UrlFetchTool:
             "status": "integer",
             "url": "string",
             "content_type": "string",
-            "body": "string (utf-8 decoded)",
-            "bytes_read": "integer",
+            "content": "string (utf-8 decoded body)",
+            "size": "integer (bytes read)",
         },
     )
 
@@ -185,7 +187,7 @@ class UrlFetchTool:
 
             # Step 5: Decode body
             raw_body = b"".join(chunks)
-            body = raw_body.decode("utf-8", errors="replace")
+            content = raw_body.decode("utf-8", errors="replace")
             content_type = response.headers.get("content-type", "")
 
             return ToolResult(
@@ -195,8 +197,8 @@ class UrlFetchTool:
                     "status": response.status_code,
                     "url": str(response.url),
                     "content_type": content_type,
-                    "body": body,
-                    "bytes_read": len(raw_body),
+                    "content": content,
+                    "size": len(raw_body),
                 },
                 error=None,
                 latency_ms=0,
