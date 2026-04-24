@@ -35,10 +35,7 @@ def sandbox(seccomp_str: str) -> DockerSandbox:
         mem_limit="256m",
         pids_limit=128,
         timeout_s=30.0,
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
+        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     return DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
 
@@ -97,10 +94,7 @@ async def test_fork_bomb_killed_by_pids_limit(seccomp_str: str) -> None:
         mem_limit="256m",
         pids_limit=10,  # very tight PID limit
         timeout_s=25.0,
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
+        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     sb = DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
 

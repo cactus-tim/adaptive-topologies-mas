@@ -34,10 +34,7 @@ def sandbox(seccomp_str: str) -> DockerSandbox:
         mem_limit="128m",
         pids_limit=64,
         timeout_s=10.0,
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
+        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     return DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
 

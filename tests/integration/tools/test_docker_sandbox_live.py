@@ -32,10 +32,8 @@ def sandbox(seccomp_str: str) -> DockerSandbox:
         mem_limit="256m",
         pids_limit=64,
         timeout_s=15.0,
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
+        # Use SandboxConfig defaults for tmpfs — they include uid=1000,gid=1000
+        # which is required for the unprivileged user inside the container.
     )
     return DockerSandbox(
         config=cfg,
@@ -188,10 +186,7 @@ async def test_timeout_infinite_loop(seccomp_str: str) -> None:
         mem_limit="128m",
         pids_limit=64,
         timeout_s=3.0,  # short timeout for test speed
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
+        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     sb = DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
     result = await sb.execute(lang="python", code="while True: pass", timeout=2.0)
@@ -210,10 +205,7 @@ async def test_oom_killed(seccomp_str: str) -> None:
         mem_limit="64m",
         pids_limit=64,
         timeout_s=30.0,
-        tmpfs_mounts={
-            "/work": "size=64m,mode=700",
-            "/tmp": "size=64m,noexec,nosuid",
-        },
+        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     sb = DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
     # Allocate ~512MB — far beyond 64m limit
