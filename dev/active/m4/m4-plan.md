@@ -437,3 +437,11 @@
 3. **NIT-3** — из Step 6.2 удалён промежуточный snippet с `pytest.current_test` (нестабильный публичный API); оставлен только `pytest_collection_modifyitems` hook.
 4. **NIT-4** — в Step 11.2 явно документировано требование `2>&1` merge для `python -m unittest` (unittest пишет summary в stderr); TestRunTool парсит последнюю непустую строку из stdout после merge.
 5. **NIT-5** — в Step 8.2 ослаблено условие fork-bomb теста: `host wall-time < 30s` (вместо 15s) ИЛИ `container.wait(timeout=20)["StatusCode"] != 0`; ключевое — процесс не выживает на хосте.
+
+## Поправки к code-review (M4 review amendments)
+
+6. **CR-6 — Todo schema: `text`→`content`; добавлен статус `in_progress`** (Step 9.2). Реализация использует поле `content` вместо `text` (более явное человекочитаемое имя) и добавляет статус `in_progress` (нужен для pipeline-состояния агента). Итоговая форма: `{"id": str, "content": str, "status": Literal["open","done","in_progress"]}`. M5 prompt templates должны использовать `content` и поддерживать `in_progress`.
+7. **CR-7 — PlanStep: `text`→`title`; расширенные статусы** (Step 9.3). Реализация использует поле `title` (семантически точнее для шагов плана) и статусы `open|done|in_progress|blocked|skipped`. Форма: `{"id": str, "title": str, "status": Literal["open","done","in_progress","blocked","skipped"]}`. M5 должен использовать ключ `plan` при вызове `plan_update` (после CR-5/fix #5 — args key теперь `plan`, не `steps`).
+8. **CR-8 — SemanticSearchTool snippet 200 chars vs 120** (Step 13.1). Оставлен 200-символьный сниппет: для коротких корпусов (≤ 10 документов) больший контекст улучшает полезность без значимых накладных расходов. M5 может обрезать при необходимости.
+9. **CR-9 — SemanticSearchTool default top_k=5 vs 3** (Step 13.1). Оставлен `top_k=5`: более широкий набор результатов по умолчанию снижает риск пропустить релевантный документ. M5 может переопределить через аргумент `k`.
+10. **CR-14 — Calculator `tan`** (Step 4.1). `tan` добавлен в `_SAFE_FUNCS` как дополнение к `sin`/`cos` (математически тривиальное расширение). Обновлённый whitelist: `{sqrt, sin, cos, tan, log, log10, exp, pow, floor, ceil, abs, min, max}`.
