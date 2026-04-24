@@ -223,6 +223,7 @@ async def test_close_idempotent(tmp_path: Path) -> None:
 async def test_schema_mismatch_raises(tmp_path: Path) -> None:
     """Writing a row with wrong field type should raise ArrowInvalid or similar."""
     import pyarrow as pa
+
     from atm.storage.parquet_writer import ParquetWriter
 
     run_id = uuid4()
@@ -238,10 +239,10 @@ async def test_schema_mismatch_raises(tmp_path: Path) -> None:
         await writer.flush()
 
     # cleanup — ignore errors during close since writer may be in bad state
-    try:
+    import contextlib
+
+    with contextlib.suppress(Exception):
         await writer.close()
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------

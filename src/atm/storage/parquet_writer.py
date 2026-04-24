@@ -23,7 +23,6 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 from uuid import UUID
 
 import pyarrow as pa
@@ -49,7 +48,7 @@ class _StreamState:
     flushed_rows: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
     # Rows buffered since last flush
     buffer: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
-    first_buffered_at: Optional[float] = None
+    first_buffered_at: float | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def flush_to_disk(self, compression: str) -> None:
@@ -129,10 +128,10 @@ class ParquetWriter:
     def _should_auto_flush(self, state: _StreamState) -> bool:
         if len(state.buffer) >= self._buffer_rows:
             return True
-        if state.first_buffered_at is not None:
-            if time.monotonic() - state.first_buffered_at >= self._buffer_seconds:
-                return True
-        return False
+        return (
+            state.first_buffered_at is not None
+            and time.monotonic() - state.first_buffered_at >= self._buffer_seconds
+        )
 
     async def _append(self, state: _StreamState, row: dict) -> None:  # type: ignore[type-arg]
         """Append a row to the stream's buffer and auto-flush if needed."""

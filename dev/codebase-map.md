@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-04-23*
+*Auto-generated. Last updated: 2026-04-24*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -22,8 +22,8 @@
   - `topology/` — Topology protocol, Star/Chain/Mesh/Debate/Hierarchical/Adaptive (M6-M8)
   - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals (M8)
   - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
-  - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3)
-  - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), tracer (M3)
+  - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3 complete)
+  - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), serializers (M3 complete)
   - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations (M10)
   - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX (M11)
   - `experiment/` — Config schemas (Pydantic), loader (OmegaConf), runner, grid executor, CLI (M12)
@@ -84,9 +84,33 @@
 - **Exports (M9 planned):** `HumanGateway` protocol, `LLMSimulatedGateway`, `CLIGateway`.
 - **Status:** M0 skeleton, M9 not started.
 
-### Storage & Observability (`storage/`, `observability/`)
-- **Exports (M3 planned):** `ExperimentCallbackHandler`, `ParquetWriter`, `Checkpointer`, SQLAlchemy session factory.
-- **Status:** M0 skeleton, M3 not started.
+### Storage Layer (`storage/`) — M3 complete
+
+Persistence layer for experiments.
+
+- `models.py` — 6 SQLAlchemy 2.x models: `Experiment` (root), `Run`, `Phase` (exported as `PhaseRow` from `__init__` to avoid collision with `atm.core.types.Phase` StrEnum), `HumanInteraction`, `BudgetEvent`, `TopologyTransition`. + `FinishReason` StrEnum. Schema matches arch.md §3.4.
+- `session.py` — business DB: `create_engine`, `create_session_factory` (expire_on_commit=False), `session_scope` CM.
+- `schemas.py` — 6 pyarrow schemas. Timestamps are `pa.timestamp('us', tz='UTC')` (minor correction from arch.md §3.5 for tz-correctness).
+- `parquet_writer.py` — buffered async writer with per-stream `asyncio.Lock`; buffer_rows + buffer_seconds auto-flush (invariant (d) of arch.md §10.3).
+- `checkpointer.py` — two-pool pattern per arch.md §11.3: `checkpointer_scope` (primary `@asynccontextmanager`), `build_checkpointer` (low-level). Uses psycopg AsyncConnectionPool with `autocommit=True, prepare_threshold=0` (langgraph #2755).
+- **Exports (from `atm.storage`):** `Base`, `BudgetEvent`, `Experiment`, `FinishReason`, `HumanInteraction`, `LLM_CALL_SCHEMA`, `MESSAGE_SCHEMA`, `PHASE_SCHEMA`, `ParquetWriter`, `PhaseRow`, `Run`, `SCRATCHPAD_SCHEMA`, `TOOL_CALL_SCHEMA`, `TOPOLOGY_TRANSITION_SCHEMA`, `TopologyTransition`, `build_checkpointer`, `checkpointer_scope`, `create_engine`, `create_session_factory`, `session_scope`.
+
+**Reproducibility fields — M5+ ownership TODO**
+- `Run.models_by_role_json` — filled by **Runner** at INSERT time (M5+)
+- `Run.model_version_snapshot` — filled by **LLMWrapper** on first successful call (M5+)
+- `Run.sandbox_image_digest` — filled by **DockerSandbox** at init (M5+)
+
+### Observability Layer (`observability/`) — M3 complete
+
+LangGraph callback handler + serializers.
+
+- `callbacks.py` — `ExperimentCallbackHandler(AsyncCallbackHandler)`. Implements arch.md §10.3 4 flush invariants: (a) root `on_chain_end` → close, (b) phase/topology transition → flush STRICTLY BEFORE PG INSERT, (c) root `on_chain_error` → close, (d) buffer overflow auto-flush at writer layer. Atomic `UPDATE ... RETURNING` for `runs.budget_spent_usd` and `experiments.total_cost_usd` (arch.md §4.2, §18/#4). Budget warn/exceed one-shot events.
+- `serializers.py` — 6 pure functions (no I/O) converting pydantic domain types → parquet rows matching storage/schemas.py. `_dumps` helper: json.dumps with sort_keys=True, ensure_ascii=False, separators=(',', ':').
+- **Exports (from `atm.observability`):** `ExperimentCallbackHandler`, `llm_response_to_row`, `message_to_row`, `phase_transition_to_row`, `scratchpad_entry_to_row`, `tool_call_to_row`, `topology_transition_to_row`.
+
+### Migrations (`alembic/`) — M3 complete
+
+- `versions/0001_initial_business_schema.py` — creates 6 business tables (not checkpoint tables; those are owned by `AsyncPostgresSaver.setup()`). Chained off `bc5f66dd0897` placeholder. Downgrade in reverse FK order.
 
 ### Tasks & Evaluation (`tasks/`, `evaluation/`)
 - **Exports (M10-M11 planned):** `TaskSpec`, `TaskRegistry`, evaluators, NASA-TLX aggregator.
