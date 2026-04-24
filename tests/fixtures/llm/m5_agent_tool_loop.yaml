@@ -1,0 +1,18 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: p1
+    role: planner
+    step_idx: 0
+    content: "I will call the dummy tool."
+    tool_calls:
+      - name: dummy_tool
+        args:
+          query: "test"
+    finish_reason: tool_calls
+  - agent_id: p1
+    role: planner
+    step_idx: 1
+    content: "The tool returned a result. Done."
+    tool_calls: []
+    finish_reason: stop

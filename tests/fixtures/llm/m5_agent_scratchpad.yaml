@@ -1,0 +1,33 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: p1
+    role: planner
+    step_idx: 0
+    content: "R0: reasoning step zero"
+    tool_calls: []
+    finish_reason: stop
+  - agent_id: p1
+    role: planner
+    step_idx: 1
+    content: "R1: reasoning step one"
+    tool_calls: []
+    finish_reason: stop
+  - agent_id: p1
+    role: planner
+    step_idx: 2
+    content: "R2: reasoning step two"
+    tool_calls: []
+    finish_reason: stop
+  - agent_id: p1
+    role: planner
+    step_idx: 3
+    content: "R3: reasoning step three"
+    tool_calls: []
+    finish_reason: stop
+  - agent_id: p1
+    role: planner
+    step_idx: 4
+    content: "R4: reasoning step four"
+    tool_calls: []
+    finish_reason: stop

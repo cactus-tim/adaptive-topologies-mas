@@ -266,6 +266,11 @@ class LLMWrapper:
         self._provider: str = parts[0] if len(parts) == 2 else "unknown"
         self._bare_model: str = parts[1] if len(parts) == 2 else model_id
 
+    @property
+    def model_id(self) -> str:
+        """The provider-qualified model identifier (e.g. ``'fake:deterministic'``)."""
+        return self._model_id
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
