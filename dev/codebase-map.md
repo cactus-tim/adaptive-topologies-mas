@@ -16,17 +16,17 @@
 ## Project Structure
 - `src/atm/` — main package (Adaptive Topologies MAS, imported as `atm`)
   - `core/` — base types, state, errors (Message, ToolCall, Phase, AgentState, GraphState)
-  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/vLLM), budget tracking, pricing, retry, fake LLM
+  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/vLLM), budget tracking, pricing, retry, fake LLM, `factory.build_llm(model_id, ...)` provider-prefix router (supports `fake:scripted/echo/replay`)
   - `tools/` — Tool protocol, registry, global tools, Docker/subprocess sandbox (M4)
   - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles, scratchpad policy C (M5)
-  - `topology/` — Topology protocol, Star/Chain/Mesh/Debate/Hierarchical/Adaptive (M6-M8)
+  - `topology/` — Topology protocol + Registry, Star + Chain (M6 complete); Mesh/Debate/Hierarchical/Adaptive (M7-M8 planned)
   - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals (M8)
   - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
   - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3 complete)
   - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), serializers (M3 complete)
   - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations (M10)
   - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX (M11)
-  - `experiment/` — Config schemas (Pydantic), loader (OmegaConf), runner, grid executor, CLI (M12)
+  - `experiment/` — Pydantic config schemas + OmegaConf loader, single-run runner (`run_one`), Typer CLI (`atm run`), inline evaluator (M6 complete; grid + sweep in M12)
   - `analysis/` — Loaders, plots (M13)
 - `tests/` — unit, integration, fixtures
   - `fixtures/llm/` — FakeLLM scripted response YAMLs (planner_simple, executor_code_run, determinism_seed, m5_*.yaml)
