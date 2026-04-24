@@ -1,0 +1,26 @@
+version: 1
+mode: scripted
+entries:
+  - agent_id: planner_1
+    role: planner
+    step_idx: 0
+    content: "Deterministic plan output for seed verification."
+    tool_calls: []
+    usage:
+      input_tokens: 50
+      output_tokens: 10
+      total_tokens: 60
+    model: "fake:deterministic"
+    finish_reason: "stop"
+
+  - agent_id: executor_1
+    role: executor
+    step_idx: 0
+    content: "Deterministic executor output for seed verification."
+    tool_calls: []
+    usage:
+      input_tokens: 55
+      output_tokens: 10
+      total_tokens: 65
+    model: "fake:deterministic"
+    finish_reason: "stop"
