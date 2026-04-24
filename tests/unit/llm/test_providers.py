@@ -101,9 +101,7 @@ class TestBuildVLLM:
         """build_vllm returns a BaseChatModel subclass."""
         from langchain_core.language_models.chat_models import BaseChatModel
 
-        model = build_vllm(
-            "vllm:my-model", {"base_url": "http://localhost:8000/v1"}
-        )
+        model = build_vllm("vllm:my-model", {"base_url": "http://localhost:8000/v1"})
         assert isinstance(model, BaseChatModel)
 
     def test_returns_chat_openai_instance(self) -> None:
@@ -129,7 +127,9 @@ class TestBuildVLLM:
         assert isinstance(model, ChatOpenAI)
         # openai_api_key is a SecretStr in langchain-openai
         secret = model.openai_api_key
-        key_value = secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+        key_value = (
+            secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+        )
         assert key_value == "EMPTY"
 
     def test_strips_vllm_prefix(self) -> None:
@@ -263,7 +263,9 @@ class TestInjectCacheControl:
         messages: list[BaseMessage] = [HumanMessage(content=content_blocks)]  # type: ignore[arg-type]
         result = inject_cache_control(messages, key="img-key2")
         last = result[-1]
-        img_blocks = [b for b in last.content if isinstance(b, dict) and b.get("type") == "image_url"]
+        img_blocks = [
+            b for b in last.content if isinstance(b, dict) and b.get("type") == "image_url"
+        ]
         for img_block in img_blocks:
             assert "cache_control" not in img_block
 

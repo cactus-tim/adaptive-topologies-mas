@@ -150,9 +150,7 @@ class FakeLLM:
             )
         return tuple(result)
 
-    def _response_from_entry(
-        self, entry: dict[str, Any], agent_id: str
-    ) -> LLMResponse:
+    def _response_from_entry(self, entry: dict[str, Any], agent_id: str) -> LLMResponse:
         """Build an LLMResponse from a scripted fixture entry."""
         usage_raw: dict[str, Any] = entry.get("usage", {})
         usage = TokenUsage(

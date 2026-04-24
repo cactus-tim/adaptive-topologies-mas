@@ -275,8 +275,12 @@ def test_dedup_sort_by_at_budget_events() -> None:
     t_new = datetime.datetime(2026, 1, 1, 11, 0, 0, tzinfo=datetime.UTC)
 
     # Two events with distinct run_ids so they are not deduped; timestamps set via model_copy
-    base_newer = BudgetEvent(run_id=uuid.uuid4(), level="run", event="warn", limit_usd=1.0, current_usd=0.5)
-    base_older = BudgetEvent(run_id=uuid.uuid4(), level="call", event="warn", limit_usd=1.0, current_usd=0.3)
+    base_newer = BudgetEvent(
+        run_id=uuid.uuid4(), level="run", event="warn", limit_usd=1.0, current_usd=0.5
+    )
+    base_older = BudgetEvent(
+        run_id=uuid.uuid4(), level="call", event="warn", limit_usd=1.0, current_usd=0.3
+    )
     ev_newer = base_newer.model_copy(update={"at": t_new})
     ev_older = base_older.model_copy(update={"at": t_old})
 

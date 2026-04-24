@@ -145,9 +145,7 @@ class TestWithRetrySuccess:
         assert slept[0] == pytest.approx(1.0)
 
     @pytest.mark.asyncio
-    async def test_exponential_backoff_delay_doubles(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_exponential_backoff_delay_doubles(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify exponential backoff: delays double each attempt (no jitter)."""
         call_count = 0
 
@@ -225,9 +223,7 @@ class TestWithRetryNonTransient:
 
 class TestWithRetryExhaustion:
     @pytest.mark.asyncio
-    async def test_exhaustion_raises_llm_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_exhaustion_raises_llm_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """After max_retries transient failures, raises LLMError."""
         original = FakeRateLimitError("always rate limited")
 
@@ -271,9 +267,7 @@ class TestWithRetryExhaustion:
         assert exc.__cause__ is original_rate_limit_error
 
     @pytest.mark.asyncio
-    async def test_exhaustion_attempt_count_correct(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_exhaustion_attempt_count_correct(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """attempts field = max_retries + 1 (initial call + retries)."""
         call_count = 0
 
@@ -301,9 +295,7 @@ class TestWithRetryExhaustion:
 
 class TestWithRetryJitter:
     @pytest.mark.asyncio
-    async def test_jitter_delays_within_cap(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_jitter_delays_within_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """With jitter=True, all observed delays are in [0, cap] where cap = base * 2**(attempt-1)."""
         observed_delays: list[float] = []
 
@@ -381,9 +373,7 @@ class TestWithRetryJitter:
         )
 
     @pytest.mark.asyncio
-    async def test_no_jitter_produces_exact_delay(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_no_jitter_produces_exact_delay(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without jitter, delay is exactly base * 2**(attempt-1) (capped at max_delay_s)."""
         slept: list[float] = []
 
@@ -409,9 +399,7 @@ class TestWithRetryJitter:
         assert slept == pytest.approx([2.0, 4.0])
 
     @pytest.mark.asyncio
-    async def test_max_delay_caps_backoff(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_max_delay_caps_backoff(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Delay is capped at max_delay_s even when exponential formula exceeds it."""
         slept: list[float] = []
 
