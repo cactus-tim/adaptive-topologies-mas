@@ -65,7 +65,9 @@ def _make_cfg(
 
     smoke_yaml = Path("conf/experiments/smoke.yaml")
     if not smoke_yaml.exists():
-        smoke_yaml = Path(__file__).parent.parent.parent.parent / "conf" / "experiments" / "smoke.yaml"
+        smoke_yaml = (
+            Path(__file__).parent.parent.parent.parent / "conf" / "experiments" / "smoke.yaml"
+        )
 
     if not smoke_yaml.exists():
         pytest.skip(f"smoke.yaml not found at {smoke_yaml}")
@@ -184,9 +186,7 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
 
             # Assertion 5: budget_spent_usd (FakeLLM returns cost=0.0 via Pricing.cost)
             # With empty Pricing table, cost is 0.0 — this is expected for fake mode.
-            assert row.budget_spent_usd >= Decimal("0"), (
-                "budget_spent_usd should be >= 0"
-            )
+            assert row.budget_spent_usd >= Decimal("0"), "budget_spent_usd should be >= 0"
 
             # Assertion 6: 0 < iterations <= cfg.topology.max_iterations
             assert row.iterations is not None and row.iterations > 0, (
@@ -237,7 +237,9 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     # Both are 0.0 when FakeLLM is used with empty pricing → trivially passes.
     if llm_calls_path.exists():
         llm_df = pd.read_parquet(llm_calls_path)
-        total_cost_parquet = float(llm_df["cost_usd"].sum() if "cost_usd" in llm_df.columns else 0.0)
+        total_cost_parquet = float(
+            llm_df["cost_usd"].sum() if "cost_usd" in llm_df.columns else 0.0
+        )
         assert abs(total_cost_parquet - float(result.metrics.get("cost_usd", 0.0))) < 0.001
 
     # Assertion 12: messages.parquet
@@ -254,7 +256,11 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     tool_calls_path = run_dir / "tool_calls.parquet"
     if tool_calls_path.exists():
         tc_df = pd.read_parquet(tool_calls_path)
-        code_run_calls = tc_df[tc_df.get("tool_name", tc_df.get("name", "")) == "code_run"] if "tool_name" in tc_df.columns else tc_df
+        code_run_calls = (
+            tc_df[tc_df.get("tool_name", tc_df.get("name", "")) == "code_run"]
+            if "tool_name" in tc_df.columns
+            else tc_df
+        )
         assert len(code_run_calls) >= 1
 
     # Assertion 14: scratchpad/<agent_id>.parquet
@@ -274,9 +280,7 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
             row2 = await session.get(Run, result.run_id)
             assert row2 is not None
             # runs.topology column stores the topology name used
-            assert row2.topology == "star", (
-                f"Expected runs.topology='star', got {row2.topology}"
-            )
+            assert row2.topology == "star", f"Expected runs.topology='star', got {row2.topology}"
     finally:
         await engine2.dispose()
 
@@ -396,9 +400,7 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
             assert row.quality_score is not None, "runs.quality_score should not be NULL"
 
             # Assertion 5: budget_spent_usd >= 0 (FakeLLM = 0 cost)
-            assert row.budget_spent_usd >= Decimal("0"), (
-                "budget_spent_usd should be >= 0"
-            )
+            assert row.budget_spent_usd >= Decimal("0"), "budget_spent_usd should be >= 0"
 
             # Assertion 6: 0 < iterations <= cfg.topology.max_iterations
             assert row.iterations is not None and row.iterations > 0, (
@@ -438,7 +440,9 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
     # Assertion 11: cost sum ≈ 0 (trivially passes with FakeLLM)
     if llm_calls_path.exists():
         llm_df = pd.read_parquet(llm_calls_path)
-        total_cost_parquet = float(llm_df["cost_usd"].sum() if "cost_usd" in llm_df.columns else 0.0)
+        total_cost_parquet = float(
+            llm_df["cost_usd"].sum() if "cost_usd" in llm_df.columns else 0.0
+        )
         assert abs(total_cost_parquet - float(result.metrics.get("cost_usd", 0.0))) < 0.001
 
     # Assertion 12: messages.parquet (relaxed — no message_emit dispatched)
@@ -466,9 +470,7 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
         async with session_scope(sf2) as session:
             row2 = await session.get(Run, result.run_id)
             assert row2 is not None
-            assert row2.topology == "chain", (
-                f"Expected runs.topology='chain', got {row2.topology}"
-            )
+            assert row2.topology == "chain", f"Expected runs.topology='chain', got {row2.topology}"
     finally:
         await engine2.dispose()
 

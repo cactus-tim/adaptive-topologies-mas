@@ -94,8 +94,7 @@ async def _critic_postprocess(state: GraphState) -> dict[str, Any]:
 
     if decision_msg is None:
         logger.warning(
-            "critic_postprocess: no DECISION message found in critic outbox; "
-            "treating as rejected"
+            "critic_postprocess: no DECISION message found in critic outbox; treating as rejected"
         )
     else:
         payload: dict[str, Any] = getattr(decision_msg, "payload", {}) or {}

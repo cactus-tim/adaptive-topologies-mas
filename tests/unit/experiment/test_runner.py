@@ -340,9 +340,17 @@ async def test_run_one_success_path() -> None:
         mock_pw = _make_mock_parquet_writer()
         mock_graph = _make_mock_graph(final_state)
         _patch_run_one_common(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw, mock_pw_cls,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         result = await run_one(cfg)
 
@@ -388,9 +396,17 @@ async def test_run_one_budget_exceeded_path() -> None:
             side_effect=BudgetExceededError(level="run", limit_usd=5.0, spent_usd=5.01)
         )
         _patch_run_one_common(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw, mock_pw_cls,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         result = await run_one(cfg)
 
@@ -436,9 +452,17 @@ async def test_run_one_generic_exception_path() -> None:
         mock_graph = AsyncMock()
         mock_graph.ainvoke = AsyncMock(side_effect=RuntimeError("graph crashed"))
         _patch_run_one_common(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw, mock_pw_cls,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         with pytest.raises(RuntimeError, match="graph crashed"):
             await run_one(cfg)
@@ -493,9 +517,17 @@ async def test_flush_before_update_order_on_success() -> None:
 
         mock_graph = _make_mock_graph(final_state)
         _patch_run_one_common(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw, mock_pw_cls,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         await run_one(cfg)
 
@@ -505,8 +537,7 @@ async def test_flush_before_update_order_on_success() -> None:
     close_idx = call_order.index("parquet.close")
     update_idx = call_order.index("update_run_success")
     assert close_idx < update_idx, (
-        f"parquet.close (idx={close_idx}) must come before "
-        f"update_run_success (idx={update_idx})"
+        f"parquet.close (idx={close_idx}) must come before update_run_success (idx={update_idx})"
     )
 
 
@@ -549,9 +580,17 @@ async def test_flush_before_update_order_on_budget_exceeded() -> None:
             side_effect=BudgetExceededError(level="run", limit_usd=5.0, spent_usd=5.01)
         )
         _patch_run_one_common(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw, mock_pw_cls,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         await run_one(cfg)
 
@@ -560,8 +599,7 @@ async def test_flush_before_update_order_on_budget_exceeded() -> None:
     close_idx = call_order.index("parquet.close")
     update_idx = call_order.index("update_run_failed")
     assert close_idx < update_idx, (
-        f"parquet.close (idx={close_idx}) must come before "
-        f"update_run_failed (idx={update_idx})"
+        f"parquet.close (idx={close_idx}) must come before update_run_failed (idx={update_idx})"
     )
 
 
@@ -626,6 +664,7 @@ def test_build_agents_keys_by_role_name() -> None:
 
     # Find the conf dir
     from pathlib import Path as _Path
+
     conf_dir = _Path(__file__).parent.parent.parent.parent / "conf"
 
     agents = _build_agents(cfg, llms, conf_dir=conf_dir)
@@ -671,6 +710,7 @@ def test_build_agents_critic_is_critic_subclass() -> None:
     }
 
     from pathlib import Path as _Path
+
     conf_dir = _Path(__file__).parent.parent.parent.parent / "conf"
 
     agents = _build_agents(cfg, llms, conf_dir=conf_dir)

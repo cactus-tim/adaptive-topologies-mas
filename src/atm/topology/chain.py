@@ -58,9 +58,9 @@ def _import_state_graph() -> type | None:
         The StateGraph class, or None if langgraph.graph is not installed.
     """
     try:
-        from langgraph.graph import StateGraph as _StateGraph  # type: ignore[import-untyped]
+        from langgraph.graph import StateGraph as _StateGraph
 
-        return _StateGraph  # type: ignore[no-any-return]
+        return _StateGraph
     except ImportError:  # pragma: no cover
         return None
 
@@ -233,8 +233,7 @@ class ChainTopology:
         sg_cls = StateGraph
         if sg_cls is None:  # pragma: no cover
             raise ImportError(
-                "langgraph.graph is required for ChainTopology.build(). "
-                "Install: uv add langgraph"
+                "langgraph.graph is required for ChainTopology.build(). Install: uv add langgraph"
             )
 
         planner = agents["planner"]

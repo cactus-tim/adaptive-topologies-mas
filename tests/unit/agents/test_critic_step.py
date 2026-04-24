@@ -100,9 +100,7 @@ class TestCriticEmitsDecision:
         outbox = delta["agents"]["critic"]["outbox"]
         assert len(outbox) >= 1
         for msg in outbox:
-            assert msg.kind == MessageKind.DECISION, (
-                f"Expected DECISION, got {msg.kind}"
-            )
+            assert msg.kind == MessageKind.DECISION, f"Expected DECISION, got {msg.kind}"
 
     async def test_critic_approved_true_on_approve(self) -> None:
         """APPROVE in response text → payload['approved'] == True."""

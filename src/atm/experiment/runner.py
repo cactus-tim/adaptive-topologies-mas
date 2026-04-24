@@ -591,7 +591,9 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
 
     except BudgetExceededError as exc:
-        log = logger.bind(run_id=str(run_id) if run_id else "?", exp_id=str(exp_id) if exp_id else "?")
+        log = logger.bind(
+            run_id=str(run_id) if run_id else "?", exp_id=str(exp_id) if exp_id else "?"
+        )
         log.warning("budget exceeded", error=str(exc))
 
         quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
@@ -630,7 +632,9 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
 
     except Exception as exc:
-        log = logger.bind(run_id=str(run_id) if run_id else "?", exp_id=str(exp_id) if exp_id else "?")
+        log = logger.bind(
+            run_id=str(run_id) if run_id else "?", exp_id=str(exp_id) if exp_id else "?"
+        )
         log.error("run failed", error=str(exc))
 
         quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0

@@ -262,9 +262,7 @@ class TestStarPhasesApproved:
         graph = _build_star(agents=agents, cfg=cfg)
 
         initial = _make_initial_state()
-        result = await graph.ainvoke(
-            initial, config={"configurable": {"thread_id": "test-phases"}}
-        )
+        result = await graph.ainvoke(initial, config={"configurable": {"thread_id": "test-phases"}})
 
         phase_history = result["shared"].get("phase_history", [])
         # Phase history records transitions; should contain planning, execution, verification, done

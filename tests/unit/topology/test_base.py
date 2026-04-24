@@ -47,26 +47,20 @@ class TestShouldStopMaxIter:
     def test_max_iter_reached_returns_stop_true(self) -> None:
         state = _make_state(iter_total=10)
         cfg = _make_cfg(max_iterations=10)
-        stop, _reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        stop, _reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert stop is True
 
     def test_max_iter_reason_matches_finish_reason(self) -> None:
         state = _make_state(iter_total=10)
         cfg = _make_cfg(max_iterations=10)
-        _, reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        _, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert reason == FinishReason.MAX_ITER.value
 
     def test_max_iter_overrides_topology_success(self) -> None:
         """Even if topology_success=True, max_iter wins when iter_total >= max_iterations."""
         state = _make_state(iter_total=10)
         cfg = _make_cfg(max_iterations=10)
-        stop, reason = _should_stop(
-            state, cfg, topology_success=True, topology_max_reached=True
-        )
+        stop, reason = _should_stop(state, cfg, topology_success=True, topology_max_reached=True)
         assert stop is True
         assert reason == FinishReason.MAX_ITER.value
 
@@ -74,18 +68,14 @@ class TestShouldStopMaxIter:
         """iter_total < max_iterations → max_iter branch not triggered."""
         state = _make_state(iter_total=9)
         cfg = _make_cfg(max_iterations=10)
-        stop, _ = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        stop, _ = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert stop is False
 
     def test_max_iter_zero_triggers_immediately(self) -> None:
         """max_iterations=0 → stop on iter_total=0."""
         state = _make_state(iter_total=0)
         cfg = _make_cfg(max_iterations=0)
-        stop, reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        stop, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert stop is True
         assert reason == FinishReason.MAX_ITER.value
 
@@ -101,26 +91,20 @@ class TestShouldStopTopologySuccess:
     def test_topology_success_returns_stop_true(self) -> None:
         state = _make_state(iter_total=3)
         cfg = _make_cfg(max_iterations=10)
-        stop, _reason = _should_stop(
-            state, cfg, topology_success=True, topology_max_reached=False
-        )
+        stop, _reason = _should_stop(state, cfg, topology_success=True, topology_max_reached=False)
         assert stop is True
 
     def test_topology_success_reason_matches_finish_reason(self) -> None:
         state = _make_state(iter_total=3)
         cfg = _make_cfg(max_iterations=10)
-        _, reason = _should_stop(
-            state, cfg, topology_success=True, topology_max_reached=False
-        )
+        _, reason = _should_stop(state, cfg, topology_success=True, topology_max_reached=False)
         assert reason == FinishReason.SUCCESS.value
 
     def test_topology_success_overrides_topology_max(self) -> None:
         """topology_success has higher priority than topology_max_reached."""
         state = _make_state(iter_total=3)
         cfg = _make_cfg(max_iterations=10)
-        stop, reason = _should_stop(
-            state, cfg, topology_success=True, topology_max_reached=True
-        )
+        stop, reason = _should_stop(state, cfg, topology_success=True, topology_max_reached=True)
         assert stop is True
         assert reason == FinishReason.SUCCESS.value
 
@@ -136,17 +120,13 @@ class TestShouldStopTopologyMax:
     def test_topology_max_returns_stop_true(self) -> None:
         state = _make_state(iter_total=3)
         cfg = _make_cfg(max_iterations=10)
-        stop, _reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=True
-        )
+        stop, _reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=True)
         assert stop is True
 
     def test_topology_max_reason_matches_finish_reason(self) -> None:
         state = _make_state(iter_total=3)
         cfg = _make_cfg(max_iterations=10)
-        _, reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=True
-        )
+        _, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=True)
         assert reason == FinishReason.TOPOLOGY_MAX.value
 
 
@@ -161,18 +141,14 @@ class TestShouldStopContinue:
     def test_no_conditions_returns_false(self) -> None:
         state = _make_state(iter_total=3)
         cfg = _make_cfg(max_iterations=10)
-        stop, reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        stop, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert stop is False
         assert reason == ""
 
     def test_continue_reason_is_empty_string(self) -> None:
         state = _make_state(iter_total=0)
         cfg = _make_cfg(max_iterations=100)
-        stop, reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        stop, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert not stop
         assert reason == ""
 
@@ -190,9 +166,7 @@ class TestBudgetNotDetectedHere:
         """Even with very high iter_total that might hint budget, reason is max_iter."""
         state = _make_state(iter_total=999)
         cfg = _make_cfg(max_iterations=5)
-        stop, reason = _should_stop(
-            state, cfg, topology_success=False, topology_max_reached=False
-        )
+        stop, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=False)
         assert stop is True
         assert reason != FinishReason.BUDGET_EXCEEDED.value
         assert reason == FinishReason.MAX_ITER.value
@@ -244,8 +218,7 @@ class TestTopologyRegistry:
         class FakeStar:
             name = "star"
 
-            def build(self, agents: dict, cfg: TopologyConfig) -> None:
-                ...
+            def build(self, agents: dict, cfg: TopologyConfig) -> None: ...
 
         TopologyRegistry.register("star")(FakeStar)
         result = TopologyRegistry.get("star")
@@ -268,8 +241,7 @@ class TestTopologyRegistry:
         """Registry must reject a class without a 'name' attribute."""
 
         class NoName:
-            def build(self, agents: dict, cfg: TopologyConfig) -> None:
-                ...
+            def build(self, agents: dict, cfg: TopologyConfig) -> None: ...
 
         with pytest.raises((TypeError, AttributeError, ValueError)):
             TopologyRegistry.register("no_name")(NoName)
@@ -278,8 +250,7 @@ class TestTopologyRegistry:
         class FakeChain:
             name = "chain"
 
-            def build(self, agents: dict, cfg: TopologyConfig) -> None:
-                ...
+            def build(self, agents: dict, cfg: TopologyConfig) -> None: ...
 
         TopologyRegistry.register("chain")(FakeChain)
         names = TopologyRegistry.list_names()
@@ -291,8 +262,7 @@ class TestTopologyRegistry:
         class FakeTopology:
             name = "fake"
 
-            def build(self, agents: dict, cfg: TopologyConfig) -> None:
-                ...
+            def build(self, agents: dict, cfg: TopologyConfig) -> None: ...
 
         result = TopologyRegistry.register("fake")(FakeTopology)
         assert result is FakeTopology
@@ -310,15 +280,13 @@ class TestTopologyProtocol:
         class GoodTopology:
             name = "good"
 
-            def build(self, agents: dict, cfg: TopologyConfig) -> None:
-                ...
+            def build(self, agents: dict, cfg: TopologyConfig) -> None: ...
 
         assert isinstance(GoodTopology(), Topology)
 
     def test_missing_name_not_isinstance(self) -> None:
         class NoNameTopology:
-            def build(self, agents: dict, cfg: TopologyConfig) -> None:
-                ...
+            def build(self, agents: dict, cfg: TopologyConfig) -> None: ...
 
         assert not isinstance(NoNameTopology(), Topology)
 
