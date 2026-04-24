@@ -64,8 +64,60 @@
 - **Status:** M2 complete.
 
 ### Tools & Sandbox (`tools/`)
-- **Exports (M4 planned):** `Tool` protocol, `ToolRegistry`, `CodeSandbox` protocol, `DockerSandbox`, `SubprocessSandbox`, global/local tool definitions.
-- **Status:** M0 skeleton, M4 not started.
+
+Реализован в M4 (см. `dev/active/m4/m4-plan.md` §Steps 1–14 и `arch/PLAN.md §M4`).
+
+**Структура пакета:**
+```
+src/atm/tools/
+├── __init__.py          — полный публичный API (все 12 инструментов + registry + helpers)
+├── base.py              — Tool Protocol (runtime_checkable), ToolSchema (frozen Pydantic), ToolRegistry
+├── _safety.py           — resolve_and_validate_url (SSRF: scheme allowlist + socket.getaddrinfo + IP-проверка)
+├── _retry.py            — with_tool_retry (адаптер над with_retry, LLMError → ToolError)
+├── defaults.py          — build_default_registry (фабрика — все 12 tools в одном вызове)
+├── sandbox/
+│   ├── base.py          — CodeSandbox Protocol (IS_ISOLATED ClassVar), ExecResult (frozen), SandboxConfig
+│   ├── subprocess_sandbox.py — SubprocessSandbox (IS_ISOLATED=False, dev-mode)
+│   └── docker_sandbox.py     — DockerSandbox (IS_ISOLATED=True, hardened: seccomp, cap_drop=ALL, read_only, tmpfs)
+├── global_/
+│   ├── calculator.py    — CalculatorTool (AST-walker, без eval/exec)
+│   ├── file_read.py     — FileReadTool (workspace-scoped, path traversal + symlink protection)
+│   ├── search.py        — DuckDuckGoSearchTool (ddgs + asyncio.to_thread + retry)
+│   └── url_fetch.py     — UrlFetchTool (SSRF-safe httpx, follow_redirects=False, size limit)
+└── local_/
+    ├── code_run.py      — CodeRunTool (delegates to CodeSandbox.execute)
+    ├── test_run.py      — TestRunTool (sandbox-backed unittest runner, 2>&1 merge)
+    ├── file_write.py    — FileWriteTool (atomic write: tmp + os.replace, workspace-scoped)
+    ├── diff.py          — DiffTool (difflib.unified_diff)
+    ├── todo_write.py    — TodoWriteTool (output: state_update.shared.todos, NOT signals)
+    ├── plan_update.py   — PlanUpdateTool (output: state_update.shared.plan, NOT signals)
+    ├── lint.py          — LintTool (ruff --output-format=json --stdin-filename + optional pylint)
+    └── semantic_search.py — SemanticSearchTool (numpy TF-IDF, IDF=log((1+N)/(1+df))+1, L2-norm)
+```
+
+**Exports из `atm.tools`:**
+`Tool`, `ToolRegistry`, `ToolSchema`, `CodeSandbox`, `ExecResult`, `SandboxConfig`,
+`SubprocessSandbox`, `DockerSandbox`,
+`CalculatorTool`, `FileReadTool`, `DuckDuckGoSearchTool`, `UrlFetchTool`,
+`CodeRunTool`, `TestRunTool`, `FileWriteTool`, `DiffTool`, `TodoWriteTool`,
+`PlanUpdateTool`, `LintTool`, `SemanticSearchTool`,
+`build_default_registry`, `resolve_and_validate_url`, `with_tool_retry`
+
+**Точка входа:** `build_default_registry(workspace, corpus_dir, sandbox, prod_mode=False)` — регистрирует все 12 инструментов; при `prod_mode=True` и `sandbox.IS_ISOLATED=False` — raise ToolError (fail-closed).
+
+**Sandbox hardening (DockerSandbox):**
+- seccomp profile: `conf/sandbox/seccomp.json` (moby upstream, deny-set из 24 syscall'ов)
+- `cap_drop=["ALL"]`, `read_only=True`, `network_mode="none"`, `user="1000:1000"`
+- tmpfs `/work` (size=64m, noexec, nosuid) и `/tmp` (size=64m, noexec, nosuid)
+- seccomp-profile передаётся как JSON-строка (не путь) — требование docker-py API
+- Подробнее: `conf/sandbox/seccomp.README.md` и `conf/sandbox/defaults.yaml`
+
+**Тесты (M4 complete):**
+- 121 unit-тест (tests/unit/tools/) — все зелёные, 1 skipped (node не установлен)
+- 13 non-docker integration-тестов (tests/integration/tools/) — все зелёные
+- 29 docker/network-тестов — корректно скипаются без ATM_ENABLE_DOCKER_TESTS=1 / ATM_ENABLE_NETWORK_TESTS=1
+
+**Status:** M4 complete (Steps 1–14).
 
 ### Agent Framework (`agents/`)
 - **Exports (M5 planned):** `Agent` base with LangGraph node signature, `Planner`, `Researcher`, `Executor`, `Critic`, `Debater` with stance parameter.
@@ -174,6 +226,6 @@
 ## Test Setup
 - **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
 - **Structure:** `tests/unit/{core,llm}/`, `tests/integration/llm/`, `tests/fixtures/llm/`.
-- **Total tests:** 263 (260 unit + 3 integration).
+- **Total tests:** 397 (121 unit tools + 13 non-docker integration tools + 263 legacy unit/integration).
 - **Mocking approach:** FakeLLM with YAML fixtures for unit + integration; in-memory Postgres planned for M3+.
 - **Coverage target:** All core modules + critical paths; lower coverage on M4+ until implementations exist.
