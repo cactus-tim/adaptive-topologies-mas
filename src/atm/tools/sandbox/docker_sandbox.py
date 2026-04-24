@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import io
 import os
-import tarfile
+import shutil
+import tempfile
 import time
+from pathlib import Path
 from typing import ClassVar
 
 import docker  # type: ignore[import-untyped]
@@ -107,39 +108,36 @@ class DockerSandbox:
         effective_timeout = timeout if timeout is not None else self._config.timeout_s
         return await asyncio.to_thread(self._execute_sync, lang, code, files, effective_timeout)
 
-    def _make_archive(self, code: str, lang: str, files: dict[str, str] | None) -> bytes:
-        """Build a tar archive containing main code + optional extra files."""
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w") as tar:
-            # Determine main filename by language
-            if lang == "python":
-                main_name = "main.py"
-            elif lang == "node":
-                main_name = "main.js"
-            else:
-                main_name = f"main.{lang}"
+    def _populate_work_dir(
+        self, work_dir: Path, code: str, lang: str, files: dict[str, str] | None
+    ) -> None:
+        """Write main code + optional extra files into a host work directory.
 
-            # Add main code file
-            code_bytes = code.encode()
-            info = tarfile.TarInfo(name=main_name)
-            info.size = len(code_bytes)
-            info.uid = 1000
-            info.gid = 1000
-            info.mode = 0o644
-            tar.addfile(info, io.BytesIO(code_bytes))
+        The directory is later bind-mounted into the container at /work. It is
+        chmod'd 0o777 so that the container's non-root user (uid=1000:gid=1000)
+        can both read inputs and write new files (e.g. via FileWriteTool).
+        """
+        # Determine main filename by language
+        if lang == "python":
+            main_name = "main.py"
+        elif lang == "node":
+            main_name = "main.js"
+        else:
+            main_name = f"main.{lang}"
 
-            # Add additional files
-            if files:
-                for filename, content in files.items():
-                    content_bytes = content.encode()
-                    finfo = tarfile.TarInfo(name=filename)
-                    finfo.size = len(content_bytes)
-                    finfo.uid = 1000
-                    finfo.gid = 1000
-                    finfo.mode = 0o644
-                    tar.addfile(finfo, io.BytesIO(content_bytes))
+        (work_dir / main_name).write_text(code, encoding="utf-8")
 
-        return buf.getvalue()
+        if files:
+            for filename, content in files.items():
+                # Allow nested subdirs inside /work (e.g. "pkg/mod.py")
+                target = work_dir / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+
+        # chmod 0o777 so container uid 1000 can rw regardless of host uid
+        work_dir.chmod(0o777)
+        for child in work_dir.rglob("*"):
+            child.chmod(0o666 if child.is_file() else 0o777)
 
     def _build_command(self, lang: str) -> list[str]:
         """Build the container command for the given language.
@@ -186,11 +184,21 @@ class DockerSandbox:
         t0 = time.monotonic()
         timed_out = False
 
+        # /work is a host-bind-mounted tempdir (not tmpfs). Docker's put_archive
+        # refuses to write into a container with read_only=True rootfs even when
+        # the target path is a tmpfs mount (see moby#41037). Bind-mounting a
+        # freshly-chmodded host dir sidesteps this entirely while keeping rootfs
+        # read-only, /tmp tmpfs, network=none, cap_drop=ALL, and seccomp active.
+        host_work_dir = Path(tempfile.mkdtemp(prefix="atm-sandbox-"))
         try:
-            # Create the container in stopped state first so we can upload
-            # code before the entry-point runs (avoids the race where
-            # containers.run(detach=True) starts the process before put_archive
-            # has landed the files in /work).
+            self._populate_work_dir(host_work_dir, code, lang, files)
+
+            # /tmp stays tmpfs; /work uses the host bind (remove from tmpfs if present)
+            tmpfs_without_work = {k: v for k, v in cfg.tmpfs_mounts.items() if k != "/work"}
+            volumes = {str(host_work_dir): {"bind": "/work", "mode": "rw"}}
+
+            # Create the container in stopped state first so we can stage code
+            # via the bind mount before the entrypoint runs.
             container = self._client.containers.create(
                 image,
                 command,
@@ -198,18 +206,14 @@ class DockerSandbox:
                 network_mode="none",
                 cap_drop=["ALL"],
                 security_opt=security_opt,
-                tmpfs=cfg.tmpfs_mounts,
+                tmpfs=tmpfs_without_work,
+                volumes=volumes,
                 mem_limit=cfg.mem_limit,
                 pids_limit=cfg.pids_limit,
                 user="1000:1000",
                 working_dir="/work",
             )
 
-            # Upload code + files into the tmpfs /work directory BEFORE start
-            archive_data = self._make_archive(code, lang, files)
-            container.put_archive("/work", archive_data)
-
-            # Now start the container — files are already present in /work
             container.start()
 
             # Wait for container to finish; catch timeout
@@ -261,3 +265,5 @@ class DockerSandbox:
             if container is not None:
                 with contextlib.suppress(Exception):
                     container.remove(force=True)
+            with contextlib.suppress(Exception):
+                shutil.rmtree(host_work_dir, ignore_errors=True)

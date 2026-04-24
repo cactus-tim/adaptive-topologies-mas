@@ -227,10 +227,16 @@ async def test_container_create_kwargs_hardening(
     assert seccomp_opt is not None, "security_opt must include seccomp=<json>"
     assert _SECCOMP in seccomp_opt, "seccomp option must contain the seccomp JSON string"
 
-    # tmpfs must include /work and /tmp
+    # tmpfs must include /tmp. /work is bind-mounted (see moby#41037 — put_archive
+    # cannot write into a read_only rootfs even when target is tmpfs).
     tmpfs = call_kwargs.get("tmpfs", {})
-    assert "/work" in tmpfs, "tmpfs must include /work"
     assert "/tmp" in tmpfs, "tmpfs must include /tmp"
+    assert "/work" not in tmpfs, "/work must NOT be tmpfs; it is bind-mounted"
+
+    # volumes must bind a host dir onto /work
+    volumes = call_kwargs.get("volumes", {})
+    bind_targets = [v.get("bind") for v in volumes.values()]
+    assert "/work" in bind_targets, "/work must be provided via volumes bind mount"
 
 
 @pytest.mark.asyncio
@@ -281,10 +287,10 @@ async def test_container_create_mem_and_pids(
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_create_then_put_archive_then_start(
+async def test_lifecycle_create_then_start(
     seccomp_json: str, sandbox_config: SandboxConfig
 ) -> None:
-    """Must call containers.create, then put_archive, then container.start in that order."""
+    """Must call containers.create with a populated host bind, then container.start."""
     fake_container = _make_fake_container()
     fake_client = _make_fake_docker_client(fake_container)
     call_order: list[str] = []
@@ -292,7 +298,6 @@ async def test_lifecycle_create_then_put_archive_then_start(
     fake_client.containers.create.side_effect = lambda *a, **kw: (
         call_order.append("create") or fake_container
     )
-    fake_container.put_archive.side_effect = lambda *a, **kw: call_order.append("put_archive")
     fake_container.start.side_effect = lambda *a, **kw: call_order.append("start")
 
     with (
@@ -306,9 +311,15 @@ async def test_lifecycle_create_then_put_archive_then_start(
         )
         await sandbox.execute(lang="python", code="pass")
 
-    assert call_order[:3] == ["create", "put_archive", "start"], (
-        f"Expected create→put_archive→start, got {call_order}"
-    )
+    assert call_order[:2] == ["create", "start"], f"Expected create→start, got {call_order}"
+
+    # Verify the host bind was populated with main.py before create was called
+    create_kwargs = fake_client.containers.create.call_args[1]
+    volumes = create_kwargs.get("volumes", {})
+    host_path = next(iter(volumes.keys()))
+    # Host dir is cleaned up in finally, so we can only assert on the mount kwargs here
+    assert volumes[host_path]["bind"] == "/work"
+    assert volumes[host_path]["mode"] == "rw"
 
 
 # ---------------------------------------------------------------------------
