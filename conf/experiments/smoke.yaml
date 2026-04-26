@@ -14,12 +14,14 @@ model:
     researcher: "fake:scripted"
   # Fixture paths for FakeLLM scripted mode (relative to project root or absolute).
   # Resolved by _build_llm_wrappers in runner.py.
-  # Use chain topology fixtures for the default smoke config (topology.name=chain).
+  # Star fixtures used as default — they are functionally identical to chain
+  # fixtures for planner/critic, while executor has padding entries (step_idx
+  # 0..9) that satisfy both Chain (uses 0..1) and Star (may need up to 5).
   fake_fixtures:
-    planner: "tests/fixtures/llm/m6_chain_planner.yaml"
-    executor: "tests/fixtures/llm/m6_chain_executor.yaml"
-    critic: "tests/fixtures/llm/m6_chain_critic.yaml"
-    researcher: "tests/fixtures/llm/m6_chain_planner.yaml"
+    planner: "tests/fixtures/llm/m6_star_planner.yaml"
+    executor: "tests/fixtures/llm/m6_star_executor.yaml"
+    critic: "tests/fixtures/llm/m6_star_critic.yaml"
+    researcher: "tests/fixtures/llm/m6_star_planner.yaml"
 
 agents:
   set: canonical_4
