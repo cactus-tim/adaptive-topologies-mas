@@ -1,0 +1,24 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for StarTopology — Critic agent.
+# agent_id "critic" matches the role-keyed agent built in integration test.
+#
+# NOTE: The base Agent.step() always emits MessageKind.DRAFT regardless of
+# the fixture content. The integration test patches the critic node to emit
+# a DECISION message by wrapping the agent and re-kind-ing the outbox message.
+# This fixture's content string encodes the approval decision as a JSON-like
+# string for the test's critic wrapper to parse.
+#
+# Step 0: critic approves the executor output.
+entries:
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "APPROVE fib"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 70
+      output_tokens: 10
+      total_tokens: 80
+    model: "fake:scripted"
