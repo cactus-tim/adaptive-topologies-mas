@@ -5,7 +5,7 @@
 - **Language:** Python 3.11+
 - **Package Manager:** uv
 - **Orchestration:** LangGraph (multi-agent framework)
-- **LLM SDK:** LangChain chat models (OpenAI/Anthropic/vLLM)
+- **LLM SDK:** LangChain chat models (OpenAI/Anthropic/Cerebras/vLLM)
 - **Database:** PostgreSQL 16 (async via SQLAlchemy 2.x + asyncpg, ORM with Alembic migrations)
 - **Bulk Storage:** Apache Parquet (PyArrow) for experiment data
 - **Config:** YAML + Pydantic + OmegaConf
@@ -16,7 +16,7 @@
 ## Project Structure
 - `src/atm/` — main package (Adaptive Topologies MAS, imported as `atm`)
   - `core/` — base types, state, errors (Message, ToolCall, Phase, AgentState, GraphState)
-  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/vLLM), budget tracking, pricing, retry, fake LLM, `factory.build_llm(model_id, ...)` provider-prefix router (supports `fake:scripted/echo/replay`)
+  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/Cerebras/vLLM), budget tracking, pricing, retry, fake LLM, `factory.build_llm(model_id, ...)` provider-prefix router (supports `fake:scripted/echo/replay`)
   - `tools/` — Tool protocol, registry, global tools, Docker/subprocess sandbox (M4)
   - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles, scratchpad policy C (M5)
   - `topology/` — Topology protocol + Registry, Star + Chain (M6 complete); Mesh/Debate/Hierarchical/Adaptive (M7-M8 planned)
@@ -36,7 +36,7 @@
   - `unit/llm/` — 110 tests for pricing/budget/retry/providers/fake/wrapper
   - `integration/llm/` — 3 tests for LLM layer contract (end-to-end, budget exceed, replay round-trip)
 - `conf/` — YAML configuration templates
-  - `pricing.yaml` — per-1K-token prices for OpenAI/Anthropic/vLLM/fake models (version 1)
+  - `pricing.yaml` — per-1K-token prices for OpenAI/Anthropic/Cerebras/vLLM/fake models (version 1)
   - `agents/` — role-specific agent configs (planner.yaml, researcher.yaml, executor.yaml, critic.yaml, debater.yaml)
 - `alembic/` — database migrations (async template, single initial migration)
 - `dev/` — documentation (PLAN.md, arch.md) and task tracking (done/active)
