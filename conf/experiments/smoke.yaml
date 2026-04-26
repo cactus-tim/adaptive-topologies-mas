@@ -1,0 +1,42 @@
+name: m6_smoke
+seed: 42
+
+task:
+  name: fibonacci_smoke
+  input: "Write a Python function fib(n) that returns the n-th Fibonacci number. Compute fib(10)."
+
+model:
+  default: "fake:scripted"
+  by_role:
+    planner: "fake:scripted"
+    executor: "fake:scripted"
+    critic: "fake:scripted"
+    researcher: "fake:scripted"
+  # Fixture paths for FakeLLM scripted mode (relative to project root or absolute).
+  # Resolved by _build_llm_wrappers in runner.py.
+  # Star fixtures used as default — they are functionally identical to chain
+  # fixtures for planner/critic, while executor has padding entries (step_idx
+  # 0..9) that satisfy both Chain (uses 0..1) and Star (may need up to 5).
+  fake_fixtures:
+    planner: "tests/fixtures/llm/m6_star_planner.yaml"
+    executor: "tests/fixtures/llm/m6_star_executor.yaml"
+    critic: "tests/fixtures/llm/m6_star_critic.yaml"
+    researcher: "tests/fixtures/llm/m6_star_planner.yaml"
+
+agents:
+  set: canonical_4
+
+topology:
+  name: chain
+  max_iterations: 12
+  extra: {}
+
+budget:
+  per_call_usd: 0.10
+  per_run_usd: 0.50
+  per_experiment_usd: 50.0
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_test}"
+  parquet_dir: "data/experiments"
+  callback_sync: true

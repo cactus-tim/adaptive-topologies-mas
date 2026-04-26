@@ -22,6 +22,7 @@ from atm.llm.pricing import ModelPricing, Pricing
 from atm.llm.providers import (
     DEFAULT_CACHE_TTL,
     build_anthropic,
+    build_cerebras,
     build_openai,
     build_vllm,
     inject_cache_control,
@@ -41,6 +42,7 @@ __all__ = [
     "Pricing",
     "RetryPolicy",
     "build_anthropic",
+    "build_cerebras",
     "build_openai",
     "build_vllm",
     "inject_cache_control",

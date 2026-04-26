@@ -1,0 +1,6 @@
+name: star
+max_iterations: 20
+extra:
+  planning_max_iter: 2
+  exec_max_iter: 5
+  verify_max_iter: 3
