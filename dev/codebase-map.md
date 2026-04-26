@@ -1,11 +1,11 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-04-24*
+*Auto-generated. Last updated: 2026-04-26*
 
 ## Tech Stack
 - **Language:** Python 3.11+
 - **Package Manager:** uv
 - **Orchestration:** LangGraph (multi-agent framework)
-- **LLM SDK:** LangChain chat models (OpenAI/Anthropic/vLLM)
+- **LLM SDK:** LangChain chat models (OpenAI/Anthropic/Cerebras/vLLM)
 - **Database:** PostgreSQL 16 (async via SQLAlchemy 2.x + asyncpg, ORM with Alembic migrations)
 - **Bulk Storage:** Apache Parquet (PyArrow) for experiment data
 - **Config:** YAML + Pydantic + OmegaConf
@@ -16,17 +16,17 @@
 ## Project Structure
 - `src/atm/` — main package (Adaptive Topologies MAS, imported as `atm`)
   - `core/` — base types, state, errors (Message, ToolCall, Phase, AgentState, GraphState)
-  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/vLLM), budget tracking, pricing, retry, fake LLM
+  - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/Cerebras/vLLM), budget tracking, pricing, retry, fake LLM, `factory.build_llm(model_id, ...)` provider-prefix router (supports `fake:scripted/echo/replay`)
   - `tools/` — Tool protocol, registry, global tools, Docker/subprocess sandbox (M4)
   - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles, scratchpad policy C (M5)
-  - `topology/` — Topology protocol, Star/Chain/Mesh/Debate/Hierarchical/Adaptive (M6-M8)
+  - `topology/` — Topology protocol + Registry, Star + Chain (M6 complete); Mesh/Debate/Hierarchical/Adaptive (M7-M8 planned)
   - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals (M8)
   - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
   - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3 complete)
   - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), serializers (M3 complete)
   - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations (M10)
   - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX (M11)
-  - `experiment/` — Config schemas (Pydantic), loader (OmegaConf), runner, grid executor, CLI (M12)
+  - `experiment/` — Pydantic config schemas + OmegaConf loader, single-run runner (`run_one`), Typer CLI (`atm run`), inline evaluator (M6 complete; grid + sweep in M12)
   - `analysis/` — Loaders, plots (M13)
 - `tests/` — unit, integration, fixtures
   - `fixtures/llm/` — FakeLLM scripted response YAMLs (planner_simple, executor_code_run, determinism_seed, m5_*.yaml)
@@ -36,7 +36,7 @@
   - `unit/llm/` — 110 tests for pricing/budget/retry/providers/fake/wrapper
   - `integration/llm/` — 3 tests for LLM layer contract (end-to-end, budget exceed, replay round-trip)
 - `conf/` — YAML configuration templates
-  - `pricing.yaml` — per-1K-token prices for OpenAI/Anthropic/vLLM/fake models (version 1)
+  - `pricing.yaml` — per-1K-token prices for OpenAI/Anthropic/Cerebras/vLLM/fake models (version 1)
   - `agents/` — role-specific agent configs (planner.yaml, researcher.yaml, executor.yaml, critic.yaml, debater.yaml)
 - `alembic/` — database migrations (async template, single initial migration)
 - `dev/` — documentation (PLAN.md, arch.md) and task tracking (done/active)
@@ -52,7 +52,7 @@
 
 ### LLM Layer (`llm/`)
 - **Purpose:** Unified wrapper over LangChain chat models with usage/cost/retry, three-tier budget enforcement, prompt caching support, and deterministic FakeLLM for tests.
-- **Exports (from `atm.llm`):** `LLMWrapper`, `BudgetTracker`, `BudgetSignal` (runtime event), `BudgetLevel`, `FakeLLM`, `REPLAY_SCHEMA`, `Pricing`, `ModelPricing`, `RetryPolicy`, `with_retry`, `is_transient`, `build_openai`, `build_anthropic`, `build_vllm`, `inject_cache_control`, `DEFAULT_CACHE_TTL`.
+- **Exports (from `atm.llm`):** `LLMWrapper`, `BudgetTracker`, `BudgetSignal` (runtime event), `BudgetLevel`, `FakeLLM`, `REPLAY_SCHEMA`, `Pricing`, `ModelPricing`, `RetryPolicy`, `with_retry`, `is_transient`, `build_openai`, `build_anthropic`, `build_cerebras`, `build_vllm`, `inject_cache_control`, `DEFAULT_CACHE_TTL`.
 - **Submodules:**
   - `pricing.py` — `ModelPricing` (frozen Pydantic, optional float fields), `Pricing.from_yaml` + `cost` (auto-detects OpenAI vs Anthropic cache convention) + `estimate` pre-call helper.
   - `budget.py` — `BudgetLevel` StrEnum, `BudgetSignal` frozen Pydantic (runtime warn/exceed event — not to be confused with `core.types.BudgetEvent` which is the DB persistence schema), `BudgetTracker` (asyncio.Lock, three-tier check/record, warn+exceed callbacks, sync or async callable).
@@ -61,6 +61,7 @@
   - `fake.py` — `FakeLLM(mode=scripted|replay|echo)`: scripted reads YAML fixtures by `(agent_id, step_idx)` with role fallback and asyncio.Lock; replay reads pyarrow Table with `REPLAY_SCHEMA` and maps `call_id → LLMResponse.id`; echo mirrors last user message content. `latency_ms=0` constant ensures bit-identical determinism.
   - `providers/openai.py` — `build_openai` strips `openai:` prefix, `api_key="EMPTY"` default.
   - `providers/anthropic.py` — `build_anthropic` + `inject_cache_control` (deep-copies last message, handles multi-modal `content=list[dict]`, always returns NEW list — never mutates input).
+  - `providers/cerebras.py` — `build_cerebras` strips `cerebras:` prefix, `api_key="EMPTY"` default; active models: `llama3.1-8b` (deprecation 2026-05-27), `gpt-oss-120b`; requires `langchain-cerebras>=0.5,<0.6`.
   - `providers/vllm.py` — `build_vllm` → `ChatOpenAI(base_url=..., api_key="EMPTY")` per vLLM OpenAI-compatible endpoint convention.
 - **Dependencies:** langchain-core, langchain-openai, langchain-anthropic, anthropic, openai, tiktoken, pyyaml, pyarrow, asyncio.
 - **Test coverage:** 110 unit tests + 3 integration tests, all green.
@@ -216,6 +217,7 @@ LangGraph callback handler + serializers.
 - **langchain, langchain-core** (0.3.x): Chat model interface.
 - **langchain-openai** (0.3.x): ChatOpenAI.
 - **langchain-anthropic** (0.3.x): ChatAnthropic + cache control.
+- **langchain-cerebras** (0.5.x): ChatCerebras; pinned `<0.6` to keep `langchain-core<0.4`.
 - **tiktoken** (≥0.8): OpenAI token counting (Anthropic uses heuristic fallback).
 - **pyyaml** (≥6): Fixture + pricing + agent config parsing.
 - **pyarrow** (≥16): Replay Table schema + bulk experiment data.

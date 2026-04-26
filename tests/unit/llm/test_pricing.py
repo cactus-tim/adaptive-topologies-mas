@@ -44,13 +44,21 @@ def test_from_yaml_returns_pricing_instance(pricing: Pricing) -> None:
 
 
 def test_from_yaml_has_expected_model_keys(pricing: Pricing) -> None:
-    """Pricing.models has all five expected keys from conf/pricing.yaml."""
+    """Pricing.models has all expected keys from conf/pricing.yaml.
+
+    fake:scripted and fake:echo were added in M6 so runner tests can use
+    those model_ids without triggering "Unknown model" pricing errors.
+    """
     expected_keys = {
         "openai:gpt-4o",
         "openai:gpt-4o-mini",
         "anthropic:claude-3-5-sonnet-latest",
         "anthropic:claude-3-5-haiku-latest",
+        "cerebras:llama3.1-8b",
+        "cerebras:gpt-oss-120b",
         "fake:deterministic",
+        "fake:scripted",
+        "fake:echo",
     }
     assert expected_keys == set(pricing.models.keys())
 
