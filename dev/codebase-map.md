@@ -52,7 +52,7 @@
 
 ### LLM Layer (`llm/`)
 - **Purpose:** Unified wrapper over LangChain chat models with usage/cost/retry, three-tier budget enforcement, prompt caching support, and deterministic FakeLLM for tests.
-- **Exports (from `atm.llm`):** `LLMWrapper`, `BudgetTracker`, `BudgetSignal` (runtime event), `BudgetLevel`, `FakeLLM`, `REPLAY_SCHEMA`, `Pricing`, `ModelPricing`, `RetryPolicy`, `with_retry`, `is_transient`, `build_openai`, `build_anthropic`, `build_vllm`, `inject_cache_control`, `DEFAULT_CACHE_TTL`.
+- **Exports (from `atm.llm`):** `LLMWrapper`, `BudgetTracker`, `BudgetSignal` (runtime event), `BudgetLevel`, `FakeLLM`, `REPLAY_SCHEMA`, `Pricing`, `ModelPricing`, `RetryPolicy`, `with_retry`, `is_transient`, `build_openai`, `build_anthropic`, `build_cerebras`, `build_vllm`, `inject_cache_control`, `DEFAULT_CACHE_TTL`.
 - **Submodules:**
   - `pricing.py` — `ModelPricing` (frozen Pydantic, optional float fields), `Pricing.from_yaml` + `cost` (auto-detects OpenAI vs Anthropic cache convention) + `estimate` pre-call helper.
   - `budget.py` — `BudgetLevel` StrEnum, `BudgetSignal` frozen Pydantic (runtime warn/exceed event — not to be confused with `core.types.BudgetEvent` which is the DB persistence schema), `BudgetTracker` (asyncio.Lock, three-tier check/record, warn+exceed callbacks, sync or async callable).
@@ -61,6 +61,7 @@
   - `fake.py` — `FakeLLM(mode=scripted|replay|echo)`: scripted reads YAML fixtures by `(agent_id, step_idx)` with role fallback and asyncio.Lock; replay reads pyarrow Table with `REPLAY_SCHEMA` and maps `call_id → LLMResponse.id`; echo mirrors last user message content. `latency_ms=0` constant ensures bit-identical determinism.
   - `providers/openai.py` — `build_openai` strips `openai:` prefix, `api_key="EMPTY"` default.
   - `providers/anthropic.py` — `build_anthropic` + `inject_cache_control` (deep-copies last message, handles multi-modal `content=list[dict]`, always returns NEW list — never mutates input).
+  - `providers/cerebras.py` — `build_cerebras` strips `cerebras:` prefix, `api_key="EMPTY"` default; active models: `llama3.1-8b` (deprecation 2026-05-27), `gpt-oss-120b`; requires `langchain-cerebras>=0.5,<0.6`.
   - `providers/vllm.py` — `build_vllm` → `ChatOpenAI(base_url=..., api_key="EMPTY")` per vLLM OpenAI-compatible endpoint convention.
 - **Dependencies:** langchain-core, langchain-openai, langchain-anthropic, anthropic, openai, tiktoken, pyyaml, pyarrow, asyncio.
 - **Test coverage:** 110 unit tests + 3 integration tests, all green.
@@ -216,6 +217,7 @@ LangGraph callback handler + serializers.
 - **langchain, langchain-core** (0.3.x): Chat model interface.
 - **langchain-openai** (0.3.x): ChatOpenAI.
 - **langchain-anthropic** (0.3.x): ChatAnthropic + cache control.
+- **langchain-cerebras** (0.5.x): ChatCerebras; pinned `<0.6` to keep `langchain-core<0.4`.
 - **tiktoken** (≥0.8): OpenAI token counting (Anthropic uses heuristic fallback).
 - **pyyaml** (≥6): Fixture + pricing + agent config parsing.
 - **pyarrow** (≥16): Replay Table schema + bulk experiment data.
