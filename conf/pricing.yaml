@@ -34,6 +34,25 @@ models:
     cache_read_per_1k: 0.000080   # Prompt Cache read
     cache_write_per_1k: 0.0010    # Prompt Cache write
 
+  # DEPRECATION 2026-05-27 — llama3.1-8b is scheduled for removal on Cerebras platform
+  cerebras:llama3.1-8b:
+    # Cerebras llama3.1-8b — 8B tier (upcoming deprecation 2026-05-27)
+    # Source: Cerebras Cloud pricing (2026-04) — VERIFY before merge
+    input_per_1k: 0.0001  # VERIFY
+    output_per_1k: 0.0001  # VERIFY
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0
+
+  cerebras:gpt-oss-120b:
+    # Cerebras gpt-oss-120b — 120B tier (active, replaces both 70B models)
+    # Source: Cerebras Cloud pricing (2026-04) — VERIFY before merge
+    input_per_1k: 0.00085  # VERIFY
+    output_per_1k: 0.00120  # VERIFY
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0
+
   fake:deterministic:
     # FakeLLM used in all unit/integration tests — zero cost
     input_per_1k: 0.0
