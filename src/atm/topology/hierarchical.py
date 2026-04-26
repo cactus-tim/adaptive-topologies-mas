@@ -210,15 +210,13 @@ class HierarchicalTopology:
             signals: dict[str, Any] = dict(shared.get("signals") or {})
             iter_total: int = int(shared.get("iter_total") or 0)
 
-            # Check finalize signal — route to finalize node (NOT END) so final_answer is set
-            if signals.get(finalize_signal):
-                return _ROUTE_FINALIZE
-
-            # Check global stop — if max_iterations exceeded, route to finalize to aggregate
+            # Check global stop and topology_success through unified _should_stop path
+            # topology_success is True when finalize_signal is set (MC-4 §7.1)
+            topology_success = bool(signals.get(finalize_signal))
             stop, _reason = _should_stop(
                 dict(state),
                 cfg,
-                topology_success=False,
+                topology_success=topology_success,
                 topology_max_reached=False,
             )
             if stop:
@@ -334,20 +332,14 @@ class HierarchicalTopology:
             signals: dict[str, Any] = dict(shared.get("signals") or {})
             iter_total: int = int(shared.get("iter_total") or 0)
 
-            # If finalize signal is set → go to finalize node (sets final_answer)
-            if signals.get(finalize_signal):
-                return _ROUTE_FINALIZE
-
-            # Max rounds exceeded → finalize
-            if iter_total > max_rounds:
-                return _ROUTE_FINALIZE
-
-            # Global stop → finalize for graceful exit
+            # Unified stop check: max_iter > topology_success > topology_max (§7.1)
+            topology_success = bool(signals.get(finalize_signal))
+            topology_max_reached = iter_total > max_rounds
             stop, _reason = _should_stop(
                 dict(state),
                 cfg,
-                topology_success=False,
-                topology_max_reached=False,
+                topology_success=topology_success,
+                topology_max_reached=topology_max_reached,
             )
             if stop:
                 return _ROUTE_FINALIZE
@@ -400,7 +392,6 @@ class HierarchicalTopology:
                 final_answer = " | ".join(parts) if parts else "<incomplete>"
 
             shared["final_answer"] = final_answer
-            signals[finalize_signal] = True
             shared["signals"] = signals
             return {"shared": shared}
 

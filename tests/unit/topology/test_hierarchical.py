@@ -456,3 +456,64 @@ class TestCoordinatorsNotInAgentsDict:
         assert set(agents.keys()) == expected_workers, (
             f"Unexpected agents: {set(agents.keys()) - expected_workers}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 12: test_should_stop_returns_topology_success_on_finalize_signal
+# ---------------------------------------------------------------------------
+
+
+class TestShouldStopFinalizeSignal:
+    """_route_from_top_coord and _route_from_after_team_b use topology_success path for finalize."""
+
+    async def test_should_stop_returns_topology_success_on_finalize_signal(self) -> None:
+        """When finalize_signal is set, graph terminates via topology_success path in _should_stop.
+
+        Verifies that finish_reason is topology_success (not topology_max or max_iter)
+        when both teams have produced drafts and top_coord_finalize=True.
+        """
+        from atm.topology.base import _should_stop
+
+        # Simulate state after top_coord_after_team_b sets finalize signal
+        finalize_signal = "top_coord_finalize"
+        state = _make_state(
+            iter_total=5,  # well below max_iterations=20
+            signals={
+                finalize_signal: True,
+                "team_a_draft": "team_a result",
+                "team_b_draft": "team_b result",
+            },
+        )
+
+        cfg = _make_cfg(max_iterations=20, max_rounds=4, finalize_signal=finalize_signal)
+
+        # _should_stop with topology_success=True (simulating what _route_from_after_team_b does)
+        stop, reason = _should_stop(
+            state,
+            cfg,
+            topology_success=bool(state["shared"]["signals"].get(finalize_signal)),
+            topology_max_reached=False,
+        )
+
+        assert stop is True, "Expected _should_stop to return True when finalize_signal is set"
+        assert reason == "success", (
+            f"Expected reason='success' (topology_success path), got {reason!r}"
+        )
+
+    async def test_finalize_signal_in_state_causes_graph_to_stop(self) -> None:
+        """End-to-end: when workers produce drafts, graph exits with finalize_signal=True."""
+        topology = HierarchicalTopology()
+        cfg = _make_cfg(max_iterations=20, max_rounds=4)
+        agents = _make_agents()
+
+        compiled = topology.build(agents, cfg)
+        initial_state = _make_state(iter_total=0)
+        final_state = await compiled.ainvoke(initial_state)
+
+        shared = final_state.get("shared", {})
+        signals = shared.get("signals", {})
+
+        # The finalize_signal should still be True (set by top_coord_after_team_b)
+        assert signals.get("top_coord_finalize") is True, (
+            f"Expected top_coord_finalize=True, got signals={signals}"
+        )

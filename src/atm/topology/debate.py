@@ -164,6 +164,9 @@ async def _judge_postprocess(
         winner_id = debater_pro_id if winner == "pro" else debater_contra_id
         final_answer = _extract_draft(agents, winner_id)
         existing_shared["final_answer"] = final_answer
+    else:
+        # Explicitly set judge_decided=False on rejection (star.py pattern)
+        existing_signals["judge_decided"] = False
 
     existing_shared["signals"] = existing_signals
     return {"shared": existing_shared}
