@@ -63,41 +63,6 @@ _ROUTE_END = "__end__"
 
 
 # ---------------------------------------------------------------------------
-# mesh_broadcast — post-process node (MC-5: bounded broadcast_bus)
-# ---------------------------------------------------------------------------
-
-
-async def mesh_broadcast(state: GraphState, *, _active_agent_id: str) -> dict[str, Any]:
-    """Read the active agent's outbox and append to shared.broadcast_bus with cap.
-
-    This is the ONLY node that writes to broadcast_bus. Agent nodes write
-    exclusively to their own outbox.
-
-    Args:
-        state:             Current GraphState.
-        _active_agent_id:  Agent whose outbox should be flushed to bus.
-
-    Returns:
-        State delta updating shared.broadcast_bus.
-    """
-    agents: dict[str, Any] = dict(state.get("agents") or {})
-    agent_state: dict[str, Any] = dict(agents.get(_active_agent_id) or {})
-    outbox: list[Any] = list(agent_state.get("outbox") or [])
-
-    shared: dict[str, Any] = dict(state.get("shared") or {})
-    existing_bus: list[Any] = list(shared.get("broadcast_bus") or [])
-
-    # Append new messages and apply cap (MC-5)
-    new_bus = existing_bus + outbox
-    cap: int = _DEFAULT_BROADCAST_BUS_CAP
-    if len(new_bus) > cap:
-        new_bus = new_bus[-cap:]
-
-    shared["broadcast_bus"] = new_bus
-    return {"shared": shared}
-
-
-# ---------------------------------------------------------------------------
 # MeshTopology
 # ---------------------------------------------------------------------------
 

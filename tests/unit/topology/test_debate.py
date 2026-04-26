@@ -397,6 +397,53 @@ class TestJudgePostprocess:
         delta = asyncio.run(run())
         assert delta["shared"]["debate_round"] == 3
 
+    def test_judge_postprocess_increments_iter_total(self) -> None:
+        """iter_total grows by 1 per judge_postprocess call (global max_iter precedence).
+
+        Each debate round is one logical iteration — iter_total must advance
+        inside the debate loop so _should_stop can enforce cfg.max_iterations.
+        """
+        state = _make_state(iter_total=3, debate_round=0, judge_outbox=[])
+
+        async def run() -> dict[str, Any]:
+            return await _judge_postprocess(
+                state,  # type: ignore[arg-type]
+                judge_id="judge",
+                debater_pro_id="debater_pro",
+                debater_contra_id="debater_contra",
+                cfg=_make_cfg(),
+            )
+
+        delta = asyncio.run(run())
+        assert delta["shared"]["iter_total"] == 4
+
+    def test_judge_postprocess_iter_total_grows_per_round(self) -> None:
+        """Simulate 3 sequential rounds: iter_total increments 1 per round."""
+        state = _make_state(iter_total=0, debate_round=0, judge_outbox=[])
+
+        async def one_round(s: dict[str, Any]) -> dict[str, Any]:
+            delta = await _judge_postprocess(
+                s,  # type: ignore[arg-type]
+                judge_id="judge",
+                debater_pro_id="debater_pro",
+                debater_contra_id="debater_contra",
+                cfg=_make_cfg(),
+            )
+            # Merge delta back into state for next round
+            merged = dict(s)
+            merged["shared"] = delta["shared"]
+            return merged
+
+        async def run_three_rounds() -> dict[str, Any]:
+            s = state
+            for _ in range(3):
+                s = await one_round(s)
+            return s
+
+        final_state = asyncio.run(run_three_rounds())
+        assert final_state["shared"]["iter_total"] == 3
+        assert final_state["shared"]["debate_round"] == 3
+
 
 # ---------------------------------------------------------------------------
 # Tests 4, 5, 6, 7: _route_from_judge

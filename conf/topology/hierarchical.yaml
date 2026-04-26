@@ -10,7 +10,6 @@ extra:
       workers:
         - executor_b1
         - executor_b2
-  top_coordinator_id: top_coord
   finalize_signal: top_coord_finalize
   final_answer_strategy: json_concat
   max_rounds: 4

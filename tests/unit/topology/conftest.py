@@ -21,6 +21,8 @@ from atm.topology.base import TopologyRegistry
 _TOPOLOGY_MODULES: list[tuple[str, str, str]] = [
     ("star", "atm.topology.star", "StarTopology"),
     ("chain", "atm.topology.chain", "ChainTopology"),
+    ("mesh", "atm.topology.mesh", "MeshTopology"),
+    ("debate", "atm.topology.debate", "DebateTopology"),
     ("hierarchical", "atm.topology.hierarchical", "HierarchicalTopology"),
 ]
 

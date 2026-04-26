@@ -147,9 +147,14 @@ async def _judge_postprocess(
     existing_shared: dict[str, Any] = dict(state.get("shared") or {})
     existing_signals: dict[str, Any] = dict(existing_shared.get("signals") or {})
 
-    # Increment debate round counter
+    # Increment debate round counter (one logical round = one judge_postprocess call)
     debate_round: int = int(existing_shared.get("debate_round") or 0) + 1
     existing_shared["debate_round"] = debate_round
+
+    # Increment global iter_total — mirrors chain.py/_route_from_critic pattern;
+    # ensures max_iter (global) precedence fires inside the debate loop.
+    iter_total: int = int(existing_shared.get("iter_total") or 0) + 1
+    existing_shared["iter_total"] = iter_total
 
     if approved:
         existing_signals["judge_decided"] = True
