@@ -1,0 +1,60 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for MeshTopology — consensus-path test.
+#
+# Scenario: planner, researcher, executor each vote_for="4" (the answer to
+# "what is 2+2?"). critic also votes "4". After 3 matching votes, consensus
+# is reached (consensus_threshold=3).
+#
+# Each entry represents one agent step. The vote is embedded in the content
+# and in the payload so the agent's outbox Message can be interpreted.
+# In the integration test, agent wrappers convert outbox messages to
+# DECISION kind with payload={"vote_for": "4"}.
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "My answer is 4. vote_for:4"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: researcher
+    role: researcher
+    step_idx: 0
+    content: "Research confirms answer is 4. vote_for:4"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: executor
+    role: executor
+    step_idx: 0
+    content: "Computed 2+2=4. vote_for:4"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "Verified answer is 4. vote_for:4"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
