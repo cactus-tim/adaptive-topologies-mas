@@ -1,0 +1,54 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for HierarchicalTopology finalize scenario.
+# 4 workers (2 per team): executor_a1, executor_a2, executor_b1, executor_b2.
+# Each worker emits a DRAFT message; top_coord (rule-based) finalizes
+# when both team drafts are present.
+entries:
+  - agent_id: executor_a1
+    role: executor
+    step_idx: 0
+    content: "hello"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 5
+      total_tokens: 25
+    model: "fake:scripted"
+
+  - agent_id: executor_a2
+    role: executor
+    step_idx: 0
+    content: "hello team_a result"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
+
+  - agent_id: executor_b1
+    role: executor
+    step_idx: 0
+    content: "world"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 5
+      total_tokens: 25
+    model: "fake:scripted"
+
+  - agent_id: executor_b2
+    role: executor
+    step_idx: 0
+    content: "world team_b result"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
