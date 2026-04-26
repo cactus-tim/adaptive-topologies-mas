@@ -1,0 +1,13 @@
+name: hierarchical
+max_iterations: 20
+extra:
+  sub_teams:
+    - id: team_a
+      workers:
+        - executor_a1
+        - executor_a2
+    - id: team_b
+      workers:
+        - executor_b1
+        - executor_b2
+  final_answer_strategy: json_concat
