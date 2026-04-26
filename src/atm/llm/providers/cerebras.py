@@ -1,0 +1,49 @@
+"""Cerebras provider factory for ATM LLM layer.
+
+Usage::
+
+    model = build_cerebras("cerebras:llama3.1-8b", {"temperature": 0.0})
+
+Supported model IDs (active as of 2026-04-26):
+
+- ``llama3.1-8b``  — 8B-parameter Llama 3.1 tier.
+  DEPRECATION 2026-05-27: scheduled for removal from Cerebras Cloud on that date.
+  Switch to a replacement model before that date.
+- ``gpt-oss-120b`` — 120B-parameter open-source model (replaces both 70B tiers).
+
+Removed model IDs (DO NOT USE):
+
+- ``llama3.1-70b``  — removed from Cerebras Cloud 2025-01-17.
+- ``llama-3.3-70b`` — removed from Cerebras Cloud 2026-02-16.
+
+Using removed model IDs will result in a 404 / model-not-found error at runtime.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from langchain_cerebras import ChatCerebras
+from langchain_core.language_models.chat_models import BaseChatModel
+
+
+def build_cerebras(model_id: str, opts: dict[str, Any]) -> BaseChatModel:
+    """Build a ChatCerebras instance from a prefixed model ID and options dict.
+
+    Args:
+        model_id: Model identifier in ``"cerebras:<model-name>"`` format.
+                  The ``"cerebras:"`` prefix is stripped before passing to the SDK.
+        opts:     Extra kwargs forwarded directly to ``ChatCerebras.__init__``.
+                  Common keys: ``temperature``, ``max_tokens``, ``timeout``.
+
+    Returns:
+        A ``ChatCerebras`` instance (subclass of ``BaseChatModel``).
+        Construction does NOT make any network call.
+    """
+    _, bare_model = model_id.split(":", 1)
+    kwargs = dict(opts)
+    # Provide a dummy API key so construction does not raise when CEREBRAS_API_KEY
+    # is not set in the environment (e.g. in unit tests).  Real callers must set
+    # the env-var or pass ``api_key`` in opts — the setdefault lets them override.
+    kwargs.setdefault("api_key", "EMPTY")
+    return ChatCerebras(model=bare_model, **kwargs)

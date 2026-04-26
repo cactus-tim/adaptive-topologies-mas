@@ -273,3 +273,81 @@ class TestInjectCacheControl:
         """inject_cache_control with empty list returns empty list gracefully."""
         result = inject_cache_control([], key="k")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# build_cerebras tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildCerebras:
+    def test_returns_base_chat_model(self) -> None:
+        """build_cerebras returns a BaseChatModel subclass without making API call."""
+        from langchain_core.language_models.chat_models import BaseChatModel
+
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras("cerebras:llama3.1-8b", {})
+        assert isinstance(model, BaseChatModel)
+
+    def test_returns_chat_cerebras_instance(self) -> None:
+        """build_cerebras specifically returns a ChatCerebras instance."""
+        from langchain_cerebras import ChatCerebras
+
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras("cerebras:llama3.1-8b", {})
+        assert isinstance(model, ChatCerebras)
+
+    def test_strips_cerebras_prefix(self) -> None:
+        """build_cerebras strips 'cerebras:' prefix; bare model name is passed through."""
+        from langchain_cerebras import ChatCerebras
+
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras("cerebras:gpt-oss-120b", {})
+        assert isinstance(model, ChatCerebras)
+        assert model.model_name == "gpt-oss-120b"
+
+    def test_forwards_temperature(self) -> None:
+        """opts temperature is forwarded to the underlying model."""
+        from langchain_cerebras import ChatCerebras
+
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras("cerebras:llama3.1-8b", {"temperature": 0.5})
+        assert isinstance(model, ChatCerebras)
+        assert model.temperature == pytest.approx(0.5)
+
+    def test_no_api_call_on_construction(self) -> None:
+        """Constructing the model object does not trigger any network call."""
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras("cerebras:llama3.1-8b", {})
+        assert model is not None
+
+    def test_api_key_is_empty_by_default(self) -> None:
+        """Default api_key is 'EMPTY' so construction works without CEREBRAS_API_KEY env var."""
+        from langchain_cerebras import ChatCerebras
+
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras("cerebras:llama3.1-8b", {})
+        assert isinstance(model, ChatCerebras)
+        secret = model.cerebras_api_key
+        key_value = (
+            secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+        )
+        assert key_value == "EMPTY"
+
+    @pytest.mark.parametrize("model_id", ["cerebras:llama3.1-8b", "cerebras:gpt-oss-120b"])
+    def test_supports_active_models(self, model_id: str) -> None:
+        """build_cerebras constructs successfully for each supported active model ID."""
+        from langchain_cerebras import ChatCerebras
+
+        from atm.llm.providers.cerebras import build_cerebras
+
+        model = build_cerebras(model_id, {})
+        assert isinstance(model, ChatCerebras)
+        bare_id = model_id.split(":", 1)[1]
+        assert model.model_name == bare_id
