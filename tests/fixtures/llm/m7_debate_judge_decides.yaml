@@ -1,0 +1,98 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for DebateTopology — judge_decides_after_loop path.
+#
+# Scenario:
+#   Round 1: planner opens, both debaters argue, judge rejects (approved=False)
+#   Round 2: debaters re-argue, judge approves (approved=True, winner="pro")
+#
+# Judge content encodes the decision — the JudgeAgent wrapper parses for
+# "APPROVE" and "winner" keywords. The test uses a Judge subclass (like Critic)
+# that converts DRAFT to DECISION messages.
+#
+# agent_id keys match the IDs used in the integration test:
+#   planner, debater_pro, debater_contra, judge
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "Opening statement: Should we use functional programming? Both sides should argue."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 50
+      output_tokens: 20
+      total_tokens: 70
+    model: "fake:scripted"
+
+  - agent_id: debater_pro
+    role: debater
+    step_idx: 0
+    content: "PRO: Functional programming reduces bugs via immutability and pure functions."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 25
+      total_tokens: 85
+    model: "fake:scripted"
+
+  - agent_id: debater_pro
+    role: debater
+    step_idx: 1
+    content: "PRO ROUND 2: Evidence shows functional code has 40% fewer bugs in production."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 65
+      output_tokens: 28
+      total_tokens: 93
+    model: "fake:scripted"
+
+  - agent_id: debater_contra
+    role: debater
+    step_idx: 0
+    content: "CONTRA: Functional programming has a steep learning curve and poor performance."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 25
+      total_tokens: 85
+    model: "fake:scripted"
+
+  - agent_id: debater_contra
+    role: debater
+    step_idx: 1
+    content: "CONTRA ROUND 2: Real-world projects still prefer OOP for maintainability."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 65
+      output_tokens: 28
+      total_tokens: 93
+    model: "fake:scripted"
+
+  - agent_id: judge
+    role: critic
+    step_idx: 0
+    content: "REJECT - both arguments need more evidence. Continue debate."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 15
+      total_tokens: 95
+    model: "fake:scripted"
+
+  - agent_id: judge
+    role: critic
+    step_idx: 1
+    content: "APPROVE winner=pro - Pro side provided stronger evidence with concrete statistics."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 90
+      output_tokens: 20
+      total_tokens: 110
+    model: "fake:scripted"
