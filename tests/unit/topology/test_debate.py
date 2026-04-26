@@ -495,3 +495,43 @@ class TestRouteFromJudge:
 
         result = _route_from_judge(state, cfg, max_rounds=4)  # type: ignore[arg-type]
         assert result == "debate_round_start"
+
+
+# ---------------------------------------------------------------------------
+# Test: test_build_passes_checkpointer_to_compile
+# ---------------------------------------------------------------------------
+
+
+class TestDebateBuildCheckpointer:
+    """build() forwards checkpointer kwarg to graph.compile()."""
+
+    def setup_method(self) -> None:
+        _ensure_debate_registered()
+
+    def test_build_passes_checkpointer_to_compile(self) -> None:
+        """build() calls graph.compile(checkpointer=...) when checkpointer kwarg is passed."""
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {
+            "planner": mock_agent,
+            "debater_pro": mock_agent,
+            "debater_contra": mock_agent,
+            "judge": mock_agent,
+        }
+        cfg = _make_cfg()
+        mock_cp = MagicMock()
+
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.add_node.return_value = None
+        mock_graph.add_edge.return_value = None
+        mock_graph.add_conditional_edges.return_value = None
+        mock_graph.set_entry_point.return_value = None
+        mock_graph.compile.return_value = mock_compiled
+
+        with patch("atm.topology.debate.StateGraph", return_value=mock_graph):
+            topology = DebateTopology()
+            compiled = topology.build(agents, cfg, checkpointer=mock_cp)
+
+        assert compiled is mock_compiled
+        mock_graph.compile.assert_called_once_with(checkpointer=mock_cp)

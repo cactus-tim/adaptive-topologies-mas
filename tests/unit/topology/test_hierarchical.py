@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langgraph.graph.state import CompiledStateGraph
@@ -517,3 +517,72 @@ class TestShouldStopFinalizeSignal:
         assert signals.get("top_coord_finalize") is True, (
             f"Expected top_coord_finalize=True, got signals={signals}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: checkpointer passthrough
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_graph() -> MagicMock:
+    """Return a MagicMock with the methods StateGraph would expose during build()."""
+    g = MagicMock()
+    g.add_node.return_value = None
+    g.add_edge.return_value = None
+    g.add_conditional_edges.return_value = None
+    compiled = MagicMock()
+    g.compile.return_value = compiled
+    return g
+
+
+class TestHierarchicalBuildCheckpointer:
+    """build() forwards checkpointer kwarg only to the top-level graph.compile()."""
+
+    def test_build_passes_checkpointer_to_compile_for_top_graph(self) -> None:
+        """The LAST compile() call (top-level graph) receives checkpointer=mock_cp."""
+        topology = HierarchicalTopology()
+        cfg = _make_cfg()
+        agents = _make_agents()
+        mock_cp = MagicMock()
+
+        # StateGraph is called 3 times: team_a subgraph, team_b subgraph, top-level.
+        mock_team_a = _make_mock_graph()
+        mock_team_b = _make_mock_graph()
+        mock_top = _make_mock_graph()
+
+        with patch(
+            "atm.topology.hierarchical.StateGraph",
+            side_effect=[mock_team_a, mock_team_b, mock_top],
+        ):
+            compiled = topology.build(agents, cfg, checkpointer=mock_cp)
+
+        # The top-level graph must be compiled with the checkpointer
+        mock_top.compile.assert_called_once_with(checkpointer=mock_cp)
+        assert compiled is mock_top.compile.return_value
+
+    def test_subgraphs_compiled_without_checkpointer(self) -> None:
+        """Subgraph compile() calls must NOT receive the checkpointer kwarg.
+
+        LangGraph contract: only the root graph's checkpointer manages state;
+        embedded subgraphs must be compiled with no arguments.
+        """
+        topology = HierarchicalTopology()
+        cfg = _make_cfg()
+        agents = _make_agents()
+        mock_cp = MagicMock()
+
+        mock_team_a = _make_mock_graph()
+        mock_team_b = _make_mock_graph()
+        mock_top = _make_mock_graph()
+
+        with patch(
+            "atm.topology.hierarchical.StateGraph",
+            side_effect=[mock_team_a, mock_team_b, mock_top],
+        ):
+            topology.build(agents, cfg, checkpointer=mock_cp)
+
+        # Subgraphs compiled with no args (positional or keyword)
+        mock_team_a.compile.assert_called_once_with()
+        mock_team_b.compile.assert_called_once_with()
+        # Top-level graph compiled with the checkpointer
+        mock_top.compile.assert_called_once_with(checkpointer=mock_cp)
