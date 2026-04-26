@@ -1,0 +1,11 @@
+name: mesh
+max_iterations: 20
+extra:
+  max_rounds: 6
+  consensus_threshold: 3
+  broadcast_bus_cap: 200
+  agents:
+    - planner
+    - researcher
+    - executor
+    - critic
