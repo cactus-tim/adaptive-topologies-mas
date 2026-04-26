@@ -151,6 +151,7 @@ async def _ensure_experiment(
                     "seed": cfg.seed,
                 },
                 git_sha=git_sha,
+                started_at=sa.func.now(),
                 status="running",
             )
             .on_conflict_do_nothing(index_elements=["name"])
@@ -203,6 +204,7 @@ async def _insert_run(
             model_version_snapshot={},
             status="running",
             budget_spent_usd=Decimal("0"),
+            started_at=datetime.now(UTC),
         )
         session.add(run)
 
