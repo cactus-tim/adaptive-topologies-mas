@@ -142,9 +142,7 @@ class HierarchicalTopology:
         # Extract configuration
         extra = cfg.extra or {}
         max_rounds: int = int(extra.get("max_rounds", _DEFAULT_MAX_ROUNDS))
-        final_answer_strategy: str = str(
-            extra.get("final_answer_strategy", "json_concat")
-        )
+        final_answer_strategy: str = str(extra.get("final_answer_strategy", "json_concat"))
         finalize_signal: str = str(extra.get("finalize_signal", _DEFAULT_FINALIZE_SIGNAL))
 
         sub_teams: list[dict[str, Any]] = list(extra.get("sub_teams") or [])
@@ -304,9 +302,7 @@ class HierarchicalTopology:
             team_a_draft = signals.get("team_a_draft")
             if team_a_draft and team_b_draft:
                 signals[finalize_signal] = True
-                logger.info(
-                    "top_coord: both team drafts present, setting %s=True", finalize_signal
-                )
+                logger.info("top_coord: both team drafts present, setting %s=True", finalize_signal)
 
             # Increment counters
             new_iter_total = int(shared.get("iter_total") or 0) + 1
@@ -522,8 +518,7 @@ class HierarchicalTopology:
 
                 if worker_agent is None:
                     logger.warning(
-                        "_build_subgraph: worker %r not found in agents dict; "
-                        "using no-op node.",
+                        "_build_subgraph: worker %r not found in agents dict; using no-op node.",
                         worker_id,
                     )
 

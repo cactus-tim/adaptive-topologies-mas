@@ -149,15 +149,9 @@ class MeshTopology:
         consensus_threshold: int = int(
             extra.get("consensus_threshold", _DEFAULT_CONSENSUS_THRESHOLD)
         )
-        activation_policy: str = str(
-            extra.get("activation_policy", _DEFAULT_ACTIVATION_POLICY)
-        )
-        agent_order: list[str] = list(
-            extra.get("agent_order", _DEFAULT_AGENT_ORDER)
-        )
-        broadcast_bus_cap: int = int(
-            extra.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP)
-        )
+        activation_policy: str = str(extra.get("activation_policy", _DEFAULT_ACTIVATION_POLICY))
+        agent_order: list[str] = list(extra.get("agent_order", _DEFAULT_AGENT_ORDER))
+        broadcast_bus_cap: int = int(extra.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP))
 
         # ----------------------------------------------------------------
         # dispatcher node — selects next agent to activate
@@ -174,9 +168,7 @@ class MeshTopology:
 
             # Determine next agent
             if activation_policy == "priority":
-                next_agent = _pick_priority_agent(
-                    state, agent_order, rr_index
-                )
+                next_agent = _pick_priority_agent(state, agent_order, rr_index)
             else:
                 next_agent = agent_order[rr_index % len(agent_order)]
 
@@ -218,9 +210,10 @@ class MeshTopology:
             return result
 
         # Build individual node closures (must capture agent_id by value)
-        def _make_agent_node(agent_id: str):
+        def _make_agent_node(agent_id: str) -> Any:
             async def node(state: GraphState) -> dict[str, Any]:
                 return await _wrap_agent(agent_id, state)
+
             node.__name__ = agent_id
             return node
 

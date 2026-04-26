@@ -76,7 +76,9 @@ def _make_worker_agent(agent_id: str, fixture_path: Path) -> Agent:
     return Agent(agent_id=agent_id, cfg=cfg, llm=llm, tools=registry)
 
 
-def _make_initial_state(task_input: str = "concat hello and world, then summarize") -> dict[str, Any]:
+def _make_initial_state(
+    task_input: str = "concat hello and world, then summarize",
+) -> dict[str, Any]:
     return {
         "shared": {
             "task_input": task_input,
@@ -175,12 +177,8 @@ async def test_hierarchical_e2e_finalize_path() -> None:
     assert isinstance(parsed, dict), (
         f"final_answer should parse to dict, got {type(parsed)}: {final_answer!r}"
     )
-    assert "team_a" in parsed, (
-        f"Expected 'team_a' key in final_answer, got: {list(parsed.keys())}"
-    )
-    assert "team_b" in parsed, (
-        f"Expected 'team_b' key in final_answer, got: {list(parsed.keys())}"
-    )
+    assert "team_a" in parsed, f"Expected 'team_a' key in final_answer, got: {list(parsed.keys())}"
+    assert "team_b" in parsed, f"Expected 'team_b' key in final_answer, got: {list(parsed.keys())}"
 
     # Assertion 4: both team values are non-empty strings
     assert parsed["team_a"] and parsed["team_a"] != "<incomplete>", (

@@ -198,7 +198,10 @@ class TestDebateBuildValidation:
         }
         topology = DebateTopology()
         import pytest
-        with pytest.raises(ValueError, match="debater_pro_id and debater_contra_id must be different"):
+
+        with pytest.raises(
+            ValueError, match="debater_pro_id and debater_contra_id must be different"
+        ):
             topology.build(agents, cfg)
 
 

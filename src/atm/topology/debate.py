@@ -126,8 +126,7 @@ async def _judge_postprocess(
         payload: dict[str, Any] = getattr(decision_msg, "payload", {}) or {}
         if "approved" not in payload:
             logger.warning(
-                "judge_postprocess: DECISION message missing 'approved' key; "
-                "treating as rejected"
+                "judge_postprocess: DECISION message missing 'approved' key; treating as rejected"
             )
             approved = False
         else:

@@ -411,8 +411,12 @@ class TestFinalAnswerJsonConcat:
         # Validate JSON format
         parsed = json.loads(final_answer)
         assert isinstance(parsed, dict), f"final_answer should parse to dict, got {type(parsed)}"
-        assert "team_a" in parsed, f"Expected 'team_a' key in final_answer, got keys: {list(parsed.keys())}"
-        assert "team_b" in parsed, f"Expected 'team_b' key in final_answer, got keys: {list(parsed.keys())}"
+        assert "team_a" in parsed, (
+            f"Expected 'team_a' key in final_answer, got keys: {list(parsed.keys())}"
+        )
+        assert "team_b" in parsed, (
+            f"Expected 'team_b' key in final_answer, got keys: {list(parsed.keys())}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -442,8 +446,7 @@ class TestCoordinatorsNotInAgentsDict:
         post_build_keys = set(agents.keys())
 
         assert original_keys == post_build_keys, (
-            f"build() mutated agents dict. "
-            f"Added keys: {post_build_keys - original_keys}"
+            f"build() mutated agents dict. Added keys: {post_build_keys - original_keys}"
         )
 
     def test_agents_dict_contains_only_workers(self) -> None:

@@ -162,10 +162,7 @@ async def test_mesh_consensus_path() -> None:
 
     # Verify broadcast_bus contains DECISION messages
     bus: list[Any] = shared.get("broadcast_bus", [])
-    decision_msgs = [
-        m for m in bus
-        if getattr(m, "kind", None) == MessageKind.DECISION
-    ]
+    decision_msgs = [m for m in bus if getattr(m, "kind", None) == MessageKind.DECISION]
     assert len(decision_msgs) >= 3, (
         f"Expected >= 3 DECISION messages on bus, got {len(decision_msgs)}"
     )
@@ -213,9 +210,7 @@ async def test_mesh_max_rounds_path() -> None:
 
     # Verify dispatch_round reached max_rounds
     dispatch_round: int = int(signals.get("_mesh_dispatch_round", 0))
-    assert dispatch_round >= 4, (
-        f"Expected dispatch_round >= 4 (max_rounds), got {dispatch_round}"
-    )
+    assert dispatch_round >= 4, f"Expected dispatch_round >= 4 (max_rounds), got {dispatch_round}"
 
     # Verify iter_total is positive
     assert shared.get("iter_total", 0) > 0, "iter_total should be > 0"

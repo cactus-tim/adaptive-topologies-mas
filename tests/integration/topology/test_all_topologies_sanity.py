@@ -273,9 +273,7 @@ async def test_topology_builds_and_runs_smoke(topology_name: str) -> None:
     initial_state = _minimal_state()
     final_state = await compiled.ainvoke(initial_state)
 
-    assert final_state is not None, (
-        f"ainvoke() returned None for topology {topology_name!r}"
-    )
+    assert final_state is not None, f"ainvoke() returned None for topology {topology_name!r}"
 
     shared = final_state.get("shared") or {}
     iter_total: int = int(shared.get("iter_total") or 0)
@@ -291,9 +289,7 @@ async def test_topology_builds_and_runs_smoke(topology_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _precedence_state_for(
-    topology_name: str, max_iterations: int
-) -> dict[str, Any]:
+def _precedence_state_for(topology_name: str, max_iterations: int) -> dict[str, Any]:
     """Build an initial state with iter_total = max_iterations - 1
     AND the topology's success signal pre-populated.
 

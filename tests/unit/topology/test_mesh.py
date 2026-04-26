@@ -362,8 +362,15 @@ class TestBuildReturnsCompiledGraph:
 
         # Verify nodes were added
         added_node_names = {call.args[0] for call in mock_graph.add_node.call_args_list}
-        expected_nodes = {"dispatcher", "mesh_broadcast", "mesh_postprocess",
-                          "planner", "researcher", "executor", "critic"}
+        expected_nodes = {
+            "dispatcher",
+            "mesh_broadcast",
+            "mesh_postprocess",
+            "planner",
+            "researcher",
+            "executor",
+            "critic",
+        }
         assert expected_nodes.issubset(added_node_names), (
             f"Missing nodes: {expected_nodes - added_node_names}"
         )
@@ -533,12 +540,11 @@ class TestConsensusVotePayloadStrFormat:
     def test_non_string_vote_for_is_ignored_in_tally(self) -> None:
         """Non-string vote_for values (int, None, list) are skipped during tally."""
         bad_votes = [
-            Message(sender="a", kind=MessageKind.DECISION, content="x",
-                    payload={"vote_for": 42}),
-            Message(sender="b", kind=MessageKind.DECISION, content="y",
-                    payload={"vote_for": None}),
-            Message(sender="c", kind=MessageKind.DECISION, content="z",
-                    payload={"vote_for": ["list"]}),
+            Message(sender="a", kind=MessageKind.DECISION, content="x", payload={"vote_for": 42}),
+            Message(sender="b", kind=MessageKind.DECISION, content="y", payload={"vote_for": None}),
+            Message(
+                sender="c", kind=MessageKind.DECISION, content="z", payload={"vote_for": ["list"]}
+            ),
         ]
 
         vote_counts: dict[str, int] = {}
