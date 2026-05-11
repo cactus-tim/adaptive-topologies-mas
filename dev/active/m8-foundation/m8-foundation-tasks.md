@@ -31,13 +31,13 @@
 - [x] 2.3 Добавить предварительный экспорт в `phases/__init__.py` — `src/atm/phases/__init__.py`
   - Результат: `__all__ = ["RuleBasedPhaseRouter", "PhaseLimits", "PhaseGuard", "PhaseRouter"]`
 
-## Фаза 3: LLMPhaseRouter (Wave 3) — НЕ НАЧАТО
+## Фаза 3: LLMPhaseRouter (Wave 3) — ВЫПОЛНЕНО
 
-- [ ] 3.1 Написать 5 тестов TestLLMRouter (AsyncMock) — `tests/unit/phases/test_manager.py`
-  - Приёмочный критерий: покрыты happy-path, rollback-attempt→fallback, malformed-JSON→fallback, unknown-phase→fallback, missing-field→fallback; используется `unittest.mock.AsyncMock`
+- [x] 3.1 Написать 5 тестов TestLLMRouter (AsyncMock) — `tests/unit/phases/test_manager.py`
+  - Результат: 5 тестов добавлено
 
-- [ ] 3.2 Реализовать `LLMPhaseRouter` в `phases/manager.py` — `src/atm/phases/manager.py`
-  - Приёмочный критерий: все 5 тестов зелёные; fallback не raise; WARNING логируется через `logging.getLogger(__name__)`; `uv run mypy src/atm/phases/manager.py --strict` зелёный; `uv run ruff check src/atm/phases/manager.py` чисто
+- [x] 3.2 Реализовать `LLMPhaseRouter` в `phases/manager.py` — `src/atm/phases/manager.py`
+  - Результат: append класс с JSON-парсингом, валидацией монотонности, rule fallback. router_cost_usd логируется на DEBUG (поле не входит в PhaseDecision контракт). 23/23 phases, 891/891 full suite
 
 ## Фаза 4: Финализация (Wave 4) — НЕ НАЧАТО
 
@@ -55,7 +55,7 @@
 ## Статистика
 
 - Всего: 13 задач · ~6.5h
-- Выполнено: 8 / 13 (Wave 1 + 2 done)
+- Выполнено: 10 / 13 (Wave 1 + 2 + 3 done)
 
 ## Как обновлять
 

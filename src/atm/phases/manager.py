@@ -18,12 +18,17 @@ Architecture decisions (arch.md §8.1, §8.2 sketch = obsolete):
 
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, cast, runtime_checkable
+import json
+import logging
+from collections.abc import Callable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
 from atm.core.state import GraphState, SharedState
 from atm.core.types import Phase, PhaseDecision
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -239,4 +244,124 @@ class RuleBasedPhaseRouter:
             next_phase=current_phase,
             reason=f"no guard fired, iter={iteration} < cap={cap} — staying in {current_phase}",
             decided_by="rule",
+        )
+
+
+# ---------------------------------------------------------------------------
+# LLMPhaseRouter
+# ---------------------------------------------------------------------------
+
+
+class LLMPhaseRouter:
+    """LLM-based phase router with JSON parsing, monotonicity validation, and fallback.
+
+    Decision flow:
+    1. Build prompt from template + current state.
+    2. Call llm.ainvoke(messages, agent_id='phase_router').
+    3. Parse JSON from LLMResponse.text.
+    4. Validate: next_phase in Phase enum, next_phase >= current_phase (monotonic).
+    5. On any failure (JSON parse error, missing field, unknown phase, rollback):
+       log WARNING and delegate to rule_fallback.decide(state).
+    6. On success: return PhaseDecision(decided_by='llm_router', router_cost_usd=...).
+    7. On fallback: decided_by='rule' (from rule_fallback), router_cost_usd=0.0.
+
+    Architecture note (arch.md §8.2):
+    - decided_by='rule' for fallback decisions — this is intentional.
+      The decided_by field reflects who made the final decision, not who attempted.
+
+    Args:
+        llm: Any object with async ainvoke(messages, *, agent_id) -> LLMResponse.
+        rule_fallback: RuleBasedPhaseRouter for fallback.
+        prompt_template: String template. Must contain {current_phase} and {signals}
+                         placeholders; formatted with str.format_map().
+    """
+
+    _DEFAULT_PROMPT = (
+        "You are a phase router. Current phase: {current_phase}. "
+        "Signals: {signals}. "
+        "Respond with JSON: {{\"next_phase\": \"<phase>\", \"reason\": \"<reason>\"}}. "
+        "Valid phases (monotonic order): planning, execution, verification, done."
+    )
+
+    def __init__(
+        self,
+        llm: Any,
+        rule_fallback: RuleBasedPhaseRouter,
+        prompt_template: str | None = None,
+    ) -> None:
+        self._llm = llm
+        self._fallback = rule_fallback
+        self._prompt_template = prompt_template or self._DEFAULT_PROMPT
+
+    async def decide(self, state: GraphState) -> PhaseDecision:
+        """Invoke LLM to decide phase transition; fallback to rule on any error.
+
+        Returns:
+            PhaseDecision with decided_by='llm_router' on success,
+            or decided_by='rule' (from fallback) on any parse/validation error.
+        """
+        raw_shared: Any = state.get("shared", {})
+        shared = cast(SharedState, raw_shared)
+        current_phase: Phase = shared.get("phase", Phase.PLANNING)
+        signals: dict[str, Any] = shared.get("signals", {})
+
+        prompt = self._prompt_template.format_map(
+            {"current_phase": current_phase, "signals": signals}
+        )
+
+        try:
+            response = await self._llm.ainvoke([prompt], agent_id="phase_router")
+        except Exception as exc:
+            _log.warning("LLMPhaseRouter: LLM call failed (%s), falling back to rule.", exc)
+            return self._fallback.decide(state)
+
+        raw_text = response.text or ""
+        _log.debug("LLMPhaseRouter: LLM call cost=%.6f USD", response.cost_usd)
+
+        # Parse JSON
+        try:
+            data = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            _log.warning(
+                "LLMPhaseRouter: malformed JSON from LLM (%s), raw=%r, falling back to rule.",
+                exc,
+                raw_text,
+            )
+            return self._fallback.decide(state)
+
+        # Validate 'next_phase' field present
+        if "next_phase" not in data:
+            _log.warning(
+                "LLMPhaseRouter: missing 'next_phase' in LLM response %r, falling back to rule.",
+                data,
+            )
+            return self._fallback.decide(state)
+
+        # Validate next_phase is a known Phase member
+        raw_next = data["next_phase"]
+        try:
+            next_phase = Phase(raw_next)
+        except ValueError:
+            _log.warning(
+                "LLMPhaseRouter: unknown phase %r from LLM, falling back to rule.",
+                raw_next,
+            )
+            return self._fallback.decide(state)
+
+        # Validate monotonicity: next_phase >= current_phase
+        if _phase_order(next_phase) < _phase_order(current_phase):
+            _log.warning(
+                "LLMPhaseRouter: rollback attempt %r -> %r (violates monotonicity), "
+                "falling back to rule.",
+                current_phase,
+                next_phase,
+            )
+            return self._fallback.decide(state)
+
+        reason: str = str(data.get("reason", "llm_router decision"))
+
+        return PhaseDecision(
+            next_phase=next_phase,
+            reason=reason,
+            decided_by="llm_router",
         )

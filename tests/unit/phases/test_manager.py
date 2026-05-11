@@ -1,6 +1,6 @@
-"""Unit tests for atm.phases.manager — RuleBasedPhaseRouter (Step 2.1 / M8).
+"""Unit tests for atm.phases.manager — RuleBasedPhaseRouter and LLMPhaseRouter (M8).
 
-TDD: these tests define the contract for RuleBasedPhaseRouter before implementation.
+TDD: these tests define the contract for both routers.
 
 Coverage:
   - 4 guards: ready_for_execution, ready_for_verification, critic_approved, iter caps
@@ -8,15 +8,16 @@ Coverage:
   - Terminal phase 'done': no transitions possible
   - Stay in planning if no guard fires and iter cap not exceeded
   - Monotonicity: decided_by='rule'
+  - LLMPhaseRouter: happy-path, rollback-attempt, malformed-JSON, unknown-phase,
+    missing-field (all via AsyncMock)
 """
 
 from __future__ import annotations
 
 import pytest
 
-from atm.core.types import Phase, PhaseDecision
 from atm.core.state import GraphState, SharedState
-
+from atm.core.types import Phase, PhaseDecision
 
 # ---------------------------------------------------------------------------
 # Helpers to build minimal GraphState for testing
@@ -65,6 +66,7 @@ def _tight_limits():
 def test_import_public_symbols() -> None:
     """All public symbols from phases.manager must be importable."""
     from atm.phases.manager import (  # noqa: F401
+        LLMPhaseRouter,
         PhaseGuard,
         PhaseLimits,
         PhaseRouter,
@@ -279,7 +281,7 @@ class TestRuleBased:
 
     def test_custom_guard_overrides_signal(self) -> None:
         """Custom guard in guards dict overrides the built-in signal check."""
-        from atm.phases.manager import RuleBasedPhaseRouter, PhaseGuard
+        from atm.phases.manager import PhaseGuard, RuleBasedPhaseRouter
 
         # Guard that always returns True (advance planning)
         always_true: PhaseGuard = lambda state: True  # noqa: E731
@@ -297,7 +299,7 @@ class TestRuleBased:
 
     def test_custom_guard_false_stays(self) -> None:
         """Custom guard returning False keeps phase unchanged (when iter cap not hit)."""
-        from atm.phases.manager import RuleBasedPhaseRouter, PhaseGuard
+        from atm.phases.manager import PhaseGuard, RuleBasedPhaseRouter
 
         never_advance: PhaseGuard = lambda state: False  # noqa: E731
 
@@ -333,3 +335,135 @@ class TestRuleBased:
         assert limits.planning_max_iter == 3
         assert limits.exec_max_iter == 10
         assert limits.verify_max_iter == 4
+
+
+# ---------------------------------------------------------------------------
+# LLMPhaseRouter helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_llm(text: str):
+    """Create an AsyncMock that returns an LLMResponse with the given text."""
+    from unittest.mock import AsyncMock
+
+    from atm.core.types import LLMResponse, TokenUsage
+
+    mock = AsyncMock()
+    usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+    mock.ainvoke.return_value = LLMResponse(
+        model="fake:test",
+        text=text,
+        usage=usage,
+        cost_usd=0.001,
+        latency_ms=50,
+        finish_reason="stop",
+    )
+    return mock
+
+
+def _make_rule_fallback():
+    """Create a RuleBasedPhaseRouter suitable for fallback tests."""
+    from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
+
+    limits = PhaseLimits(planning_max_iter=5, exec_max_iter=5, verify_max_iter=5)
+    return RuleBasedPhaseRouter(limits=limits, guards={})
+
+
+class TestLLMRouter:
+    """Unit tests for LLMPhaseRouter.decide() using AsyncMock."""
+
+    # -----------------------------------------------------------------------
+    # Test 1: happy-path — LLM returns valid JSON → correct PhaseDecision
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_happy_path_valid_json(self) -> None:
+        """LLM returns valid JSON with valid next_phase → PhaseDecision(decided_by='llm_router')."""
+        from atm.phases.manager import LLMPhaseRouter
+
+        llm = _make_fake_llm('{"next_phase": "execution", "reason": "ready to execute"}')
+        fallback = _make_rule_fallback()
+        router = LLMPhaseRouter(llm=llm, rule_fallback=fallback)
+
+        state = _make_state(phase=Phase.PLANNING, signals={})
+        decision = await router.decide(state)
+
+        assert decision.next_phase == Phase.EXECUTION
+        assert decision.decided_by == "llm_router"
+        assert decision.reason == "ready to execute"
+        llm.ainvoke.assert_awaited_once()
+
+    # -----------------------------------------------------------------------
+    # Test 2: rollback-attempt — LLM returns lower phase → fallback to rule
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_rollback_attempt_falls_back_to_rule(self) -> None:
+        """LLM tries to return a phase earlier than current → fallback (decided_by='rule')."""
+        from atm.phases.manager import LLMPhaseRouter
+
+        # Current is EXECUTION, LLM tries to return PLANNING (rollback)
+        llm = _make_fake_llm('{"next_phase": "planning", "reason": "go back"}')
+        fallback = _make_rule_fallback()
+        router = LLMPhaseRouter(llm=llm, rule_fallback=fallback)
+
+        state = _make_state(phase=Phase.EXECUTION, signals={})
+        decision = await router.decide(state)
+
+        # Fallback rule: no signals, iter=0 < cap=5 → stay in execution
+        assert decision.decided_by == "rule"
+        assert decision.next_phase == Phase.EXECUTION
+
+    # -----------------------------------------------------------------------
+    # Test 3: malformed JSON — LLM returns non-JSON → fallback to rule
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_falls_back_to_rule(self) -> None:
+        """LLM returns non-JSON text → fallback (decided_by='rule')."""
+        from atm.phases.manager import LLMPhaseRouter
+
+        llm = _make_fake_llm("I think you should move to execution phase now!")
+        fallback = _make_rule_fallback()
+        router = LLMPhaseRouter(llm=llm, rule_fallback=fallback)
+
+        state = _make_state(phase=Phase.PLANNING, signals={})
+        decision = await router.decide(state)
+
+        assert decision.decided_by == "rule"
+
+    # -----------------------------------------------------------------------
+    # Test 4: unknown phase — LLM returns phase not in enum → fallback
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_unknown_phase_falls_back_to_rule(self) -> None:
+        """LLM returns a phase string not in Phase enum → fallback (decided_by='rule')."""
+        from atm.phases.manager import LLMPhaseRouter
+
+        llm = _make_fake_llm('{"next_phase": "review", "reason": "need review"}')
+        fallback = _make_rule_fallback()
+        router = LLMPhaseRouter(llm=llm, rule_fallback=fallback)
+
+        state = _make_state(phase=Phase.PLANNING, signals={})
+        decision = await router.decide(state)
+
+        assert decision.decided_by == "rule"
+
+    # -----------------------------------------------------------------------
+    # Test 5: missing field — JSON without next_phase → fallback
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_missing_next_phase_field_falls_back_to_rule(self) -> None:
+        """LLM returns JSON without 'next_phase' key → fallback (decided_by='rule')."""
+        from atm.phases.manager import LLMPhaseRouter
+
+        llm = _make_fake_llm('{"reason": "looks good but no phase specified"}')
+        fallback = _make_rule_fallback()
+        router = LLMPhaseRouter(llm=llm, rule_fallback=fallback)
+
+        state = _make_state(phase=Phase.PLANNING, signals={})
+        decision = await router.decide(state)
+
+        assert decision.decided_by == "rule"
