@@ -7,11 +7,11 @@ Exports:
   - _should_stop    — stopping-precedence helper (arch.md §7.1)
 
 Side-effect imports (guarded):
-  - star.py and chain.py register themselves via @TopologyRegistry.register()
-    when imported. Guards ensure this package loads cleanly even before
-    those modules are created (Steps 2 and 3 are parallel to this step).
+  - star.py, chain.py, mesh.py, debate.py, and hierarchical.py register
+    themselves via @TopologyRegistry.register() when imported. Guards ensure
+    this package loads cleanly even if a module does not yet exist.
 
-IMPORTANT: Steps 2 and 3 must NOT edit this file.
+Registration list finalized at M6+M7. Future topologies must be added explicitly here.
 """
 
 from __future__ import annotations
@@ -43,3 +43,12 @@ with contextlib.suppress(ImportError):
 
 with contextlib.suppress(ImportError):
     importlib.import_module("atm.topology.chain")
+
+with contextlib.suppress(ImportError):
+    importlib.import_module("atm.topology.mesh")
+
+with contextlib.suppress(ImportError):
+    importlib.import_module("atm.topology.debate")
+
+with contextlib.suppress(ImportError):
+    importlib.import_module("atm.topology.hierarchical")

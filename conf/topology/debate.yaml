@@ -1,0 +1,7 @@
+name: debate
+max_iterations: 12
+extra:
+  max_rounds: 4
+  debater_pro_id: debater_pro
+  debater_contra_id: debater_contra
+  judge_id: judge

@@ -1,0 +1,103 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for MeshTopology — max_rounds-path test.
+#
+# Scenario: agents vote for different answers — no consensus is reached.
+# The graph runs until max_rounds is exhausted and exits via topology_max.
+# Each agent gets multiple steps (max_rounds=3 for the test, 4 agents).
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "My answer is 4. vote_for:4"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: researcher
+    role: researcher
+    step_idx: 0
+    content: "I think the answer is 5. vote_for:5"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: executor
+    role: executor
+    step_idx: 0
+    content: "My calculation gives 6. vote_for:6"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "I vote for 7. vote_for:7"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: planner
+    role: planner
+    step_idx: 1
+    content: "Still think 4 is correct. vote_for:4"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: researcher
+    role: researcher
+    step_idx: 1
+    content: "Still vote 5. vote_for:5"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: executor
+    role: executor
+    step_idx: 1
+    content: "Still 6. vote_for:6"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"
+
+  - agent_id: critic
+    role: critic
+    step_idx: 1
+    content: "Still 7. vote_for:7"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 10
+      total_tokens: 30
+    model: "fake:scripted"

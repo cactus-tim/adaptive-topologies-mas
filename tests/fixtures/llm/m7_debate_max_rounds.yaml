@@ -1,0 +1,94 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for DebateTopology — max_rounds path.
+#
+# Scenario:
+#   All rounds: judge rejects (approved=False) every time.
+#   Topology terminates due to max_rounds exceeded.
+#
+# max_rounds=2 is used in the integration test to keep the fixture short.
+# Judge never approves, so exit is via topology_max stopping condition.
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "Opening statement: Is remote work better than office work?"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 50
+      output_tokens: 20
+      total_tokens: 70
+    model: "fake:scripted"
+
+  - agent_id: debater_pro
+    role: debater
+    step_idx: 0
+    content: "PRO: Remote work increases productivity and work-life balance."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 25
+      total_tokens: 85
+    model: "fake:scripted"
+
+  - agent_id: debater_pro
+    role: debater
+    step_idx: 1
+    content: "PRO ROUND 2: Studies show 13% productivity boost for remote workers."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 65
+      output_tokens: 28
+      total_tokens: 93
+    model: "fake:scripted"
+
+  - agent_id: debater_contra
+    role: debater
+    step_idx: 0
+    content: "CONTRA: Office work fosters collaboration and company culture."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 25
+      total_tokens: 85
+    model: "fake:scripted"
+
+  - agent_id: debater_contra
+    role: debater
+    step_idx: 1
+    content: "CONTRA ROUND 2: Remote workers feel isolated and disengaged."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 65
+      output_tokens: 28
+      total_tokens: 93
+    model: "fake:scripted"
+
+  - agent_id: judge
+    role: critic
+    step_idx: 0
+    content: "REJECT - Both sides make valid points but no clear winner yet."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 15
+      total_tokens: 95
+    model: "fake:scripted"
+
+  - agent_id: judge
+    role: critic
+    step_idx: 1
+    content: "REJECT - Still no decisive argument. The debate is inconclusive."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 15
+      total_tokens: 95
+    model: "fake:scripted"

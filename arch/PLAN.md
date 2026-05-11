@@ -326,99 +326,99 @@ class Topology(Protocol):
 
 > Каждый milestone имеет: **цель** · **deliverable** · **задачи (чеклист)** · **зависимости** · **exit criteria**. Параллелимые потоки отмечены `∥`.
 
-### M0 — Bootstrap проекта (0.5 дня)
+### M0 — Bootstrap проекта (0.5 дня) ✅
 
 - **Цель:** рабочий скелет с линтом, тестами, БД, docker-compose
 - **Зависимости:** —
 - **Задачи:**
-  - [ ] `uv init` + `pyproject.toml` с базовыми зависимостями
-  - [ ] Структура каталогов из секции 4
-  - [ ] `docker-compose.yml` с Postgres 16
-  - [ ] `alembic init` + пустая initial migration
-  - [ ] ruff + mypy конфиг
-  - [ ] pytest скелет + 1 smoke-тест
-  - [ ] `.env.example`, `README.md` с quickstart
-- **Exit:** `docker-compose up -d && uv run pytest` — зелёно
+  - [x] `uv init` + `pyproject.toml` с базовыми зависимостями
+  - [x] Структура каталогов из секции 4
+  - [x] `docker-compose.yml` с Postgres 16
+  - [x] `alembic init` + пустая initial migration
+  - [x] ruff + mypy конфиг
+  - [x] pytest скелет + 1 smoke-тест
+  - [x] `.env.example`, `README.md` с quickstart
+- **Exit:** `docker-compose up -d && uv run pytest` — зелёно ✅
 
-### M1 — Core types & state (1 день)
+### M1 — Core types & state (1 день) ✅
 
 - **Цель:** базовые типы данных и LangGraph-совместимый state
 - **Зависимости:** M0
 - **Задачи:**
-  - [ ] `core/types.py`: `Message`, `ToolCall`, `Phase`, `HumanRole`, `AgentRole` (Pydantic)
-  - [ ] `core/state.py`: `AgentState`, `SharedState`, `GraphState` (TypedDict), `merge_agent_states` reducer
-  - [ ] `core/errors.py`: `BudgetExceededError`, `PhaseError`, `ToolError`
-  - [ ] unit-тесты на reducer (idempotent, commutative, handles empty)
-- **Exit:** reducer корректно мёрджит state от 2+ агентов, тесты зелёные
+  - [x] `core/types.py`: `Message`, `ToolCall`, `Phase`, `HumanRole`, `AgentRole` (Pydantic)
+  - [x] `core/state.py`: `AgentState`, `SharedState`, `GraphState` (TypedDict), `merge_agent_states` reducer
+  - [x] `core/errors.py`: `BudgetExceededError`, `PhaseError`, `ToolError`
+  - [x] unit-тесты на reducer (idempotent, commutative, handles empty)
+- **Exit:** reducer корректно мёрджит state от 2+ агентов, тесты зелёные ✅
 
-### M2 — LLM layer (2 дня)
+### M2 — LLM layer (2 дня) ✅
 
 - **Цель:** унифицированный `LLMWrapper` с usage/cost/budget/retry
 - **Зависимости:** M1
 - **Задачи:**
-  - [ ] `llm/pricing.py` + `conf/pricing.yaml` (per-model стоимости)
-  - [ ] `llm/budget.py`: `BudgetTracker` (three-tier), события в `budget_events`
-  - [ ] `llm/wrapper.py`: `LLMWrapper.ainvoke(messages, tools, **opts) -> LLMResponse`
+  - [x] `llm/pricing.py` + `conf/pricing.yaml` (per-model стоимости)
+  - [x] `llm/budget.py`: `BudgetTracker` (three-tier), события в `budget_events`
+  - [x] `llm/wrapper.py`: `LLMWrapper.ainvoke(messages, tools, **opts) -> LLMResponse`
     - retry с exponential backoff на 429/5xx
     - usage tracking (in/out/cache tokens)
     - cost calculation
     - prompt caching (cache_control для Anthropic)
-  - [ ] `llm/providers/openai.py` (wrapper вокруг `init_chat_model("openai:gpt-4o")`)
-  - [ ] `llm/providers/anthropic.py`
-  - [ ] `llm/providers/vllm.py` (для локальных через OpenAI-compatible endpoint)
-  - [ ] `FakeLLM` (контракт — arch.md §4.4):
+  - [x] `llm/providers/openai.py` (wrapper вокруг `init_chat_model("openai:gpt-4o")`)
+  - [x] `llm/providers/anthropic.py`
+  - [x] `llm/providers/vllm.py` (для локальных через OpenAI-compatible endpoint)
+  - [x] `FakeLLM` (контракт — arch.md §4.4):
     - режимы: `scripted` (YAML-fixture `(role, step_idx) → response`), `replay` (из llm_calls.parquet), `echo`
     - **streaming не поддерживается** (`astream` → `NotImplementedError`)
     - tool_calls сценируются в fixture; cost/tokens эмулируются
     - fixture-файлы в `tests/fixtures/llm/<test_name>.yaml`
-  - [ ] Unit-тесты: usage tracking, budget cutoff, retry, FakeLLM определённость
-- **Exit:** `LLMWrapper("openai:gpt-4o-mini").ainvoke(...)` возвращает ответ + корректный cost; budget-exceed останавливает; FakeLLM даёт битово идентичные ответы на идентичной fixture+seed
+  - [x] Unit-тесты: usage tracking, budget cutoff, retry, FakeLLM определённость
+- **Exit:** `LLMWrapper("openai:gpt-4o-mini").ainvoke(...)` возвращает ответ + корректный cost; budget-exceed останавливает; FakeLLM даёт битово идентичные ответы на идентичной fixture+seed ✅
 
-### M3 — Storage & Observability (2 дня) ∥ частично с M2
+### M3 — Storage & Observability (2 дня) ∥ частично с M2 ✅
 
 - **Цель:** запись всех данных эксперимента
 - **Зависимости:** M0 (PG), M1
 - **Задачи:**
-  - [ ] `storage/models.py`: SQLAlchemy-модели всех таблиц (см. §5.1)
-  - [ ] Alembic migration для всех таблиц
-  - [ ] `storage/session.py`: async engine, session factory
-  - [ ] `storage/parquet_writer.py`: write_llm_call, write_message, write_tool_call, write_scratchpad, write_phase — с in-memory буфером и `flush()` (инварианты flush — arch.md §11.2, §17/#2)
-  - [ ] `observability/callbacks.py`: `ExperimentCallbackHandler(AsyncCallbackHandler)` — on_llm_start/end/error, on_tool_start/end, on_chain_start/end, on_custom_event → Postgres + Parquet (async); sync-flush на границах run-а и transitions
-  - [ ] `storage/checkpointer.py`: обёртка `langgraph-checkpoint-postgres` с **отдельным** async-engine (autocommit=True); бизнес-БД идёт через отдельный SQLAlchemy engine (two pools — arch.md §11.3, §17/#3)
-  - [ ] Unit-тесты writer-ов + integration-тест: smoke-run фиктивного графа → проверка, что всё записалось
-- **Exit:** 1 fake-run создаёт корректные строки в PG + parquet-файлы читаются pandas-ом
+  - [x] `storage/models.py`: SQLAlchemy-модели всех таблиц (см. §5.1)
+  - [x] Alembic migration для всех таблиц
+  - [x] `storage/session.py`: async engine, session factory
+  - [x] `storage/parquet_writer.py`: write_llm_call, write_message, write_tool_call, write_scratchpad, write_phase — с in-memory буфером и `flush()` (инварианты flush — arch.md §11.2, §17/#2)
+  - [x] `observability/callbacks.py`: `ExperimentCallbackHandler(AsyncCallbackHandler)` — on_llm_start/end/error, on_tool_start/end, on_chain_start/end, on_custom_event → Postgres + Parquet (async); sync-flush на границах run-а и transitions
+  - [x] `storage/checkpointer.py`: обёртка `langgraph-checkpoint-postgres` с **отдельным** async-engine (autocommit=True); бизнес-БД идёт через отдельный SQLAlchemy engine (two pools — arch.md §11.3, §17/#3)
+  - [x] Unit-тесты writer-ов + integration-тест: smoke-run фиктивного графа → проверка, что всё записалось
+- **Exit:** 1 fake-run создаёт корректные строки в PG + parquet-файлы читаются pandas-ом ✅
 
-### M4 — Tools layer (2 дня) ∥ с M3
+### M4 — Tools layer (2 дня) ∥ с M3 ✅
 
 - **Цель:** рабочий набор инструментов, включая безопасный sandbox для кода
 - **Зависимости:** M1
 - **Задачи:**
-  - [ ] `tools/base.py`: `Tool` Protocol (`name`, `schema`, `ainvoke`), `ToolRegistry`
-  - [ ] Global: `calculator`, `duckduckgo_search`, `url_fetch`, `file_read`
-  - [ ] `tools/sandbox/base.py`: `CodeSandbox` Protocol (`execute(lang, code, files, timeout) -> ExecResult`)
-  - [ ] `tools/sandbox/docker_sandbox.py` (hardening — arch.md §5.2, §17/#7):
+  - [x] `tools/base.py`: `Tool` Protocol (`name`, `schema`, `ainvoke`), `ToolRegistry`
+  - [x] Global: `calculator`, `duckduckgo_search`, `url_fetch`, `file_read`
+  - [x] `tools/sandbox/base.py`: `CodeSandbox` Protocol (`execute(lang, code, files, timeout) -> ExecResult`)
+  - [x] `tools/sandbox/docker_sandbox.py` (hardening — arch.md §5.2, §17/#7):
     - префетч базовых образов (python:3.11-slim, node:20-slim)
     - tmpfs для рабочей директории + read-only rootfs
     - `cap_drop: [ALL]`, `security_opt: ["no-new-privileges", "seccomp=<custom-profile>"]` (блок ptrace/mount/unshare/keyctl/bpf)
     - resource limits (cpu, mem, pids, network=none)
     - опциональный rootless-режим (для prod)
     - cleanup контейнеров по timeout
-  - [ ] `tools/sandbox/subprocess_sandbox.py` — для dev-режима, без изоляции
-  - [ ] Local tools:
+  - [x] `tools/sandbox/subprocess_sandbox.py` — для dev-режима, без изоляции
+  - [x] Local tools:
     - Executor: `code_run` (через sandbox), `file_write`
     - Critic: `test_run` (sandbox), `diff`, `lint` (ruff/pylint subprocess)
     - Researcher: `semantic_search` (stub на FAISS + локальный corpus)
     - Planner: `todo_write`, `plan_update` (пишут в shared state)
-  - [ ] Integration-тесты: "напиши hello world" через `code_run` → ожидаемый stdout
-  - [ ] Тест на изоляцию: попытка `rm -rf /` в песочнице → не ломает host
-- **Exit:** `DockerSandbox.execute("python", "print(1+1)")` возвращает "2", попытка вредоносного кода не даёт эффекта на host
+  - [x] Integration-тесты: "напиши hello world" через `code_run` → ожидаемый stdout
+  - [x] Тест на изоляцию: попытка `rm -rf /` в песочнице → не ломает host
+- **Exit:** `DockerSandbox.execute("python", "print(1+1)")` возвращает "2", попытка вредоносного кода не даёт эффекта на host ✅
 
-### M5 — Agent framework + scratchpad policy C (2 дня)
+### M5 — Agent framework + scratchpad policy C (2 дня) ✅
 
 - **Цель:** готовый `Agent` класс, оборачиваемый в LangGraph-ноду
 - **Зависимости:** M2, M4
 - **Задачи:**
-  - [ ] `agents/base.py`:
+  - [x] `agents/base.py`:
     - `Agent(role, system_prompt, llm, tools, cfg)`
     - `async def step(state: GraphState) -> GraphState` — LangGraph-совместимая сигнатура
     - scratchpad policy C:
@@ -427,38 +427,38 @@ class Topology(Protocol):
       - при превышении context-window: зовёт `summarizer_model` для сжатия старых шагов → `summary_before_window`
     - tool-calling loop (до N tool-calls подряд, потом final answer)
     - усечение по бюджету
-  - [ ] 5 конкретных классов (`Planner`, `Researcher`, `Executor`, `Critic`, `Debater`) с базовыми промптами в `conf/agents/*.yaml`
-  - [ ] `Debater` принимает параметр `stance: "pro" | "contra"`
-  - [ ] Unit-тесты:
+  - [x] 5 конкретных классов (`Planner`, `Researcher`, `Executor`, `Critic`, `Debater`) с базовыми промптами в `conf/agents/*.yaml`
+  - [x] `Debater` принимает параметр `stance: "pro" | "contra"`
+  - [x] Unit-тесты:
     - Agent с FakeLLM делает корректный tool-call
     - scratchpad window: на 5-й итерации в промпте только последние 3 шага
     - summarizer вызывается при превышении лимита
-- **Exit:** `Executor` успешно пишет простую функцию и вызывает `code_run`, scratchpad растёт, window работает
+- **Exit:** `Executor` успешно пишет простую функцию и вызывает `code_run`, scratchpad растёт, window работает ✅
 
-### M6 — Topology framework + Star + Chain + end-to-end (3 дня)
+### M6 — Topology framework + Star + Chain + end-to-end (3 дня) ✅
 
 - **Цель:** первый рабочий end-to-end на одной задаче
 - **Зависимости:** M5, M3
 - **Задачи:**
-  - [ ] `topology/base.py`: абстрактный `Topology`, `TopologyRegistry`
-  - [ ] `topology/star.py`: Coord-центрированный граф, conditional edges
-  - [ ] `topology/chain.py`: линейный граф с retry-loop
-  - [ ] `experiment/runner.py` (минимальная версия): load config → build agents → build topology → run → записать результаты
-  - [ ] `experiment/cli.py`: `atm run --config conf/experiments/smoke.yaml`
-  - [ ] Integration: full-run HumanEval-подобной задачи ("напиши fibonacci") через Star и через Chain
-  - [ ] Проверка: все LLM-calls в parquet, сумма costs корректна, финальный ответ в `runs.quality_score`
-- **Exit:** `atm run --config smoke.yaml` — Star и Chain оба успешно проходят задачу, данные в PG + parquet
+  - [x] `topology/base.py`: абстрактный `Topology`, `TopologyRegistry`
+  - [x] `topology/star.py`: Coord-центрированный граф, conditional edges
+  - [x] `topology/chain.py`: линейный граф с retry-loop
+  - [x] `experiment/runner.py` (минимальная версия): load config → build agents → build topology → run → записать результаты
+  - [x] `experiment/cli.py`: `atm run --config conf/experiments/smoke.yaml`
+  - [x] Integration: full-run HumanEval-подобной задачи ("напиши fibonacci") через Star и через Chain
+  - [x] Проверка: все LLM-calls в parquet, сумма costs корректна, финальный ответ в `runs.quality_score`
+- **Exit:** `atm run --config smoke.yaml` — Star и Chain оба успешно проходят задачу, данные в PG + parquet ✅
 
-### M7 — Mesh + Debate + Hierarchical (3 дня) ∥
+### M7 — Mesh + Debate + Hierarchical (3 дня) ∥ ✅
 
 - **Цель:** ещё 3 топологии
 - **Зависимости:** M6
 - **Задачи:**
-  - [ ] `topology/mesh.py`: broadcast-bus, round-robin, `max_rounds` / `consensus_threshold`
-  - [ ] `topology/debate.py`: 2 Debater-а параллельно → Critic-judge
-  - [ ] `topology/hierarchical.py`: subgraph'ы через LangGraph, 2 уровня
-  - [ ] Integration-тесты: каждая топология на одной задаче
-- **Exit:** все 5 статических топологий работают end-to-end
+  - [x] `topology/mesh.py`: broadcast-bus, round-robin, `max_rounds` / `consensus_threshold`
+  - [x] `topology/debate.py`: 2 Debater-а параллельно → Critic-judge
+  - [x] `topology/hierarchical.py`: subgraph'ы через LangGraph, 2 уровня
+  - [x] Integration-тесты: каждая топология на одной задаче
+- **Exit:** все 5 статических топологий работают end-to-end ✅
 
 ### M8 — Adaptive topology (L2): PhaseManager + TopologyRouter + Guards + SignalBus (5–6 дней)
 
