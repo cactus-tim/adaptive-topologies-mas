@@ -1,21 +1,24 @@
 # m8-foundation — Задачи
 
-## Фаза 1: Аудит и типы (Wave 1, параллельно) — НЕ НАЧАТО
+## Фаза 1: Аудит и типы (Wave 1, параллельно) — ВЫПОЛНЕНО
 
-- [ ] 1.1 Аудит SharedState, TopologyTransition (Pydantic + ORM + Alembic), dedup_by_id_reducer — `src/atm/core/state.py`, `src/atm/core/types.py`, `src/atm/core/reducers.py`, `src/atm/storage/models.py`, `alembic/versions/0001_initial_business_schema.py`, `tests/unit/core/`
+- [x] 1.1 Аудит SharedState, TopologyTransition (Pydantic + ORM + Alembic), dedup_by_id_reducer — `src/atm/core/state.py`, `src/atm/core/types.py`, `src/atm/core/reducers.py`, `src/atm/storage/models.py`, `alembic/versions/0001_initial_business_schema.py`, `tests/unit/core/`
   - Приёмочный критерий: письменный baseline чек-лист (13 колонок сверены), `uv run pytest tests/unit/core -q` зелёный
+  - Результат: `.audit-baseline.md` создан; 168/168 → после wave 177/177
 
-- [ ] 1.2 Добавить `TopologyDecision` и `PhaseDecision` в `core/types.py` (frozen Pydantic v2, валидация `router_cost_usd >= 0` через `@field_validator`) — `src/atm/core/types.py`
+- [x] 1.2 Добавить `TopologyDecision` и `PhaseDecision` в `core/types.py` (frozen Pydantic v2, валидация `router_cost_usd >= 0` через `@field_validator`) — `src/atm/core/types.py`
   - Приёмочный критерий: классы созданы, frozen=True, поля соответствуют arch.md §8.2 и §8bis.1
 
-- [ ] 1.3 Re-export новых типов в `core/__init__.py` — `src/atm/core/__init__.py`
+- [x] 1.3 Re-export новых типов в `core/__init__.py` — `src/atm/core/__init__.py`
   - Приёмочный критерий: `from atm.core import TopologyDecision, PhaseDecision` работает; `__all__` дополнен; `uv run mypy src/atm/core/types.py --strict` зелёный
 
-- [ ] 1.4 Написать ~6 тестов для новых типов — `tests/unit/core/test_types.py`
+- [x] 1.4 Написать ~6 тестов для новых типов — `tests/unit/core/test_types.py`
   - Приёмочный критерий: frozen-immutability, defaults, Literal-validation, `router_cost_usd >= 0`; `uv run pytest tests/unit/core/test_types.py -q` зелёный
+  - Результат: 7 тестов добавлено, 40/40 в test_types.py
 
-- [ ] 1.5 Аудит и дополнение тестов reducer (explicit invariants) — `tests/unit/core/test_reducers.py`
+- [x] 1.5 Аудит и дополнение тестов reducer (explicit invariants) — `tests/unit/core/test_reducers.py`
   - Приёмочный критерий: 3 инварианта явно читаемы в `pytest -v`; ожидаемо no-op (comment-pointer) если уже покрыты; `uv run pytest tests/unit/core/test_reducers.py -v` зелёный
+  - Результат: no-op case подтверждён, comment-pointer добавлен в TestDedupByIdReducer docstring
 
 ## Фаза 2: RuleBasedPhaseRouter (Wave 2) — НЕ НАЧАТО
 
@@ -52,7 +55,7 @@
 ## Статистика
 
 - Всего: 13 задач · ~6.5h
-- Выполнено: 0 / 13
+- Выполнено: 5 / 13 (Wave 1 done)
 
 ## Как обновлять
 

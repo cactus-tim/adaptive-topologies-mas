@@ -571,3 +571,109 @@ def test_datetime_fields_are_utc_aware() -> None:
     for dt_val in [msg.created_at, tc.issued_at, hr.answered_at]:
         assert dt_val.tzinfo is not None, "datetime must be timezone-aware"
         assert dt_val.tzinfo == UTC or str(dt_val.tzinfo) in ("UTC", "utc")
+
+
+# ---------------------------------------------------------------------------
+# 18. TopologyDecision — new frozen type (Step 1.2/1.4, M8)
+# ---------------------------------------------------------------------------
+
+
+def test_topology_decision_frozen_immutability() -> None:
+    """TopologyDecision must be frozen=True; mutation raises ValidationError."""
+    from atm.core.types import TopologyDecision
+
+    decision = TopologyDecision(
+        topology="star",
+        reason="initial",
+        decided_by="initial",
+    )
+    with pytest.raises(pydantic.ValidationError):
+        decision.topology = "mesh"  # type: ignore[misc]
+
+
+def test_topology_decision_defaults() -> None:
+    """TopologyDecision must have sensible defaults for optional fields."""
+    from atm.core.types import TopologyDecision
+
+    decision = TopologyDecision(
+        topology="chain",
+        reason="rule fired",
+        decided_by="rule",
+    )
+    assert decision.considered_alternatives == ()
+    assert decision.router_cost_usd == 0.0
+
+
+def test_topology_decision_literal_validation() -> None:
+    """TopologyDecision.decided_by must only accept valid Literal values."""
+    from atm.core.types import TopologyDecision
+
+    # valid values should not raise
+    for valid in ("rule", "llm_router", "oracle", "guard_override", "initial"):
+        d = TopologyDecision(topology="star", reason="ok", decided_by=valid)  # type: ignore[arg-type]
+        assert d.decided_by == valid
+
+    # invalid value must raise ValidationError
+    with pytest.raises(pydantic.ValidationError):
+        TopologyDecision(topology="star", reason="bad", decided_by="unknown")  # type: ignore[arg-type]
+
+
+def test_topology_decision_router_cost_usd_non_negative() -> None:
+    """TopologyDecision.router_cost_usd must be >= 0; negative raises ValidationError."""
+    from atm.core.types import TopologyDecision
+
+    # valid: zero and positive
+    d_zero = TopologyDecision(topology="star", reason="r", decided_by="rule", router_cost_usd=0.0)
+    assert d_zero.router_cost_usd == 0.0
+    d_pos = TopologyDecision(topology="star", reason="r", decided_by="llm_router", router_cost_usd=0.005)
+    assert d_pos.router_cost_usd == 0.005
+
+    # invalid: negative
+    with pytest.raises(pydantic.ValidationError):
+        TopologyDecision(topology="star", reason="r", decided_by="rule", router_cost_usd=-0.01)
+
+
+# ---------------------------------------------------------------------------
+# 19. PhaseDecision — new frozen type (Step 1.2/1.4, M8)
+# ---------------------------------------------------------------------------
+
+
+def test_phase_decision_frozen_immutability() -> None:
+    """PhaseDecision must be frozen=True; mutation raises ValidationError."""
+    from atm.core.types import Phase, PhaseDecision
+
+    decision = PhaseDecision(
+        next_phase=Phase.PLANNING,
+        reason="staying in planning",
+        decided_by="rule",
+    )
+    with pytest.raises(pydantic.ValidationError):
+        decision.next_phase = Phase.EXECUTION  # type: ignore[misc]
+
+
+def test_phase_decision_defaults() -> None:
+    """PhaseDecision has no optional fields currently; basic construction works."""
+    from atm.core.types import Phase, PhaseDecision
+
+    decision = PhaseDecision(
+        next_phase=Phase.EXECUTION,
+        reason="all guards passed",
+        decided_by="rule",
+    )
+    assert decision.next_phase == Phase.EXECUTION
+    assert decision.reason == "all guards passed"
+    assert decision.decided_by == "rule"
+
+
+def test_phase_decision_literal_validation() -> None:
+    """PhaseDecision.decided_by must only accept valid Literal values."""
+    from atm.core.types import Phase, PhaseDecision
+
+    # valid values
+    for valid in ("rule", "llm_router", "agent_emit", "initial"):
+        d = PhaseDecision(next_phase=Phase.PLANNING, reason="ok", decided_by=valid)  # type: ignore[arg-type]
+        assert d.decided_by == valid
+
+    # invalid value must raise ValidationError
+    with pytest.raises(pydantic.ValidationError):
+        PhaseDecision(next_phase=Phase.PLANNING, reason="bad", decided_by="unknown")  # type: ignore[arg-type]
