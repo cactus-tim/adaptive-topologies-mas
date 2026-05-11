@@ -9,10 +9,16 @@
 - **Wave 4** (13/13): финализация phases/__init__ (5-element __all__ + docstring), обновление codebase-map (Phase Manager → M8.1+M8.2 complete). Финальная верификация: pytest 898 passed, mypy --strict clean (77 files), ruff check clean.
 
 ### В ПРОЦЕССЕ
-- Phase 5 verification (lint + security + code review)
+- Нет (все шаги завершены)
 
 ### БЛОКЕРЫ
 - Нет
+
+### ЗАВЕРШЕНА ВЕРИФИКАЦИОННАЯ ФАЗА (2026-05-11)
+- **Blocking fix #1** (CRITICAL): PhaseRouter.decide и RuleBasedPhaseRouter.decide переведены в `async def` (arch.md §8.2). Все 3 fallback-вызова в LLMPhaseRouter добавлен `await`. Тесты TestRuleBased обновлены на `@pytest.mark.asyncio` + `await router.decide(...)`.
+- **Blocking fix #2** (MAJOR): Замена `[prompt]` → `[Message(sender="phase_router", kind=MessageKind.REQUEST, content=prompt)]` в LLMPhaseRouter.decide (строка ~313). Тест `test_happy_path_valid_json` проверяет тип переданного аргумента (`assert isinstance(messages_arg[0], Message)`). Все 5 fallback-тестов добавлен `llm.ainvoke.assert_awaited_once()`.
+- **Advisory fix** (MEDIUM security): Логирование LLM-ответа заменено: `raw=%r` → `raw_preview=%r (len=%d)` с обрезкой до 80 символов; `data` → `keys=%s` с `list(data.keys())`.
+- Финальная верификация: 898/898 passed, mypy --strict clean (77 files), ruff clean.
 
 ## Быстрое возобновление
 

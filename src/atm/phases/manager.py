@@ -26,7 +26,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 from pydantic import BaseModel, ConfigDict
 
 from atm.core.state import GraphState, SharedState
-from atm.core.types import Phase, PhaseDecision
+from atm.core.types import Message, MessageKind, Phase, PhaseDecision
 
 _log = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class PhaseRouter(Protocol):
     - Must NOT mutate state or produce side-effects (DB writes, LLM calls for 'rule').
     """
 
-    def decide(self, state: GraphState) -> PhaseDecision:
+    async def decide(self, state: GraphState) -> PhaseDecision:
         """Decide whether to advance or stay in current phase.
 
         Args:
@@ -189,7 +189,7 @@ class RuleBasedPhaseRouter:
         self._limits = limits
         self._guards = guards
 
-    def decide(self, state: GraphState) -> PhaseDecision:
+    async def decide(self, state: GraphState) -> PhaseDecision:
         """Evaluate guards and return a PhaseDecision.
 
         Monotonicity invariant: next_phase >= current_phase (enforced here).
@@ -279,7 +279,7 @@ class LLMPhaseRouter:
     _DEFAULT_PROMPT = (
         "You are a phase router. Current phase: {current_phase}. "
         "Signals: {signals}. "
-        "Respond with JSON: {{\"next_phase\": \"<phase>\", \"reason\": \"<reason>\"}}. "
+        'Respond with JSON: {{"next_phase": "<phase>", "reason": "<reason>"}}. '
         "Valid phases (monotonic order): planning, execution, verification, done."
     )
 
@@ -309,11 +309,19 @@ class LLMPhaseRouter:
             {"current_phase": current_phase, "signals": signals}
         )
 
+        messages = [
+            Message(
+                sender="phase_router",
+                kind=MessageKind.REQUEST,
+                content=prompt,
+            )
+        ]
+
         try:
-            response = await self._llm.ainvoke([prompt], agent_id="phase_router")
+            response = await self._llm.ainvoke(messages, agent_id="phase_router")
         except Exception as exc:
             _log.warning("LLMPhaseRouter: LLM call failed (%s), falling back to rule.", exc)
-            return self._fallback.decide(state)
+            return await self._fallback.decide(state)
 
         raw_text = response.text or ""
         _log.debug("LLMPhaseRouter: LLM call cost=%.6f USD", response.cost_usd)
@@ -323,19 +331,22 @@ class LLMPhaseRouter:
             data = json.loads(raw_text)
         except json.JSONDecodeError as exc:
             _log.warning(
-                "LLMPhaseRouter: malformed JSON from LLM (%s), raw=%r, falling back to rule.",
+                "LLMPhaseRouter: malformed JSON from LLM (%s), "
+                "raw_preview=%r (len=%d), falling back to rule.",
                 exc,
-                raw_text,
+                raw_text[:80],
+                len(raw_text),
             )
-            return self._fallback.decide(state)
+            return await self._fallback.decide(state)
 
         # Validate 'next_phase' field present
         if "next_phase" not in data:
             _log.warning(
-                "LLMPhaseRouter: missing 'next_phase' in LLM response %r, falling back to rule.",
-                data,
+                "LLMPhaseRouter: missing 'next_phase' in LLM response, "
+                "keys=%s, falling back to rule.",
+                list(data.keys()),
             )
-            return self._fallback.decide(state)
+            return await self._fallback.decide(state)
 
         # Validate next_phase is a known Phase member
         raw_next = data["next_phase"]
@@ -346,7 +357,7 @@ class LLMPhaseRouter:
                 "LLMPhaseRouter: unknown phase %r from LLM, falling back to rule.",
                 raw_next,
             )
-            return self._fallback.decide(state)
+            return await self._fallback.decide(state)
 
         # Validate monotonicity: next_phase >= current_phase
         if _phase_order(next_phase) < _phase_order(current_phase):
@@ -356,7 +367,7 @@ class LLMPhaseRouter:
                 current_phase,
                 next_phase,
             )
-            return self._fallback.decide(state)
+            return await self._fallback.decide(state)
 
         reason: str = str(data.get("reason", "llm_router decision"))
 
