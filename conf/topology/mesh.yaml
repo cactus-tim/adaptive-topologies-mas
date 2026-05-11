@@ -1,0 +1,12 @@
+name: mesh
+max_iterations: 20
+extra:
+  max_rounds: 6
+  consensus_threshold: 3
+  activation_policy: round_robin
+  agent_order:
+    - planner
+    - researcher
+    - executor
+    - critic
+  broadcast_bus_cap: 200

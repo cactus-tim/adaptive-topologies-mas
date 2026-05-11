@@ -1,0 +1,8 @@
+role: debater
+system_prompt: "You are a debater. Stance: {{stance}}. Argue your position vigorously against the pro side."
+tools:
+  - duckduckgo_search
+  - url_fetch
+params:
+  stance: contra
+  temperature_override: 0.9

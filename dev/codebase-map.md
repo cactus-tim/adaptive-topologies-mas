@@ -19,7 +19,7 @@
   - `llm/` — LLMWrapper, providers (OpenAI/Anthropic/Cerebras/vLLM), budget tracking, pricing, retry, fake LLM, `factory.build_llm(model_id, ...)` provider-prefix router (supports `fake:scripted/echo/replay`)
   - `tools/` — Tool protocol, registry, global tools, Docker/subprocess sandbox (M4)
   - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles, scratchpad policy C (M5)
-  - `topology/` — Topology protocol + Registry, Star + Chain (M6 complete); Mesh/Debate/Hierarchical/Adaptive (M7-M8 planned)
+  - `topology/` — Topology protocol + Registry, 5 implementations: Star + Chain (M6); Mesh + Debate + Hierarchical (M7 complete)
   - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals (M8)
   - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
   - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3 complete)
@@ -29,15 +29,18 @@
   - `experiment/` — Pydantic config schemas + OmegaConf loader, single-run runner (`run_one`), Typer CLI (`atm run`), inline evaluator (M6 complete; grid + sweep in M12)
   - `analysis/` — Loaders, plots (M13)
 - `tests/` — unit, integration, fixtures
-  - `fixtures/llm/` — FakeLLM scripted response YAMLs (planner_simple, executor_code_run, determinism_seed, m5_*.yaml)
-  - `fixtures/agents/` — Agent config fixtures (minimal_valid.yaml, debater_with_stance.yaml)
+  - `fixtures/llm/` — FakeLLM scripted response YAMLs (planner_simple, executor_code_run, determinism_seed, m5_*.yaml, m7_*.yaml)
+  - `fixtures/agents/` — Agent config fixtures (minimal_valid.yaml, debater_with_stance.yaml, debater_contra.yaml)
   - `unit/agents/` — 10 test files for Agent framework (config, tokens, basic, tool_loop, scratchpad_window, summarizer, budget_propagation, debater_stance, role_configs_load, executor_exit_criterion)
   - `unit/core/` — 150 tests for errors/types/reducers/state/public API
   - `unit/llm/` — 110 tests for pricing/budget/retry/providers/fake/wrapper
+  - `unit/topology/` — 5 test files (base, star, chain, mesh, debate, hierarchical) covering routing/stopping/registration/invariants; 6 files total with conftest.py
   - `integration/llm/` — 3 tests for LLM layer contract (end-to-end, budget exceed, replay round-trip)
+  - `integration/topology/` — 4 test files (mesh_e2e, debate_e2e, hierarchical_e2e, all_topologies_sanity) covering e2e flows with FakeLLM
 - `conf/` — YAML configuration templates
   - `pricing.yaml` — per-1K-token prices for OpenAI/Anthropic/Cerebras/vLLM/fake models (version 1)
   - `agents/` — role-specific agent configs (planner.yaml, researcher.yaml, executor.yaml, critic.yaml, debater.yaml)
+  - `topology/` — topology configs (star.yaml, chain.yaml, mesh.yaml, debate.yaml, hierarchical.yaml)
 - `alembic/` — database migrations (async template, single initial migration)
 - `dev/` — documentation (PLAN.md, arch.md) and task tracking (done/active)
 
@@ -100,13 +103,27 @@
 - **Config locations:** `conf/agents/{planner,researcher,executor,critic,debater}.yaml` — role-specific window_size, tools list, optional stance param for Debater.
 - **Dependencies:** pydantic, langchain-core, asyncio, tiktoken (optional).
 - **Test coverage:** 10 unit test files (91 tests total) covering config loading, token estimation, agent basic I/O, tool-loop C1 exit criterion, scratchpad windowing, summarizer integration, budget propagation, debater stance substitution, role config loading, executor exit strategies.
-- **Test fixtures:** `tests/fixtures/agents/{minimal_valid,debater_with_stance}.yaml`, `tests/fixtures/llm/m5_{agent_basic,agent_tool_loop,agent_tool_loop_two_iters,agent_scratchpad,agent_summarizer_primary,agent_summarizer_secondary,executor_exit}.yaml`.
+- **Test fixtures:** `tests/fixtures/agents/{minimal_valid,debater_with_stance,debater_contra}.yaml`, `tests/fixtures/llm/m5_{agent_basic,agent_tool_loop,agent_tool_loop_two_iters,agent_scratchpad,agent_summarizer_primary,agent_summarizer_secondary,executor_exit}.yaml`.
 - **Status:** M5 complete.
 
-### Topology Framework (`topology/`)
-- **Exports (M6+ planned):** `Topology` protocol, `TopologyRegistry`, Star/Chain/Mesh/Debate/Hierarchical/Adaptive implementations.
-- **Key Interface:** `topology.build(agents, cfg) -> CompiledStateGraph`
-- **Status:** M0 skeleton, M6 not started.
+### Topology Framework (`topology/`) — M7 complete
+- **Purpose:** Topology protocol + Registry with 5 registered implementations covering different multi-agent coordination patterns.
+- **Topology Registry:** `TopologyRegistry` with `@register(name)` decorator; all 5 topologies registered via guarded imports in `__init__.py`.
+- **Implementations:**
+  - **Star (M6):** Central hub + spokes; coordinator agent routes to workers sequentially.
+  - **Chain (M6):** Linear pipeline; each agent's output feeds to the next.
+  - **Mesh (M7):** Broadcast-bus graph with round-robin + priority dispatcher; post-process node (mesh_broadcast) consolidates outputs, vote tally + consensus voting (threshold-based); stopping precedence: consensus → max_rounds → loop.
+  - **Debate (M7):** Parallel fan-out (planner → debater_pro + debater_contra in same super-step); judge loop validates & decides; judge_postprocess extracts winner/approved; stopping precedence: judge-decides → max_rounds → loop.
+  - **Hierarchical (M7):** Strict 2-level invariant with top coordinator + 2 compiled subgraphs (teams); top_coord and sub_coord are rule-based closures (not agents); final_answer = JSON-concat of team results; stopping precedence: all-finalized → max_rounds → loop.
+- **Key Interface:** `Topology.build(agents, cfg) -> CompiledStateGraph`; schemas must overlap (M6 M7 pattern).
+- **Config locations:** `conf/topology/{star,chain,mesh,debate,hierarchical}.yaml`
+- **Test coverage:**
+  - **Unit tests (6 files):** test_base.py, test_star.py, test_chain.py, test_mesh.py (22 tests), test_debate.py (17 tests), test_hierarchical.py (13 tests)
+  - **Integration e2e tests (4 files):** test_mesh_e2e.py (2 e2e), test_debate_e2e.py (2 e2e), test_hierarchical_e2e.py (1 e2e), test_all_topologies_sanity.py (11 sanity tests: 1 registry + 5 smoke + 5 precedence)
+- **LLM fixtures:** `tests/fixtures/llm/m7_{mesh_consensus,mesh_max_rounds,debate_judge_decides,debate_max_rounds,hierarchical_finalize}.yaml`
+- **Exports (from `atm.topology`):** `Topology`, `TopologyRegistry`, `TopologyConfig`, `Star`, `Chain`, `Mesh`, `Debate`, `Hierarchical`.
+- **Dependencies:** pydantic, langchain-core, langgraph (≥0.3 for CompiledStateGraph + parallel fan-out + subgraph compile).
+- **Status:** M7 complete (5 topologies registered, 11 primary tests + sanity coverage).
 
 ### Phase Manager & Routers (`phases/`)
 - **Exports (M8 planned):** `PhaseManager`, `RuleBasedPhaseRouter`, `LLMPhaseRouter`, `TopologyRouter` (rule/llm/oracle modes), `SwitchGuards`.
@@ -175,6 +192,7 @@ LangGraph callback handler + serializers.
 - **YAML + OmegaConf + Pydantic:** YAML in `conf/`, composed via OmegaConf, validated by Pydantic schemas.
 - **Pricing config:** `conf/pricing.yaml` (version 1) with per-1K-token rates; OpenAI uses `cached_input_per_1k`, Anthropic splits `cache_read_per_1k`/`cache_write_per_1k`.
 - **Agent configs (M5):** `conf/agents/*.yaml` define role-specific window_size, tools list, optional stance param.
+- **Topology configs (M6-M7):** `conf/topology/*.yaml` define topology-specific parameters (max_iterations, extra consensus/debate/hierarchy params).
 - **Registry pattern:** Dynamic lookup by name for topologies/tools/tasks/agents.
 
 ### Dependency Injection
@@ -190,8 +208,8 @@ LangGraph callback handler + serializers.
 ### Testing
 - **FakeLLM:** Deterministic mock, scripted fixtures keyed by `(agent_id, step_idx)` with role fallback; supports scripted/echo/replay.
 - **Fixtures location:** `tests/fixtures/llm/<name>.yaml` — scripted LLM responses; `tests/fixtures/agents/<name>.yaml` — agent config fixtures.
-- **M5 test coverage:** 10 test files (91 tests) covering Agent config loading, token estimation, basic agent I/O, tool-loop C1 exit criterion, scratchpad windowing, summarizer integration, budget propagation, Debater stance substitution, role configs, executor exit strategies. All passing.
-- **Key test categories (M2-M5 cumulative):**
+- **M5-M7 test coverage:** 10 agent test files (91 tests) + 6 unit topology test files (67+ tests) + 4 integration topology test files (15+ sanity/e2e tests), all passing.
+- **Key test categories (M2-M7 cumulative):**
   - Core errors hierarchy including `LLMError` (M1).
   - Types/enums (Message, ToolCall, LLMResponse.started_at).
   - Reducers with monoid invariants + sort_by="started_at" for llm_calls (M2).
@@ -204,6 +222,7 @@ LangGraph callback handler + serializers.
   - Integration: end-to-end scripted fake + LLMWrapper, budget-exceed guard path, replay round-trip (M2).
   - Agent config, token estimation, step() I/O, tool-loop, scratchpad window, summarizer, budget propagation (M5).
   - Debater stance substitution, all role configs loading, executor exit criterion (M5).
+  - Topology routing, stopping precedence, consensus voting (mesh), parallel fan-out (debate), 2-level hierarchy invariant (hierarchical) (M7).
 
 ### Async Patterns
 - **Budget tracker:** `asyncio.Lock` for thread-safe three-tier checks.
@@ -229,6 +248,9 @@ LangGraph callback handler + serializers.
 - **numpy** (≥1.26): TF-IDF vectorization for SemanticSearchTool.
 - **faiss-cpu** (≥1.11): Optional extra for semantic search acceleration.
 
+### M6-M7 additions (Topologies)
+- **langgraph** (≥0.3): StateGraph, parallel fan-out, compiled subgraphs, CompiledStateGraph.
+
 ### Existing (M0-M1)
 - **langgraph:** Multi-agent orchestration primitives.
 - **sqlalchemy[asyncio] + asyncpg:** Async ORM.
@@ -245,9 +267,10 @@ LangGraph callback handler + serializers.
 
 ## Test Setup
 - **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
-- **Structure:** `tests/unit/{core,llm,tools,agents}/`, `tests/integration/{llm,tools}/`, `tests/fixtures/{llm,tools/corpus,agents}/`.
-- **Total tests:** ~488 (91 agents + 121 tools + 13 non-docker integration tools + 263 legacy unit/integration core+llm).
+- **Structure:** `tests/unit/{core,llm,tools,agents,topology}/`, `tests/integration/{llm,tools,topology}/`, `tests/fixtures/{llm,agents,tools/corpus}/`.
+- **Total tests:** ~580+ (91 agents + 121 tools + 13 non-docker integration tools + 67+ unit topology + 15+ integration topology + 263 legacy unit/integration core+llm).
 - **M4 test markers:** `@pytest.mark.docker` and `@pytest.mark.network` gated via ATM_ENABLE_DOCKER_TESTS and ATM_ENABLE_NETWORK_TESTS env vars; 29 such tests auto-skipped otherwise.
 - **M5 test markers:** None (all agent tests run by default).
+- **M7 test markers:** None (all topology tests run by default).
 - **Mocking approach:** FakeLLM with YAML fixtures for unit + integration; FakeDDGS for search tool testing; mock docker for sandbox unit tests.
-- **Coverage target:** All core modules + critical paths; M4 tools + M5 agents fully tested; lower coverage on M6+ until implementations exist.
+- **Coverage target:** All core modules + critical paths; M4 tools + M5 agents + M7 topologies fully tested; lower coverage on M8+ until implementations exist.
