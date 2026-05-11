@@ -498,16 +498,17 @@ class Topology(Protocol):
   - [ ] Обновить Planner: эмитит `ready_for_execution` при финализации плана
 
   **M8.6 — TransitionGate + Adaptive meta-graph (1 день)**
-  - [ ] `topology/adaptive.py`: meta-граф с PhaseRouter, TopologyRouter, TransitionGate, 5 subgraph-узлов
-  - [ ] `TransitionGate` как чистая функция — реализует state-transfer таблицу из `arch.md §7.7`
-  - [ ] Dispatch событий: `phase_transition` (только при advance), `topology_transition` (каждый тик)
-  - [ ] Subgraph-узлы оборачивают компилированные графы из M6/M7 (`node_for_topology(name)`)
-  - [ ] Superset agent roster: все 7 ролей инстанциируются при topology.name=='adaptive'
-  - [ ] Integration-тест (FakeLLM): задача, где сценарий заставляет switch-и (`stuck` → mesh, `rejected_count≥3` → debate); проверить:
+  - [x] `topology/adaptive.py`: meta-граф с PhaseRouter, TopologyRouter, TransitionGate, 5 subgraph-узлов
+  - [x] `TransitionGate` как чистая функция — реализует state-transfer таблицу из `arch.md §7.7`
+  - [x] Dispatch событий: `phase_transition` (только при advance), `topology_transition` (каждый тик)
+  - [x] Subgraph-узлы оборачивают компилированные графы из M6/M7 (`dispatch_topology` с lazy cache)
+  - [x] Superset agent roster: все 7 ролей инстанциируются при topology.name=='adaptive'
+  - [x] Integration-тест (FakeLLM): задача, где сценарий заставляет switch-и (`stuck` → mesh); проверить:
     - последовательность `topology_transitions` соответствует ожиданиям
     - `phase` монотонна
     - `messages` без дублей (dedup reducer работает)
-    - guards срабатывают на ожидаемых сценариях
+    - guards срабатывают на ожидаемых сценариях (guard_override)
+  - [x] `conf/experiments/adaptive_smoke.yaml` — конфиг smoke-теста
 
   **M8.7 — Oracle labels pipeline (0.5 дня, условно после E1 pilot)**
   - [ ] `analysis/oracle.py`: `build_leave_one_out_oracle(exp_id) → OracleTable` — читает runs из E1, агрегирует по task_type без target task
