@@ -1,0 +1,57 @@
+name: m8_adaptive_smoke
+seed: 42
+
+task:
+  name: fibonacci_adaptive_smoke
+  input: "Write a Python function fib(n) that returns the n-th Fibonacci number. Compute fib(10)."
+
+model:
+  default: "fake:scripted"
+  by_role:
+    planner: "fake:scripted"
+    executor: "fake:scripted"
+    critic: "fake:scripted"
+    researcher: "fake:scripted"
+    debater_pro: "fake:scripted"
+    debater_contra: "fake:scripted"
+    coordinator: "fake:scripted"
+  fake_fixtures:
+    planner: "tests/fixtures/llm/m8_adaptive_planner.yaml"
+    executor: "tests/fixtures/llm/m8_adaptive_executor.yaml"
+    critic: "tests/fixtures/llm/m8_adaptive_critic.yaml"
+    researcher: "tests/fixtures/llm/m6_star_planner.yaml"
+
+agents:
+  set: canonical_4
+
+topology:
+  name: adaptive
+  max_iterations: 30
+  extra:
+    # Phase router: deterministic rule-based for smoke test
+    phase_router: "rule"
+    # Topology router: deterministic rule-based for reproducibility
+    topology_router: "rule"
+    # SwitchGuards enabled with relaxed thresholds for smoke test
+    switch_guards: true
+    switch_guards_config:
+      min_dwell_iters: 1
+      cooldown_iters: 2
+      max_per_run: 10
+      max_per_phase: 5
+    # Phase iteration caps
+    planning_max_iter: 3
+    exec_max_iter: 10
+    verify_max_iter: 4
+    # Subgraph iteration cap per tick
+    subgraph_max_iterations: 10
+
+budget:
+  per_call_usd: 0.10
+  per_run_usd: 0.50
+  per_experiment_usd: 50.0
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_test}"
+  parquet_dir: "data/experiments"
+  callback_sync: true
