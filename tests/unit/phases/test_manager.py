@@ -26,7 +26,7 @@ from atm.core.types import Phase, PhaseDecision
 
 def _make_state(
     phase: Phase = Phase.PLANNING,
-    signals: dict | None = None,
+    signals: dict[str, object] | None = None,
     iteration: int = 0,
 ) -> GraphState:
     """Build a minimal GraphState with given phase, signals, and iteration count."""
@@ -75,25 +75,27 @@ def test_import_public_symbols() -> None:
 
 
 class TestRuleBased:
-    """Unit tests for RuleBasedPhaseRouter.decide()."""
+    """Unit tests for RuleBasedPhaseRouter.decide() — async contract (arch.md §8.2)."""
 
     # -----------------------------------------------------------------------
     # Guard 1: ready_for_execution (planning → execution)
     # -----------------------------------------------------------------------
 
-    def test_ready_for_execution_positive(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ready_for_execution_positive(self) -> None:
         """When ready_for_execution=True in planning, router advances to execution."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
         router = RuleBasedPhaseRouter(limits=_default_limits(), guards={})
         state = _make_state(phase=Phase.PLANNING, signals={"ready_for_execution": True})
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.EXECUTION
         assert decision.decided_by == "rule"
         assert "ready_for_execution" in decision.reason.lower() or decision.reason
 
-    def test_ready_for_execution_negative(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ready_for_execution_negative(self) -> None:
         """When ready_for_execution=False and iter cap not reached, stay in planning."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -103,18 +105,19 @@ class TestRuleBased:
             signals={"ready_for_execution": False},
             iteration=1,
         )
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.PLANNING
         assert decision.decided_by == "rule"
 
-    def test_ready_for_execution_missing_signal_stays(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ready_for_execution_missing_signal_stays(self) -> None:
         """When signal is absent and iter cap not reached, stay in planning."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
         router = RuleBasedPhaseRouter(limits=_default_limits(), guards={})
         state = _make_state(phase=Phase.PLANNING, signals={}, iteration=0)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.PLANNING
         assert decision.decided_by == "rule"
@@ -123,7 +126,8 @@ class TestRuleBased:
     # Guard 2: iter cap in planning
     # -----------------------------------------------------------------------
 
-    def test_planning_iter_cap_advances(self) -> None:
+    @pytest.mark.asyncio
+    async def test_planning_iter_cap_advances(self) -> None:
         """When iteration >= planning_max_iter, advance planning → execution."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -131,19 +135,20 @@ class TestRuleBased:
         router = RuleBasedPhaseRouter(limits=limits, guards={})
         # iteration=1 >= planning_max_iter=1 → advance
         state = _make_state(phase=Phase.PLANNING, signals={}, iteration=1)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.EXECUTION
         assert decision.decided_by == "rule"
 
-    def test_planning_iter_cap_not_reached_stays(self) -> None:
+    @pytest.mark.asyncio
+    async def test_planning_iter_cap_not_reached_stays(self) -> None:
         """When iteration < planning_max_iter and no signal, stay in planning."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
         limits = _default_limits()  # planning_max_iter=3
         router = RuleBasedPhaseRouter(limits=limits, guards={})
         state = _make_state(phase=Phase.PLANNING, signals={}, iteration=2)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.PLANNING
 
@@ -151,7 +156,8 @@ class TestRuleBased:
     # Guard 3: ready_for_verification (execution → verification)
     # -----------------------------------------------------------------------
 
-    def test_ready_for_verification_positive(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ready_for_verification_positive(self) -> None:
         """When ready_for_verification=True in execution, advance to verification."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -160,12 +166,13 @@ class TestRuleBased:
             phase=Phase.EXECUTION,
             signals={"ready_for_verification": True},
         )
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.VERIFICATION
         assert decision.decided_by == "rule"
 
-    def test_ready_for_verification_negative(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ready_for_verification_negative(self) -> None:
         """When ready_for_verification is False and iter cap not reached, stay in execution."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -175,19 +182,20 @@ class TestRuleBased:
             signals={"ready_for_verification": False},
             iteration=0,
         )
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.EXECUTION
         assert decision.decided_by == "rule"
 
-    def test_exec_iter_cap_advances(self) -> None:
+    @pytest.mark.asyncio
+    async def test_exec_iter_cap_advances(self) -> None:
         """When iteration >= exec_max_iter in execution, advance to verification."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
         limits = _tight_limits()  # exec_max_iter=1
         router = RuleBasedPhaseRouter(limits=limits, guards={})
         state = _make_state(phase=Phase.EXECUTION, signals={}, iteration=1)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.VERIFICATION
         assert decision.decided_by == "rule"
@@ -196,7 +204,8 @@ class TestRuleBased:
     # Guard 4: critic_approved (verification → done)
     # -----------------------------------------------------------------------
 
-    def test_critic_approved_positive(self) -> None:
+    @pytest.mark.asyncio
+    async def test_critic_approved_positive(self) -> None:
         """When critic_approved=True in verification, advance to done."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -205,12 +214,13 @@ class TestRuleBased:
             phase=Phase.VERIFICATION,
             signals={"critic_approved": True},
         )
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.DONE
         assert decision.decided_by == "rule"
 
-    def test_critic_approved_negative(self) -> None:
+    @pytest.mark.asyncio
+    async def test_critic_approved_negative(self) -> None:
         """When critic_approved=False and iter cap not reached, stay in verification."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -220,19 +230,20 @@ class TestRuleBased:
             signals={"critic_approved": False},
             iteration=0,
         )
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.VERIFICATION
         assert decision.decided_by == "rule"
 
-    def test_verify_iter_cap_advances_to_done(self) -> None:
+    @pytest.mark.asyncio
+    async def test_verify_iter_cap_advances_to_done(self) -> None:
         """When iteration >= verify_max_iter in verification, advance to done."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
         limits = _tight_limits()  # verify_max_iter=1
         router = RuleBasedPhaseRouter(limits=limits, guards={})
         state = _make_state(phase=Phase.VERIFICATION, signals={}, iteration=1)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.DONE
         assert decision.decided_by == "rule"
@@ -241,13 +252,14 @@ class TestRuleBased:
     # Terminal phase: done → no transition
     # -----------------------------------------------------------------------
 
-    def test_done_stays_done(self) -> None:
+    @pytest.mark.asyncio
+    async def test_done_stays_done(self) -> None:
         """In terminal phase 'done', router always returns done (no transitions)."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
         router = RuleBasedPhaseRouter(limits=_default_limits(), guards={})
         state = _make_state(phase=Phase.DONE, signals={"critic_approved": True}, iteration=99)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.DONE
         assert decision.decided_by == "rule"
@@ -256,7 +268,8 @@ class TestRuleBased:
     # Monotonicity: decided_by is always "rule"
     # -----------------------------------------------------------------------
 
-    def test_decided_by_is_always_rule(self) -> None:
+    @pytest.mark.asyncio
+    async def test_decided_by_is_always_rule(self) -> None:
         """All RuleBasedPhaseRouter decisions must have decided_by='rule'."""
         from atm.phases.manager import RuleBasedPhaseRouter
 
@@ -269,7 +282,7 @@ class TestRuleBased:
             _make_state(Phase.DONE),
         ]
         for state in scenarios:
-            decision = router.decide(state)
+            decision = await router.decide(state)
             assert decision.decided_by == "rule", (
                 f"Expected decided_by='rule' for state phase={state['shared']['phase']}, "
                 f"got {decision.decided_by!r}"
@@ -279,7 +292,8 @@ class TestRuleBased:
     # Custom guards override: if custom guard provided, use it
     # -----------------------------------------------------------------------
 
-    def test_custom_guard_overrides_signal(self) -> None:
+    @pytest.mark.asyncio
+    async def test_custom_guard_overrides_signal(self) -> None:
         """Custom guard in guards dict overrides the built-in signal check."""
         from atm.phases.manager import PhaseGuard, RuleBasedPhaseRouter
 
@@ -292,12 +306,13 @@ class TestRuleBased:
         )
         # No signal set, but custom guard fires
         state = _make_state(phase=Phase.PLANNING, signals={}, iteration=0)
-        decision: PhaseDecision = router.decide(state)
+        decision: PhaseDecision = await router.decide(state)
 
         assert decision.next_phase == Phase.EXECUTION
         assert decision.decided_by == "rule"
 
-    def test_custom_guard_false_stays(self) -> None:
+    @pytest.mark.asyncio
+    async def test_custom_guard_false_stays(self) -> None:
         """Custom guard returning False keeps phase unchanged (when iter cap not hit)."""
         from atm.phases.manager import PhaseGuard, RuleBasedPhaseRouter
 
@@ -307,8 +322,10 @@ class TestRuleBased:
             limits=_default_limits(),
             guards={Phase.PLANNING: [never_advance]},
         )
-        state = _make_state(phase=Phase.PLANNING, signals={"ready_for_execution": True}, iteration=0)
-        decision: PhaseDecision = router.decide(state)
+        state = _make_state(
+            phase=Phase.PLANNING, signals={"ready_for_execution": True}, iteration=0
+        )
+        decision: PhaseDecision = await router.decide(state)
 
         # Custom guard overrides signal → stays in planning
         assert decision.next_phase == Phase.PLANNING
@@ -343,7 +360,11 @@ class TestRuleBased:
 
 
 def _make_fake_llm(text: str):
-    """Create an AsyncMock that returns an LLMResponse with the given text."""
+    """Create an AsyncMock that returns an LLMResponse with the given text.
+
+    The mock's ainvoke is configured to accept list[Message] — matching the
+    real LLMWrapper.ainvoke signature (src/atm/llm/wrapper.py:330).
+    """
     from unittest.mock import AsyncMock
 
     from atm.core.types import LLMResponse, TokenUsage
@@ -378,7 +399,11 @@ class TestLLMRouter:
 
     @pytest.mark.asyncio
     async def test_happy_path_valid_json(self) -> None:
-        """LLM returns valid JSON with valid next_phase → PhaseDecision(decided_by='llm_router')."""
+        """LLM returns valid JSON with valid next_phase → PhaseDecision(decided_by='llm_router').
+
+        Verifies that ainvoke is called with list[Message] (not list[str]).
+        """
+        from atm.core.types import Message
         from atm.phases.manager import LLMPhaseRouter
 
         llm = _make_fake_llm('{"next_phase": "execution", "reason": "ready to execute"}')
@@ -391,7 +416,16 @@ class TestLLMRouter:
         assert decision.next_phase == Phase.EXECUTION
         assert decision.decided_by == "llm_router"
         assert decision.reason == "ready to execute"
+        # Verify ainvoke was called exactly once
         llm.ainvoke.assert_awaited_once()
+        # Verify ainvoke was called with list[Message] (not list[str])
+        call_args = llm.ainvoke.call_args
+        messages_arg = call_args[0][0]  # first positional arg
+        assert isinstance(messages_arg, list), "ainvoke must be called with a list"
+        assert len(messages_arg) == 1, "ainvoke must be called with exactly one message"
+        assert isinstance(messages_arg[0], Message), (
+            f"ainvoke must be called with list[Message], got {type(messages_arg[0])}"
+        )
 
     # -----------------------------------------------------------------------
     # Test 2: rollback-attempt — LLM returns lower phase → fallback to rule
@@ -413,6 +447,7 @@ class TestLLMRouter:
         # Fallback rule: no signals, iter=0 < cap=5 → stay in execution
         assert decision.decided_by == "rule"
         assert decision.next_phase == Phase.EXECUTION
+        llm.ainvoke.assert_awaited_once()
 
     # -----------------------------------------------------------------------
     # Test 3: malformed JSON — LLM returns non-JSON → fallback to rule
@@ -431,6 +466,7 @@ class TestLLMRouter:
         decision = await router.decide(state)
 
         assert decision.decided_by == "rule"
+        llm.ainvoke.assert_awaited_once()
 
     # -----------------------------------------------------------------------
     # Test 4: unknown phase — LLM returns phase not in enum → fallback
@@ -449,6 +485,7 @@ class TestLLMRouter:
         decision = await router.decide(state)
 
         assert decision.decided_by == "rule"
+        llm.ainvoke.assert_awaited_once()
 
     # -----------------------------------------------------------------------
     # Test 5: missing field — JSON without next_phase → fallback
@@ -467,3 +504,4 @@ class TestLLMRouter:
         decision = await router.decide(state)
 
         assert decision.decided_by == "rule"
+        llm.ainvoke.assert_awaited_once()

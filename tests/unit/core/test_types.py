@@ -625,7 +625,9 @@ def test_topology_decision_router_cost_usd_non_negative() -> None:
     # valid: zero and positive
     d_zero = TopologyDecision(topology="star", reason="r", decided_by="rule", router_cost_usd=0.0)
     assert d_zero.router_cost_usd == 0.0
-    d_pos = TopologyDecision(topology="star", reason="r", decided_by="llm_router", router_cost_usd=0.005)
+    d_pos = TopologyDecision(
+        topology="star", reason="r", decided_by="llm_router", router_cost_usd=0.005
+    )
     assert d_pos.router_cost_usd == 0.005
 
     # invalid: negative
