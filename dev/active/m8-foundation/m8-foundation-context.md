@@ -3,10 +3,10 @@
 ## ПРОГРЕСС СЕССИИ (2026-05-11)
 
 ### ВЫПОЛНЕНО
-- (ничего пока)
+- **Wave 1** (5/13): аудит M1/M3-артефактов (.audit-baseline.md), TopologyDecision+PhaseDecision в core/types.py, re-export в core/__init__.py, 7 тестов в test_types.py, no-op подтверждение reducer-инвариантов с docstring-указателями. 177/177 в core suite.
 
 ### В ПРОЦЕССЕ
-- Не начато
+- Wave 2 (Step 2.1+2.2+2.3): RuleBasedPhaseRouter + PhaseRouter Protocol в phases/manager.py, preliminary export
 
 ### БЛОКЕРЫ
 - Нет
