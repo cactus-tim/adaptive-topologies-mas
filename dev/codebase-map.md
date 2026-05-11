@@ -129,10 +129,10 @@
 - **Purpose:** Monotonic Phase FSM (planning → execution → verification → done) with rule-based and LLM-based routers; JSON parse + monotonicity validation + fallback on LLM errors.
 - **Exports (from `atm.phases`):** `RuleBasedPhaseRouter`, `LLMPhaseRouter`, `PhaseLimits`, `PhaseGuard`, `PhaseRouter`.
 - **Submodules:**
-  - `manager.py` — `PhaseGuard` (Callable type alias), `PhaseLimits` (frozen Pydantic model, per-phase iter caps), `PhaseRouter` (Protocol, runtime_checkable), `RuleBasedPhaseRouter` (deterministic: builtin signal guards + custom guard override + iter-cap timeout, decided_by='rule'), `LLMPhaseRouter` (async ainvoke → JSON parse → monotonicity check → fallback to rule on any error, decided_by='llm_router' on success).
+  - `manager.py` — `PhaseGuard` (Callable type alias `Callable[[GraphState], bool]`), `PhaseLimits` (frozen Pydantic, per-phase iter caps), `PhaseRouter` (Protocol, runtime_checkable, `async decide(GraphState) -> PhaseDecision`), `RuleBasedPhaseRouter` (async: 4 builtin signal guards + custom override + iter-cap timeout, decided_by='rule'), `LLMPhaseRouter` (async ainvoke → JSON parse → monotonicity validation → fallback to rule on any error, decided_by='llm_router' on success, WARNING on fallback).
 - **Core type additions (M8, in `atm.core.types`):** `TopologyDecision` (frozen Pydantic, router_cost_usd>=0 validator), `PhaseDecision` (frozen Pydantic, monotonic next_phase).
-- **Test coverage:** 23 unit tests in `tests/unit/phases/test_manager.py` — all 4 signal guards (positive + negative), iter-cap advance, terminal DONE, custom guard override, PhaseLimits frozen, LLMPhaseRouter happy-path + 4 fallback scenarios.
-- **Status:** M8.1 + M8.2 complete.
+- **Test coverage:** 23 unit tests in `tests/unit/phases/test_manager.py` — 4 signal guards (ready_for_execution, ready_for_verification, critic_approved, iter_caps), iter-cap advance, terminal DONE, custom guard override, PhaseLimits frozen, LLMPhaseRouter happy-path + 4 fallback scenarios (JSON parse error, non-monotonic phase, network failure, invalid JSON), all using AsyncMock.
+- **Status:** M8.1 + M8.2 complete (PhaseRouter Protocol, RuleBasedPhaseRouter, LLMPhaseRouter with async/await, JSON validation + monotonicity checks, comprehensive fallback coverage).
 
 ### Human Gateway & HITL (`human/`)
 - **Exports (M9 planned):** `HumanGateway` protocol, `LLMSimulatedGateway`, `CLIGateway`.
