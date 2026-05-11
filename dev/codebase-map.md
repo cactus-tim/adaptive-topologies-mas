@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-04-26*
+*Auto-generated. Last updated: 2026-05-11*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -125,9 +125,14 @@
 - **Dependencies:** pydantic, langchain-core, langgraph (≥0.3 for CompiledStateGraph + parallel fan-out + subgraph compile).
 - **Status:** M7 complete (5 topologies registered, 11 primary tests + sanity coverage).
 
-### Phase Manager & Routers (`phases/`)
-- **Exports (M8 planned):** `PhaseManager`, `RuleBasedPhaseRouter`, `LLMPhaseRouter`, `TopologyRouter` (rule/llm/oracle modes), `SwitchGuards`.
-- **Status:** M0 skeleton, M8 not started.
+### Phase Manager & Routers (`phases/`) — M8.1 + M8.2 complete
+- **Purpose:** Monotonic Phase FSM (planning → execution → verification → done) with rule-based and LLM-based routers; JSON parse + monotonicity validation + fallback on LLM errors.
+- **Exports (from `atm.phases`):** `RuleBasedPhaseRouter`, `LLMPhaseRouter`, `PhaseLimits`, `PhaseGuard`, `PhaseRouter`.
+- **Submodules:**
+  - `manager.py` — `PhaseGuard` (Callable type alias), `PhaseLimits` (frozen Pydantic model, per-phase iter caps), `PhaseRouter` (Protocol, runtime_checkable), `RuleBasedPhaseRouter` (deterministic: builtin signal guards + custom guard override + iter-cap timeout, decided_by='rule'), `LLMPhaseRouter` (async ainvoke → JSON parse → monotonicity check → fallback to rule on any error, decided_by='llm_router' on success).
+- **Core type additions (M8, in `atm.core.types`):** `TopologyDecision` (frozen Pydantic, router_cost_usd>=0 validator), `PhaseDecision` (frozen Pydantic, monotonic next_phase).
+- **Test coverage:** 23 unit tests in `tests/unit/phases/test_manager.py` — all 4 signal guards (positive + negative), iter-cap advance, terminal DONE, custom guard override, PhaseLimits frozen, LLMPhaseRouter happy-path + 4 fallback scenarios.
+- **Status:** M8.1 + M8.2 complete.
 
 ### Human Gateway & HITL (`human/`)
 - **Exports (M9 planned):** `HumanGateway` protocol, `LLMSimulatedGateway`, `CLIGateway`.
