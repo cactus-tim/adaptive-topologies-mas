@@ -5,9 +5,10 @@
 ### ВЫПОЛНЕНО
 - **Wave 1** (5/13): аудит M1/M3-артефактов (.audit-baseline.md), TopologyDecision+PhaseDecision в core/types.py, re-export в core/__init__.py, 7 тестов в test_types.py, no-op подтверждение reducer-инвариантов с docstring-указателями. 177/177 в core suite.
 - **Wave 2** (8/13): phases/manager.py — PhaseRouter Protocol, PhaseGuard type alias, PhaseLimits (frozen Pydantic), RuleBasedPhaseRouter (4 встроенных guards: ready_for_execution, ready_for_verification, critic_approved, iter_caps). 17 тестов TestRuleBased + import test. Полный suite 886/886.
+- **Wave 3** (10/13): LLMPhaseRouter (async decide, JSON-парсинг, валидация монотонности, rule fallback, WARNING при ошибках). 5 TestLLMRouter тестов через AsyncMock. 23/23 phases, 891/891 unit suite.
 
 ### В ПРОЦЕССЕ
-- Wave 3 (Step 3.1+3.2): LLMPhaseRouter с AsyncMock-тестами (append к phases/manager.py)
+- Wave 4 (Step 4.1+4.2+4.3): финализация phases/__init__ + codebase-map + полный suite
 
 ### БЛОКЕРЫ
 - Нет
