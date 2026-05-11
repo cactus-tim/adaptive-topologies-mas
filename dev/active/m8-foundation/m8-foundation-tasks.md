@@ -39,23 +39,23 @@
 - [x] 3.2 Реализовать `LLMPhaseRouter` в `phases/manager.py` — `src/atm/phases/manager.py`
   - Результат: append класс с JSON-парсингом, валидацией монотонности, rule fallback. router_cost_usd логируется на DEBUG (поле не входит в PhaseDecision контракт). 23/23 phases, 891/891 full suite
 
-## Фаза 4: Финализация (Wave 4) — НЕ НАЧАТО
+## Фаза 4: Финализация (Wave 4) — ВЫПОЛНЕНО
 
-- [ ] 4.1 Финализировать `phases/__init__.py`: docstring + `__all__` — `src/atm/phases/__init__.py`
-  - Приёмочный критерий: `__all__ = ["RuleBasedPhaseRouter", "LLMPhaseRouter", "PhaseLimits", "PhaseGuard", "PhaseRouter"]`; модуль корректно импортируется
+- [x] 4.1 Финализировать `phases/__init__.py`: docstring + `__all__` — `src/atm/phases/__init__.py`
+  - Результат: `__all__` с 5 элементами + module docstring (no-op vs Wave 2/3 версии)
 
-- [ ] 4.2 Обновить секцию Phase Manager в `dev/codebase-map.md` — `dev/codebase-map.md`
-  - Приёмочный критерий: статус изменён с "M0 skeleton, M8 not started" на "M8.1 + M8.2 complete"; перечислены exports
+- [x] 4.2 Обновить секцию Phase Manager в `dev/codebase-map.md` — `dev/codebase-map.md`
+  - Результат: статус M8.1+M8.2 complete, exports перечислены, дата 2026-05-11
 
-- [ ] 4.3 Прогнать полный suite и линтеры — `tests/unit/`
-  - Приёмочный критерий: `uv run pytest tests/unit -q` 0 failures; `uv run mypy src/atm --strict`; `uv run ruff check src/atm tests` — чисто
+- [x] 4.3 Прогнать полный suite и линтеры — `tests/unit/`
+  - Результат: pytest 898 passed, mypy --strict clean (77 files), ruff check clean
 
 ---
 
 ## Статистика
 
 - Всего: 13 задач · ~6.5h
-- Выполнено: 10 / 13 (Wave 1 + 2 + 3 done)
+- Выполнено: 13 / 13 (все волны done — готово к Phase 5 verification)
 
 ## Как обновлять
 
