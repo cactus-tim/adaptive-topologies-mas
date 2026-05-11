@@ -20,16 +20,16 @@
   - Приёмочный критерий: 3 инварианта явно читаемы в `pytest -v`; ожидаемо no-op (comment-pointer) если уже покрыты; `uv run pytest tests/unit/core/test_reducers.py -v` зелёный
   - Результат: no-op case подтверждён, comment-pointer добавлен в TestDedupByIdReducer docstring
 
-## Фаза 2: RuleBasedPhaseRouter (Wave 2) — НЕ НАЧАТО
+## Фаза 2: RuleBasedPhaseRouter (Wave 2) — ВЫПОЛНЕНО
 
-- [ ] 2.1 Создать `tests/unit/phases/__init__.py` (пустой) и написать тесты TestRuleBased (TDD) — `tests/unit/phases/__init__.py`, `tests/unit/phases/test_manager.py`
-  - Приёмочный критерий: 8+ тест-функций созданы; 4 guards × positive/negative + edge (terminal done, stay planning); тесты падают до реализации
+- [x] 2.1 Создать `tests/unit/phases/__init__.py` (пустой) и написать тесты TestRuleBased (TDD) — `tests/unit/phases/__init__.py`, `tests/unit/phases/test_manager.py`
+  - Результат: 17 тестов в TestRuleBased + import test = 18
 
-- [ ] 2.2 Реализовать `PhaseRouter` Protocol, `PhaseGuard` type alias, `_phase_order` helper, `PhaseLimits`, `RuleBasedPhaseRouter` — `src/atm/phases/manager.py`
-  - Приёмочный критерий: `uv run pytest tests/unit/phases/test_manager.py::TestRuleBased -v` зелёный; `uv run mypy src/atm/phases/manager.py --strict` зелёный
+- [x] 2.2 Реализовать `PhaseRouter` Protocol, `PhaseGuard` type alias, `_phase_order` helper, `PhaseLimits`, `RuleBasedPhaseRouter` — `src/atm/phases/manager.py`
+  - Результат: реализовано, mypy strict green
 
-- [ ] 2.3 Добавить предварительный экспорт в `phases/__init__.py` — `src/atm/phases/__init__.py`
-  - Приёмочный критерий: `from atm.phases import RuleBasedPhaseRouter, PhaseLimits, PhaseGuard, PhaseRouter` работает
+- [x] 2.3 Добавить предварительный экспорт в `phases/__init__.py` — `src/atm/phases/__init__.py`
+  - Результат: `__all__ = ["RuleBasedPhaseRouter", "PhaseLimits", "PhaseGuard", "PhaseRouter"]`
 
 ## Фаза 3: LLMPhaseRouter (Wave 3) — НЕ НАЧАТО
 
@@ -55,7 +55,7 @@
 ## Статистика
 
 - Всего: 13 задач · ~6.5h
-- Выполнено: 5 / 13 (Wave 1 done)
+- Выполнено: 8 / 13 (Wave 1 + 2 done)
 
 ## Как обновлять
 
