@@ -27,3 +27,7 @@ data/
 # OS artefacts
 .DS_Store
 Thumbs.db
+
+# Claude Code transient state
+.claude/worktrees/
+.claire/
