@@ -23,6 +23,13 @@ from typing import Any
 from atm.agents.base import Agent
 from atm.core.state import GraphState
 from atm.core.types import Message, MessageKind
+from atm.phases.signals import (
+    CRITIC_APPROVED,
+    NEEDS_DEBATE,
+    REJECTED_COUNT,
+    emit_signal,
+    increment_signal,
+)
 
 
 class Critic(Agent):
@@ -69,29 +76,46 @@ class Critic(Agent):
         new_outbox: list[Message] = []
         new_messages: list[Message] = []
 
+        # Determine approval from the first outbox message
+        approved: bool = False
+        if outbox:
+            first_content: str = getattr(outbox[0], "content", "") or ""
+            approved = "approve" in first_content.lower()
+
         for msg in outbox:
             content: str = getattr(msg, "content", "") or ""
-            approved: bool = "approve" in content.lower()
+            msg_approved: bool = "approve" in content.lower()
             decision_msg = Message(
                 sender=self.agent_id,
                 kind=MessageKind.DECISION,
                 content=content,
-                payload={"approved": approved, "comment": content},
+                payload={"approved": msg_approved, "comment": content},
             )
             new_outbox.append(decision_msg)
 
         for msg in messages:
             content = getattr(msg, "content", "") or ""
-            approved = "approve" in content.lower()
+            msg_approved = "approve" in content.lower()
             decision_msg = Message(
                 sender=self.agent_id,
                 kind=MessageKind.DECISION,
                 content=content,
-                payload={"approved": approved, "comment": content},
+                payload={"approved": msg_approved, "comment": content},
             )
             new_messages.append(decision_msg)
 
-        # Rebuild delta with DECISION messages
+        # --- Signal emission (additive, does not affect existing delta) ---
+        # Read current shared state to update signals
+        shared: dict[str, Any] = dict(state.get("shared") or {})
+
+        if approved:
+            shared = emit_signal(shared, CRITIC_APPROVED, True)
+        else:
+            shared, rejected_count = increment_signal(shared, REJECTED_COUNT)
+            if rejected_count >= 3:
+                shared = emit_signal(shared, NEEDS_DEBATE, True)
+
+        # Rebuild delta with DECISION messages and updated shared signals
         self_delta = dict(self_delta)
         self_delta["outbox"] = new_outbox
         agents_delta = dict(agents_delta)
@@ -99,5 +123,6 @@ class Critic(Agent):
         delta = dict(delta)
         delta["agents"] = agents_delta
         delta["messages"] = new_messages
+        delta["shared"] = shared
 
         return delta
