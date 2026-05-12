@@ -327,11 +327,7 @@ async def _update_run_success(
         values["human_role"] = human_role
 
     async with session_scope(session_factory) as session:
-        await session.execute(
-            sa.update(Run)
-            .where(Run.id == run_id)
-            .values(**values)
-        )
+        await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
 
 async def _update_run_failed(
@@ -728,9 +724,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
 
         try:
             async with session_scope(session_factory) as _cog_session:
-                dynamic_cog_proxy = await human_sim_cognitive_load_proxy(
-                    _cog_session, run_id
-                )
+                dynamic_cog_proxy = await human_sim_cognitive_load_proxy(_cog_session, run_id)
         except Exception:
             logger.warning(
                 "failed to compute cognitive_load_proxy; leaving NULL",

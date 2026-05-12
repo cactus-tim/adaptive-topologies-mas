@@ -583,9 +583,7 @@ class AdaptiveTopology:
             # Phase coercion: raw value from shared may be a str or Phase instance.
             if _role_router is not None:
                 _raw_phase = shared.get("phase", "planning")
-                _phase_val: Phase = (
-                    Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
-                )
+                _phase_val: Phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
                 active_role = await _role_router.decide(_phase_val, shared)
             else:
                 active_role = human_cfg.role
@@ -615,9 +613,7 @@ class AdaptiveTopology:
                         "run_id": run_id_val,
                         "request_id": request_id,
                         "role": str(
-                            active_role.value
-                            if hasattr(active_role, "value")
-                            else active_role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": _requested_at,

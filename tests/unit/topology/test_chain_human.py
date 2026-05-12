@@ -767,7 +767,7 @@ class TestChainRoleRouter:
         from atm.human.role_router import FixedRoleRouter
 
         run_id = uuid.uuid4()
-        state = _make_state(run_id=run_id, iter_total=0)
+        _make_state(run_id=run_id, iter_total=0)
 
         captured_contexts: list[HumanContext] = []
 
@@ -803,14 +803,18 @@ class TestChainRoleRouter:
 
         def capturing_build_node(h_cfg: Any, gw: Any, role_router: Any = None) -> Any:
             captured_build_calls.append({"human_cfg": h_cfg, "role_router": role_router})
+
             async def noop_node(state: Any) -> dict[str, Any]:
                 return {}
+
             return noop_node
 
         with (
             patch("atm.topology.chain.StateGraph", return_value=mock_graph),
             patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
-            patch("atm.topology.chain._build_human_reviewer_node", side_effect=capturing_build_node),
+            patch(
+                "atm.topology.chain._build_human_reviewer_node", side_effect=capturing_build_node
+            ),
         ):
             mock_gw_cls.return_value = MagicMock()
             ChainTopology().build(agents, cfg, human_cfg=human_cfg, role_router=router)
@@ -834,21 +838,24 @@ class TestChainRoleRouter:
 
         def capturing_build_node(h_cfg: Any, gw: Any, role_router: Any = None) -> Any:
             captured_calls.append({"role_router": role_router})
+
             async def noop_node(state: Any) -> dict[str, Any]:
                 return {}
+
             return noop_node
 
         with (
             patch("atm.topology.chain.StateGraph", return_value=mock_graph),
             patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
-            patch("atm.topology.chain._build_human_reviewer_node", side_effect=capturing_build_node),
+            patch(
+                "atm.topology.chain._build_human_reviewer_node", side_effect=capturing_build_node
+            ),
         ):
             mock_gw_cls.return_value = MagicMock()
             ChainTopology().build(agents, cfg, human_cfg=human_cfg, role_router=None)
 
         assert len(captured_calls) == 1
         assert captured_calls[0]["role_router"] is None
-
 
     def test_llm_fallback_primary_timeout_exercises_fallback(self) -> None:
         """When the primary gateway times out and policy='llm_fallback', the fallback

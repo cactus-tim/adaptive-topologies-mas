@@ -26,7 +26,12 @@ from atm.human.cli_gateway import CLIGateway
 from atm.human.gateway import HumanContext, HumanGateway, HumanResponse, HumanRole
 from atm.human.llm_simulated import LLMSimulatedGateway
 from atm.human.prompts import ROLE_SYSTEM_PROMPTS, build_role_prompt
-from atm.human.role_router import FixedRoleRouter, HumanRoleRouter, LLMRoleRouter, RuleBasedRoleRouter
+from atm.human.role_router import (
+    FixedRoleRouter,
+    HumanRoleRouter,
+    LLMRoleRouter,
+    RuleBasedRoleRouter,
+)
 from atm.human.runner import MaxInteractionsExceededError, run_with_human
 
 __all__ = [

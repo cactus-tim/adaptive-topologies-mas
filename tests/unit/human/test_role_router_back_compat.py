@@ -111,9 +111,7 @@ class TestBuildRoleRouterFixed:
     def test_none_human_cfg_returns_none(self) -> None:
         """human_cfg=None → _build_role_router returns None (pre-HITL back-compat)."""
         result = _build_role_router(None)
-        assert result is None, (
-            f"_build_role_router(None) must return None, got {result!r}"
-        )
+        assert result is None, f"_build_role_router(None) must return None, got {result!r}"
 
     def test_fixed_with_different_roles_returns_none(self) -> None:
         """role_router='fixed' returns None regardless of the configured HumanRole."""

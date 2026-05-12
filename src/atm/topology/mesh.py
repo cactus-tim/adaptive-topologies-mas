@@ -394,9 +394,7 @@ class MeshTopology:
                 # Resolve active role — dynamic via role_router or static from cfg
                 if _role_router is not None:
                     _raw_phase = shared.get("phase", "execution")
-                    _phase = (
-                        Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
-                    )
+                    _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
                     active_role = await _role_router.decide(_phase, shared)
                 else:
                     active_role = _hcfg.role
@@ -419,9 +417,7 @@ class MeshTopology:
                             "run_id": run_id,
                             "request_id": request_id,
                             "role": str(
-                                active_role.value
-                                if hasattr(active_role, "value")
-                                else active_role
+                                active_role.value if hasattr(active_role, "value") else active_role
                             ),
                             "context_json": ctx.model_dump(mode="json"),
                             "requested_at": _requested_at,

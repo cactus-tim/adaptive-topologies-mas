@@ -1041,7 +1041,9 @@ class TestAdaptiveRoleRouter:
 
             captured: list[Any] = []
 
-            async def capturing_request(ctx: Any, *, request_id: str, _cap: list[Any] = captured) -> Any:
+            async def capturing_request(
+                ctx: Any, *, request_id: str, _cap: list[Any] = captured
+            ) -> Any:
                 _cap.append(ctx.role)
                 return _make_advise_response("OK")
 

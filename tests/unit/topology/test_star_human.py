@@ -561,7 +561,6 @@ class TestRouteFromCoordOverride:
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # 6. role_router integration: back-compat + dynamic
 # ---------------------------------------------------------------------------
@@ -614,8 +613,10 @@ class TestStarRoleRouter:
             role_router: Any = None,
         ) -> Any:
             captured_factory_calls.append({"role_router": role_router})
+
             async def noop_node(state: Any) -> dict[str, Any]:
                 return {}
+
             return noop_node
 
         with (
@@ -661,8 +662,10 @@ class TestStarRoleRouter:
             role_router: Any = None,
         ) -> Any:
             captured_factory_calls.append({"role_router": role_router})
+
             async def noop_node(state: Any) -> dict[str, Any]:
                 return {}
+
             return noop_node
 
         with (
@@ -721,15 +724,15 @@ class TestStarRoleRouter:
             ),
         ):
             human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
-            graph = _build_star_graph(
-                agents=agents, cfg=cfg, human_cfg=human_cfg
-            )
+            graph = _build_star_graph(agents=agents, cfg=cfg, human_cfg=human_cfg)
             # We need to build with role_router — use StarTopology directly
-            from atm.topology.star import StarTopology
             from langgraph.checkpoint.memory import MemorySaver
 
+            from atm.topology.star import StarTopology
+
             graph = StarTopology().build(
-                agents, cfg,
+                agents,
+                cfg,
                 human_cfg=human_cfg,
                 role_router=router,
                 checkpointer=MemorySaver(),
@@ -787,11 +790,13 @@ class TestStarRoleRouter:
             ),
         ):
             human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
-            from atm.topology.star import StarTopology
             from langgraph.checkpoint.memory import MemorySaver
 
+            from atm.topology.star import StarTopology
+
             graph = StarTopology().build(
-                agents, cfg,
+                agents,
+                cfg,
                 human_cfg=human_cfg,
                 role_router=None,
                 checkpointer=MemorySaver(),

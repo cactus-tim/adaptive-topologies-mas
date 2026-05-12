@@ -222,9 +222,7 @@ async def _finalize_run(
         update_values["human_role"] = dynamic_human_role
 
     async with session_scope(session_factory) as session:
-        await session.execute(
-            sa.update(Run).where(Run.id == run_id).values(**update_values)
-        )
+        await session.execute(sa.update(Run).where(Run.id == run_id).values(**update_values))
 
     return dynamic_human_role, dynamic_cog_proxy
 
@@ -342,9 +340,7 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
                         "run_id": run_id,
                         "request_id": req_id,
                         "role": str(
-                            active_role.value
-                            if hasattr(active_role, "value")
-                            else active_role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": _requested_at,
@@ -369,9 +365,7 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
 
             return inputs
 
-        runnable: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(
-            _dispatch_all
-        )
+        runnable: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(_dispatch_all)
         await runnable.ainvoke(
             {},
             config={

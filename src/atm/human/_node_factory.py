@@ -236,9 +236,7 @@ def build_human_node_factory(
 
         if role_router is not None:
             _raw_phase = shared.get("phase", "execution")
-            active_phase: Phase = (
-                Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
-            )
+            active_phase: Phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
             active_role = await role_router.decide(active_phase, shared)
         else:
             active_role = human_cfg.role

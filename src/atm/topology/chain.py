@@ -510,7 +510,9 @@ class ChainTopology:
                 )
 
             role_router = kwargs.get("role_router")
-            node_fn = _build_human_reviewer_node(human_cfg, gateway_instance, role_router=role_router)
+            node_fn = _build_human_reviewer_node(
+                human_cfg, gateway_instance, role_router=role_router
+            )
             graph.add_node("human_reviewer", node_fn)
 
             # critic_postprocess → human_reviewer → conditional

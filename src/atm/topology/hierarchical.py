@@ -225,9 +225,7 @@ def _build_human_top_reviewer_node(
                         "run_id": run_id,
                         "request_id": request_id,
                         "role": str(
-                            active_role.value
-                            if hasattr(active_role, "value")
-                            else active_role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": datetime.now(UTC),
@@ -390,9 +388,7 @@ def _build_human_sub_reviewer_node(
                         "run_id": run_id,
                         "request_id": request_id,
                         "role": str(
-                            active_role.value
-                            if hasattr(active_role, "value")
-                            else active_role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": datetime.now(UTC),
@@ -596,11 +592,19 @@ class HierarchicalTopology:
         if hitl_enabled and hitl_scope == "sub_team" and human_cfg is not None:
             # sub_team scope: insert human reviewer inside each subgraph
             team_a_subgraph = self._build_subgraph_with_human(
-                team_a_id, workers_a, agents, human_cfg, gateway_instance,
+                team_a_id,
+                workers_a,
+                agents,
+                human_cfg,
+                gateway_instance,
                 role_router=role_router,
             )
             team_b_subgraph = self._build_subgraph_with_human(
-                team_b_id, workers_b, agents, human_cfg, gateway_instance,
+                team_b_id,
+                workers_b,
+                agents,
+                human_cfg,
+                gateway_instance,
                 role_router=role_router,
             )
         else:
@@ -882,7 +886,9 @@ class HierarchicalTopology:
 
         if hitl_enabled and hitl_scope == "top" and human_cfg is not None:
             # Insert human_top_reviewer as an intermediate step before finalize
-            node_fn = _build_human_top_reviewer_node(human_cfg, gateway_instance, role_router=role_router)
+            node_fn = _build_human_top_reviewer_node(
+                human_cfg, gateway_instance, role_router=role_router
+            )
             graph.add_node("human_top_reviewer", node_fn)
 
             # after_team_b → conditional (finalize condition → human_top_reviewer | loop)
@@ -1051,7 +1057,9 @@ class HierarchicalTopology:
 
         # Insert human_sub_reviewer immediately after sub_coord
         human_node_name = f"human_sub_reviewer_{_team_id}"
-        human_node_fn = _build_human_sub_reviewer_node(_team_id, human_cfg, gateway, role_router=role_router)
+        human_node_fn = _build_human_sub_reviewer_node(
+            _team_id, human_cfg, gateway, role_router=role_router
+        )
         sub_graph.add_node(human_node_name, human_node_fn)
         sub_graph.add_edge(sub_coord_name, human_node_name)
 

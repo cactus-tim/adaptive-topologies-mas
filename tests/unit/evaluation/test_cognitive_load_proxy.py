@@ -72,7 +72,7 @@ async def test_k3_interactions_expected_value() -> None:
     ctx_b = {"question": "reject?", "messages": ["world", "foo"]}
     ctx_c = {"question": "review?", "messages": ["bar", "baz", "qux"]}
 
-    lat_a = 5.0   # seconds
+    lat_a = 5.0  # seconds
     lat_b = 10.0
     lat_c = 15.0
 

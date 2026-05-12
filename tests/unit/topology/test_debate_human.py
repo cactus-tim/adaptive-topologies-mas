@@ -767,8 +767,12 @@ class TestDebateRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.JUDGE, HumanRole.JUDGE),   # back-compat: no router, uses cfg role
-            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),  # dynamic: router returns COORDINATOR
+            (False, HumanRole.JUDGE, HumanRole.JUDGE),  # back-compat: no router, uses cfg role
+            (
+                True,
+                HumanRole.REVIEWER,
+                HumanRole.COORDINATOR,
+            ),  # dynamic: router returns COORDINATOR
         ],
         ids=["back_compat", "dynamic"],
     )
@@ -785,9 +789,7 @@ class TestDebateRoleRouter:
         roles = self._run_human_judge_node(role=cfg_role, role_router=router)
 
         assert len(roles) == 1, f"Expected exactly 1 gateway call, got {len(roles)}"
-        assert roles[0] == expected_role, (
-            f"Expected role={expected_role!r}, got {roles[0]!r}"
-        )
+        assert roles[0] == expected_role, f"Expected role={expected_role!r}, got {roles[0]!r}"
 
     # ---- Helper: build and run judge_combined node (both mode) ----
 
@@ -815,9 +817,7 @@ class TestDebateRoleRouter:
             "judge": _make_mock_agent(),
         }
         decision = _make_decision_msg(approved=True, winner="pro")
-        agents["judge"].step = AsyncMock(
-            return_value={"agents": {"judge": {"outbox": [decision]}}}
-        )
+        agents["judge"].step = AsyncMock(return_value={"agents": {"judge": {"outbox": [decision]}}})
 
         cfg = _make_cfg()
         human_cfg = _make_human_cfg(judge_mode="both", role=cfg_role)
@@ -844,7 +844,8 @@ class TestDebateRoleRouter:
         with patch("atm.topology.debate.StateGraph", return_value=mock_graph):
             topology = DebateTopology()
             topology.build(
-                agents, cfg,
+                agents,
+                cfg,
                 human_cfg=human_cfg,
                 gateway=mock_gateway,
                 role_router=role_router,
@@ -863,8 +864,12 @@ class TestDebateRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.JUDGE, HumanRole.JUDGE),   # back-compat: no router, uses cfg role
-            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),  # dynamic: router returns COORDINATOR
+            (False, HumanRole.JUDGE, HumanRole.JUDGE),  # back-compat: no router, uses cfg role
+            (
+                True,
+                HumanRole.REVIEWER,
+                HumanRole.COORDINATOR,
+            ),  # dynamic: router returns COORDINATOR
         ],
         ids=["back_compat", "dynamic"],
     )
@@ -880,7 +885,9 @@ class TestDebateRoleRouter:
         router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
         roles = self._run_judge_combined_node(cfg_role=cfg_role, role_router=router)
 
-        assert len(roles) == 1, f"Expected exactly 1 gateway call in judge_combined, got {len(roles)}"
+        assert len(roles) == 1, (
+            f"Expected exactly 1 gateway call in judge_combined, got {len(roles)}"
+        )
         assert roles[0] == expected_role, (
             f"judge_combined: Expected role={expected_role!r}, got {roles[0]!r}"
         )

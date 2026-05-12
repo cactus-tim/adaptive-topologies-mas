@@ -138,7 +138,9 @@ class RuleBasedRoleRouter:
         table: dict[Phase, HumanRole] | None = None,
         fallback: HumanRole = HumanRole.REVIEWER,
     ) -> None:
-        self._table: dict[Phase, HumanRole] = dict(table) if table is not None else dict(DEFAULT_ROLE_TABLE)
+        self._table: dict[Phase, HumanRole] = (
+            dict(table) if table is not None else dict(DEFAULT_ROLE_TABLE)
+        )
         self._fallback = fallback
 
     async def decide(self, phase: Phase, state: dict[str, Any]) -> HumanRole:
@@ -254,9 +256,7 @@ class LLMRoleRouter:
         """
         # Build a minimal state digest for the prompt
         state_summary = _build_state_summary(state)
-        prompt = self._DEFAULT_PROMPT.format_map(
-            {"phase": phase, "state_summary": state_summary}
-        )
+        prompt = self._DEFAULT_PROMPT.format_map({"phase": phase, "state_summary": state_summary})
 
         messages = [
             Message(

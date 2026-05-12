@@ -567,8 +567,8 @@ class TestHierarchicalRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),      # back-compat
-            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),    # dynamic
+            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),  # back-compat
+            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),  # dynamic
         ],
         ids=["back_compat", "dynamic"],
     )
@@ -584,9 +584,7 @@ class TestHierarchicalRoleRouter:
         router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
         roles = self._capture_top_reviewer_roles(cfg_role=cfg_role, role_router=router)
 
-        assert len(roles) >= 1, (
-            f"Expected at least 1 gateway call (top reviewer), got {roles}"
-        )
+        assert len(roles) >= 1, f"Expected at least 1 gateway call (top reviewer), got {roles}"
         assert roles[0] == expected_role, (
             f"scope=top: Expected role={expected_role!r}, got {roles[0]!r}"
         )
@@ -640,8 +638,8 @@ class TestHierarchicalRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),      # back-compat
-            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),    # dynamic
+            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),  # back-compat
+            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),  # dynamic
         ],
         ids=["back_compat", "dynamic"],
     )
