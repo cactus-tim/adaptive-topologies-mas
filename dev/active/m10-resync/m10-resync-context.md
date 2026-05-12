@@ -3,10 +3,10 @@
 ## ПРОГРЕСС СЕССИИ (2026-05-12)
 
 ### ВЫПОЛНЕНО
-- (ничего — план только что утверждён, реализация не начата)
+- **Шаги 1.1 + 1.2 (атомарный коммит `28cb8eb`)**: мигрирован `TaskSpec.type` Literal enum (`qa`→`reasoning`, `analysis`→`decision`); удалены `creative.py`, `analysis.py`, `mmlu.py`, их тесты, конфиги, фикстуры; убраны 3 guarded import из `__init__.py`; `atm.tasks.TASKS._registry == ['humaneval']` подтверждено.
 
 ### В РАБОТЕ
-- Не начато
+- Шаг 1.3 (oracle_table.json + audit topology_router)
 
 ### БЛОКЕРЫ
 - Нет
@@ -29,12 +29,12 @@
 **`src/atm/core/types.py`**
 - Роль: Pydantic-модель `TaskSpec`, frozen; `type` — `Literal[...]`
 - Плановое изменение: строка 269, заменить `["programming", "qa", "creative", "analysis"]` на `["programming", "reasoning", "creative", "decision"]`
-- Статус: НЕ НАЧАТО
+- Статус: ВЫПОЛНЕНО (commit 28cb8eb)
 
 **`src/atm/tasks/__init__.py`**
 - Роль: защищённые `importlib.import_module` для регистрации загрузчиков
 - Плановое изменение: убрать 3 старых импорта (`mmlu`, `creative`, `analysis`), добавить 3 новых (`gsm8k`, `commongen`, `dabench`); финальный вид — 4 guarded import в алфавитном порядке
-- Статус: НЕ НАЧАТО
+- Статус: ЧАСТИЧНО ВЫПОЛНЕНО — 3 старых удалены (commit 28cb8eb); 3 новых будут добавлены в шагах 2.1–2.3
 
 **`src/atm/tasks/gsm8k.py`** (новый)
 - Роль: `GSM8KLoader(name="gsm8k")` + `GSM8KMatcher(name="gsm8k_numeric")`
@@ -54,12 +54,12 @@
 **`src/atm/tasks/{mmlu,creative,analysis}.py`**
 - Роль: старые загрузчики (удаляются)
 - Плановое изменение: `git rm`
-- Статус: НЕ НАЧАТО
+- Статус: ВЫПОЛНЕНО (commit 28cb8eb)
 
 **`conf/tasks/{creative,analysis}_prompts.yaml`**
 - Роль: YAML prompt-корпуса (удаляются)
 - Плановое изменение: `git rm`
-- Статус: НЕ НАЧАТО
+- Статус: ВЫПОЛНЕНО (commit 28cb8eb)
 
 **`tests/fixtures/oracle_table.json`**
 - Роль: фикстура для `topology_router.py:394-401`, ключи `by_task_type`
