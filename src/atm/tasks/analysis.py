@@ -175,9 +175,17 @@ class AnalysisHybridEvaluator:
             if check_type == "contains":
                 passed = value in answer
             elif check_type == "regex":
-                passed = re.search(value, answer) is not None
+                try:
+                    passed = re.search(value, answer) is not None
+                except re.error:
+                    # Malformed regex — treat check as failed, do not raise
+                    passed = False
             elif check_type == "min_length":
-                passed = len(answer) >= int(value)
+                try:
+                    passed = len(answer) >= int(value)
+                except (ValueError, TypeError):
+                    # Non-integer value — treat check as failed, do not raise
+                    passed = False
             else:
                 # Unknown check type — treat as failed
                 passed = False
@@ -194,12 +202,15 @@ class AnalysisHybridEvaluator:
         self,
         spec: TaskSpec,
         answer: str,
+        *,
+        artifacts: dict[str, Any] | None = None,
     ) -> EvalResult:
         """Evaluate ``answer`` against ``spec`` using structural + judge hybrid.
 
         Args:
-            spec:   TaskSpec with metadata keys ``rubric`` and ``structural_checks``.
-            answer: The agent's answer to evaluate.
+            spec:      TaskSpec with metadata keys ``rubric`` and ``structural_checks``.
+            answer:    The agent's answer to evaluate.
+            artifacts: Unused. Present for ``Evaluator`` Protocol compatibility.
 
         Returns:
             EvalResult with:

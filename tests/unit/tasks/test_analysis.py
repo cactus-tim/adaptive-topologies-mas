@@ -253,3 +253,45 @@ async def test_evaluator_hybrid_score_fail_threshold() -> None:
     assert result.passed is False
     # score must be < 0.6 since struct=0.0 and judge<=1.0 → max possible = 0.5 < 0.6
     assert result.score < 0.6
+
+
+# ---------------------------------------------------------------------------
+# Test 7: malformed regex does not raise — treated as failed check
+# ---------------------------------------------------------------------------
+
+
+def test_structural_check_malformed_regex_does_not_raise() -> None:
+    """_run_structural_checks with an invalid regex pattern does not raise; check is failed (0.0).
+
+    An unclosed bracket '[' is an invalid regex pattern that would normally
+    raise re.error.  The evaluator must catch this and treat the check as
+    failed (score contribution = 0.0) rather than propagating the exception.
+    """
+    evaluator = AnalysisHybridEvaluator(judge_llm=_make_fake_llm("m10_judge_analysis.yaml"))
+
+    checks = [{"type": "regex", "value": "["}]  # invalid regex: unclosed bracket
+    answer = "Some answer text."
+
+    # Must not raise any exception
+    score = evaluator._run_structural_checks(checks, answer)
+
+    # Malformed regex check is treated as failed
+    assert score == 0.0
+
+
+def test_structural_check_invalid_min_length_does_not_raise() -> None:
+    """_run_structural_checks with a non-integer min_length value does not raise.
+
+    An non-parseable value like "abc" would normally raise ValueError from int().
+    The evaluator must catch this and treat the check as failed (score = 0.0).
+    """
+    evaluator = AnalysisHybridEvaluator(judge_llm=_make_fake_llm("m10_judge_analysis.yaml"))
+
+    checks = [{"type": "min_length", "value": "not_a_number"}]
+    answer = "Some answer text."
+
+    # Must not raise any exception
+    score = evaluator._run_structural_checks(checks, answer)
+
+    # Invalid min_length check is treated as failed
+    assert score == 0.0

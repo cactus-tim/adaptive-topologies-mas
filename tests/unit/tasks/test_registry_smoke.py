@@ -124,3 +124,31 @@ def test_sample_humaneval_different_seeds(monkeypatch: pytest.MonkeyPatch) -> No
     ids_a = {s.id for s in sample_a}
     ids_b = {s.id for s in sample_b}
     assert ids_a != ids_b, "Different seeds should produce different samples"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: True sampler determinism — cache cleared between calls
+# ---------------------------------------------------------------------------
+
+
+def test_sample_humaneval_determinism_fresh_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same seed produces identical results even when cache is cleared between calls.
+
+    This test verifies sampler determinism — not merely a cache hit.
+    The loader is called twice (cache is evicted between the two sample calls),
+    and the same seed must still produce the same ordered sample.
+    """
+    fake_specs = _make_fake_specs(20)
+
+    from atm.tasks.humaneval import HumanEvalLoader
+
+    monkeypatch.setattr(HumanEvalLoader, "load", lambda self, cache_dir=None: fake_specs)
+
+    TASKS._cache.pop("humaneval", None)
+    first = TASKS.sample("humaneval", n=10, seed=42)
+
+    # Clear the registry cache to force a second fresh load
+    TASKS._cache.clear()
+    second = TASKS.sample("humaneval", n=10, seed=42)
+
+    assert first == second, "Same seed must produce identical sample even after cache clear"
