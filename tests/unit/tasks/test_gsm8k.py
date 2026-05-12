@@ -27,9 +27,7 @@ from atm.tasks.gsm8k import GSM8KLoader, GSM8KMatcher
 # Fixture helpers
 # ---------------------------------------------------------------------------
 
-_FIXTURE_PATH = (
-    Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "gsm8k_sample.json"
-)
+_FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "gsm8k_sample.json"
 
 
 def _load_fixture_rows() -> list[dict[str, Any]]:

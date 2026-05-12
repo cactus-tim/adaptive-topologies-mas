@@ -31,14 +31,10 @@ __all__ = [
 
 # Matches "#### <number>" at the end of a GSM8K answer string.
 # Group 1: the raw number string (may include commas, optional decimal part).
-_FINAL_NUMBER_RE = re.compile(
-    r"####\s*(-?[0-9][\d,]*(?:\.\d+)?)"
-)
+_FINAL_NUMBER_RE = re.compile(r"####\s*(-?[0-9][\d,]*(?:\.\d+)?)")
 
 # Matches any numeric token (with optional sign, commas, decimals) in free text.
-_NUMERIC_TOKEN_RE = re.compile(
-    r"-?\d[\d,]*(?:\.\d+)?"
-)
+_NUMERIC_TOKEN_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
 
 def _extract_final_number(text: str) -> str | None:

@@ -54,9 +54,7 @@ async def _invoke_judge(
     """
     try:
         # Use dict-format messages — FakeLLM and LLMWrapper both accept list[dict[str,Any]]
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": prompt, "kind": "request"}
-        ]
+        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt, "kind": "request"}]
         response = await llm_like.ainvoke(messages, agent_id=agent_id)
         text: str = response.text or ""
 

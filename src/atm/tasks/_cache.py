@@ -143,10 +143,7 @@ def read_cache(
     path = _cache_path(key, target_dir)
 
     if not path.exists():
-        raise FileNotFoundError(
-            f"No cache file for dataset key {key!r}. "
-            f"Expected: {path}"
-        )
+        raise FileNotFoundError(f"No cache file for dataset key {key!r}. Expected: {path}")
 
     table = pq.read_table(path)  # type: ignore[no-untyped-call]
     result: list[dict[str, Any]] = table.to_pylist()
