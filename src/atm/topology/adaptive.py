@@ -46,10 +46,17 @@ import logging
 import uuid
 from typing import Any, cast
 
+from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
 
 from atm.core.state import GraphState, SharedState
-from atm.core.types import Phase, PhaseDecision, TopologyDecision, TopologyTransition
+from atm.core.types import (
+    Phase,
+    PhaseDecision,
+    PhaseTransition,
+    TopologyDecision,
+    TopologyTransition,
+)
 from atm.phases.guards import GuardedRouter, SwitchGuards
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
 from atm.phases.topology_router import RuleBasedTopologyRouter
@@ -527,6 +534,35 @@ class AdaptiveTopology:
                 topo_decision,
                 run_id=run_id_str,
             )
+
+            # ---- Dispatch custom events so ExperimentCallback persists them ----
+            # (a) topology_transition — every tick (incl. no-change)
+            new_transitions: list[TopologyTransition] = new_state.get("topology_transitions") or []
+            if new_transitions:
+                latest_tt = new_transitions[-1]
+                try:
+                    await adispatch_custom_event("topology_transition", latest_tt)
+                except Exception:
+                    _log.debug(
+                        "adispatch topology_transition skipped (no callback ctx)", exc_info=True
+                    )
+
+            # (b) phase_transition — only when phase actually advanced
+            new_shared = new_state.get("shared") or {}
+            new_phase: Phase = new_shared.get("phase", current_phase)
+            if new_phase != current_phase:
+                try:
+                    phase_tx = PhaseTransition(
+                        run_id=uuid.UUID(run_id_str),
+                        from_phase=current_phase,
+                        to_phase=new_phase,
+                        entry_reason=phase_decision.reason,
+                        iter_total=int(new_shared.get("iter_total", 0)),
+                        decided_by=phase_decision.decided_by,
+                    )
+                    await adispatch_custom_event("phase_transition", phase_tx)
+                except Exception:
+                    _log.debug("adispatch phase_transition skipped", exc_info=True)
 
             # Clear slots for next tick
             _phase_dec_slot[0] = None

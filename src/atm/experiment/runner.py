@@ -545,7 +545,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             )
 
             # Adaptive meta-graph runs many super-steps per task tick (4 nodes
-            # per loop iteration × max_iterations of subgraph dispatch).
+            # per loop iteration x max_iterations of subgraph dispatch).
             # Default LangGraph recursion_limit=25 is too low.
             recursion_limit = max(100, (cfg.topology.max_iterations or 30) * 4 + 20)
             final_state = await compiled_graph.ainvoke(
