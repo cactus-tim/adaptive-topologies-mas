@@ -1,17 +1,17 @@
 # M10 Resync — Задачи
 
-## Волна 1: Enum + удаление устаревшего кода (атомарная) — НЕ НАЧАТО
+## Волна 1: Enum + удаление устаревшего кода (атомарная) — ВЫПОЛНЕНО
 
 > **Критично:** Шаги 1.1 и 1.2 должны попасть в ОДИН коммит. После 1.1 `mmlu.py`/`creative.py`/`analysis.py` невалидны при импорте. Не запускай suite между ними.
 
-- [ ] 1.1 Мигрировать `TaskSpec.type` Literal enum — `src/atm/core/types.py`
+- [x] 1.1 Мигрировать `TaskSpec.type` Literal enum — `src/atm/core/types.py`
   - Тип: simple
   - Зависит от: ничего
   - Параллельно с: ничем (все остальные шаги зависят от этого)
   - Принятие: `TaskSpec(type="reasoning")` OK; `type="qa"` → `ValidationError`
   - Имплементация: заменить строку 269 — `Literal["programming", "qa", "creative", "analysis"]` → `Literal["programming", "reasoning", "creative", "decision"]`; не трогать ничего больше в файле
 
-- [ ] 1.2 Удалить creative/analysis/mmlu модули, конфиги, фикстуры, тесты — `src/atm/tasks/__init__.py` + 10 файлов `git rm`
+- [x] 1.2 Удалить creative/analysis/mmlu модули, конфиги, фикстуры, тесты — `src/atm/tasks/__init__.py` + 10 файлов `git rm`
   - Тип: simple
   - Зависит от: 1.1 (атомарно, один коммит)
   - Параллельно с: ничем (редактирует `__init__.py`, с которым конфликтуют шаги 2.1–2.3)
@@ -26,7 +26,7 @@
     - Перед удалением: grep для проверки отсутствия висящих импортов вне `dev/done/m10/`: `grep -rn "from atm\.tasks\.\(creative\|analysis\|mmlu\)\|CreativeLoader\|AnalysisLoader\|MMLULoader" src/ tests/ conf/ --exclude-dir=done`
     - Оставить `conf/tasks/.gitkeep` и `tests/fixtures/tasks/.gitkeep`
 
-- [ ] 1.3 Переименовать стале enum-ключи в oracle + аудит router — `tests/fixtures/oracle_table.json`, `tests/unit/phases/test_topology_router.py`
+- [x] 1.3 Переименовать стале enum-ключи в oracle + аудит router — `tests/fixtures/oracle_table.json`, `tests/unit/phases/test_topology_router.py`
   - Тип: simple
   - Зависит от: 1.1
   - Параллельно с: 1.2 (разные файлы — `oracle_table.json` и `test_topology_router.py` не трогаются в 1.2)
