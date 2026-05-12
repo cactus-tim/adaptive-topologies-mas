@@ -118,12 +118,17 @@ class HumanCfg(BaseModel):
     Controls whether human-in-the-loop is active, which gateway to use,
     which role the human plays, and how timeouts are handled.
 
-    When ``enabled=False`` (the default), the Chain topology behaves exactly
+    When ``enabled=False`` (the default), the topology behaves exactly
     as before — no ``human_reviewer`` node is inserted.
 
     ``model`` is an optional override for the LLM model used by
     ``LLMSimulatedGateway``.  When ``None``, the gateway derives the model
     from the top-level ``ModelCfg.default``.
+
+    ``extra`` is an optional dict for per-topology HITL configuration (M9.1).
+    Keys are topology-specific (e.g. ``judge``, ``scope``, ``activation_round``,
+    ``override_coordinator``, ``human_can_override_router``).  Caller responsibility
+    for correct key naming — typos pass silently (per plan GAP-2).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -134,6 +139,7 @@ class HumanCfg(BaseModel):
     timeout_s: float | None = 900.0
     timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
     model: str | None = None
+    extra: dict[str, Any] | None = None
 
 
 class ExperimentConfig(BaseModel):

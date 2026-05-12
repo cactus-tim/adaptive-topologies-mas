@@ -1,4 +1,4 @@
-"""Unit tests for HumanCfg Pydantic model + YAML round-trips.
+"""Unit tests for HumanCfg Pydantic model + YAML round-trips (M9 + M9.1 extra field).
 
 Tests:
   1.  HumanCfg defaults — enabled=False, gateway=llm_simulated, role=reviewer, etc.
@@ -11,6 +11,15 @@ Tests:
   8.  ExperimentConfig without human: section → human is None (back-compat)
   9.  ExperimentConfig with human: section inline → HumanCfg parsed
   10. ExperimentConfig human=None does not affect existing fields
+  11. HumanCfg with cli gateway and llm_fallback policy is valid
+  12. HumanCfg model field accepts None explicitly
+  13. HumanCfg all HumanRole variants are accepted (parametrized)
+  --- M9.1 extra field tests ---
+  14. HumanCfg extra=None by default
+  15. HumanCfg extra={...} validates and passes through unchanged
+  16. HumanCfg with extra={"judge": "human"} is valid
+  17. HumanCfg frozen — extra field also immutable
+  18. ExperimentConfig with human.extra in YAML round-trips correctly
 """
 
 from __future__ import annotations
@@ -57,6 +66,7 @@ def test_human_cfg_defaults() -> None:
     assert h.timeout_s == pytest.approx(900.0)
     assert h.timeout_policy == "llm_fallback"
     assert h.model is None
+    assert h.extra is None
 
 
 # ---------------------------------------------------------------------------
@@ -235,3 +245,93 @@ def test_human_cfg_model_none_explicit() -> None:
 def test_human_cfg_all_roles_accepted(role_str: str, expected: HumanRole) -> None:
     h = HumanCfg.model_validate({"role": role_str})
     assert h.role == expected
+
+
+# ===========================================================================
+# M9.1 extra field tests
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# 14. extra=None by default
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_extra_none_by_default() -> None:
+    """HumanCfg.extra is None when not provided (backwards-compatible default)."""
+    h = HumanCfg()
+    assert h.extra is None
+
+
+# ---------------------------------------------------------------------------
+# 15. extra={...} validates and passes through unchanged
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_extra_dict_passthrough() -> None:
+    """extra dict is preserved as-is after validation."""
+    extra_data = {"judge": "human", "scope": "top", "activation_round": 2}
+    h = HumanCfg.model_validate({"extra": extra_data})
+    assert h.extra == extra_data
+
+
+# ---------------------------------------------------------------------------
+# 16. extra={"judge": "human"} is valid — no error raised
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_extra_judge_human() -> None:
+    """Debate judge mode passthrough via extra."""
+    h = HumanCfg(enabled=True, extra={"judge": "human"})
+    assert h.extra is not None
+    assert h.extra["judge"] == "human"
+
+
+# ---------------------------------------------------------------------------
+# 17. frozen — extra field is also immutable
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_extra_field_is_immutable() -> None:
+    """Cannot mutate extra after construction (frozen model)."""
+    h = HumanCfg(extra={"key": "value"})
+    with pytest.raises((TypeError, ValidationError)):
+        h.extra = {"other": "value"}  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# 18. ExperimentConfig with human.extra in YAML round-trips correctly
+# ---------------------------------------------------------------------------
+
+
+def test_experiment_config_human_extra_yaml_roundtrip(tmp_path: Path) -> None:
+    """human.extra dict survives YAML → OmegaConf → Pydantic round-trip."""
+    yaml_content = """
+name: "extra_roundtrip_test"
+model:
+  default: "fake:echo"
+agents:
+  set: "canonical_4"
+topology:
+  name: "debate"
+task:
+  name: "t1"
+observability:
+  pg_dsn: "postgresql://localhost/test"
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: judge
+  extra:
+    judge: "human"
+    scope: "top"
+    activation_round: 2
+"""
+    cfg_file = tmp_path / "with_extra.yaml"
+    cfg_file.write_text(yaml_content)
+    cfg = load_config(str(cfg_file))
+    assert cfg.human is not None
+    assert cfg.human.extra is not None
+    assert cfg.human.extra["judge"] == "human"
+    assert cfg.human.extra["scope"] == "top"
+    assert cfg.human.extra["activation_round"] == 2

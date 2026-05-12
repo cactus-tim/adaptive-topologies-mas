@@ -191,6 +191,10 @@ async def _insert_run(
     """
     run_id = uuid.uuid4()
 
+    human_role_value: str | None = (
+        cfg.human.role.value if cfg.human is not None and cfg.human.enabled else None
+    )
+
     async with session_scope(session_factory) as session:
         run = Run(
             id=run_id,
@@ -205,6 +209,7 @@ async def _insert_run(
             status="running",
             budget_spent_usd=Decimal("0"),
             started_at=datetime.now(UTC),
+            human_role=human_role_value,
         )
         session.add(run)
 
