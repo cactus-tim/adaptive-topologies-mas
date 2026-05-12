@@ -8,8 +8,7 @@ Side-effect imports (guarded):
     Guards ensure this package loads cleanly even if a module does not
     yet exist.
 
-Registration list: commongen.py, gsm8k.py, humaneval.py
-  (Wave 2 will add dabench).
+Registration list: commongen.py, dabench.py, gsm8k.py, humaneval.py
 """
 
 from __future__ import annotations
@@ -48,6 +47,9 @@ __all__ = [
 
 with contextlib.suppress(ImportError):
     importlib.import_module("atm.tasks.commongen")
+
+with contextlib.suppress(ImportError):
+    importlib.import_module("atm.tasks.dabench")
 
 with contextlib.suppress(ImportError):
     importlib.import_module("atm.tasks.gsm8k")
