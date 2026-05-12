@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.core.errors import BudgetExceededError
+from atm.core.seed import seed_all
 from atm.core.types import Phase
 from atm.evaluation.aggregator import compute_quality
 from atm.experiment.config import ExperimentConfig
@@ -483,6 +484,11 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
     budget_spent: float = 0.0
     iterations: int = 0
     final_answer: str = ""
+    llms: dict[str, LLMWrapper] | None = None  # populated in try; read in finally
+    sandbox: Any | None = None  # populated in try; read in finally for digest capture
+
+    # Seed all RNGs for reproducibility before any stochastic work.
+    seed_all(cfg.seed)
 
     try:
         # Step 1: ensure experiment row exists
@@ -521,7 +527,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             )
             judge_llm = None
 
-        # Step 4: build LLM wrappers per role
+        # Step 4: build LLM wrappers per role (assigned to outer-scope var for finally block)
         llms = _build_llm_wrappers(cfg, budget, pricing)
 
         # Step 5: build agents
@@ -589,12 +595,11 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
         # Step 11: evaluate
-        sandbox = SubprocessSandbox()
+        sandbox = SubprocessSandbox()  # assigned to outer-scope var for finally digest capture
         spec = resolve_spec(cfg.task)
         if spec is None:
             logger.debug(
-                "resolve_spec returned None (inline-prompt path); "
-                "setting quality_score=0.0",
+                "resolve_spec returned None (inline-prompt path); setting quality_score=0.0",
                 task=cfg.task.name,
             )
             quality_score = 0.0
@@ -723,8 +728,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 )
             except Exception:
                 logger.warning(
-                    "compute_quality raised unexpectedly on run failure; "
-                    "setting quality_score=None"
+                    "compute_quality raised unexpectedly on run failure; setting quality_score=None"
                 )
                 quality_score = None
         error_text = traceback.format_exc()
@@ -754,4 +758,46 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         raise
 
     finally:
+        # Persist actual model versions reported by providers (G2 reproducibility).
+        # Runs in finally so even failed runs record provider fingerprints.
+        if run_id is not None and llms:
+            try:
+                snap = {
+                    role: w.last_model_version
+                    for role, w in llms.items()
+                    if getattr(w, "last_model_version", None) is not None
+                }
+                if snap:
+                    async with session_factory() as _snap_session:
+                        await _snap_session.execute(
+                            sa.update(Run)
+                            .where(Run.id == run_id)
+                            .values(model_version_snapshot=snap)
+                        )
+                        await _snap_session.commit()
+            except Exception as _snap_exc:
+                logger.warning(
+                    "model_version_snapshot UPDATE failed",
+                    error=str(_snap_exc)[:200],
+                )
+
+        # Persist sandbox image digest (G2 reproducibility).
+        # Only fires when sandbox has a non-None image_digest (i.e. DockerSandbox).
+        if run_id is not None and sandbox is not None:
+            _sandbox_digest = getattr(sandbox, "image_digest", None)
+            if _sandbox_digest is not None:
+                try:
+                    async with session_factory() as _dig_session:
+                        await _dig_session.execute(
+                            sa.update(Run)
+                            .where(Run.id == run_id)
+                            .values(sandbox_image_digest=_sandbox_digest[:80])
+                        )
+                        await _dig_session.commit()
+                except Exception as _dig_exc:
+                    logger.warning(
+                        "sandbox_image_digest UPDATE failed",
+                        error=str(_dig_exc)[:200],
+                    )
+
         await engine.dispose()

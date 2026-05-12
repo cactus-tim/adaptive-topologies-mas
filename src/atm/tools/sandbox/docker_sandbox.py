@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import docker  # type: ignore[import-untyped]
+import docker.errors  # type: ignore[import-untyped]
 import requests.exceptions  # type: ignore[import-untyped]
 
 from atm.tools.sandbox.base import ExecResult, SandboxConfig
@@ -71,10 +72,22 @@ class DockerSandbox:
             **_DEFAULT_IMAGE_MAP,
             **(image_map or {}),
         }
-        self._client: docker.DockerClient = docker.from_env()
+        self.image_digest: str | None = None
+
+        try:
+            self._client: docker.DockerClient = docker.from_env()
+            try:
+                python_image = self._image_map["python"]
+                img = self._client.images.get(python_image)
+                self.image_digest = img.id
+            except (docker.errors.DockerException, docker.errors.ImageNotFound, OSError, KeyError):
+                self.image_digest = None
+        except (docker.errors.DockerException, OSError):
+            # Docker daemon unavailable — create a no-op client placeholder
+            self._client = None  # type: ignore[assignment]
 
         should_pull = prefetch or os.environ.get("ATM_AUTO_PULL_IMAGES") == "1"
-        if should_pull:
+        if should_pull and self._client is not None:
             for image in self._image_map.values():
                 self._client.images.pull(image)
 

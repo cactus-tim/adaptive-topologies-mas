@@ -69,7 +69,7 @@
 
 ## Wave 3: Sequential runner.py edits [Steps 4, 5, 6] — NOT STARTED
 
-- [ ] 4 [tdd] Add `core/seed.py` with `seed_all` + unit tests + wire into runner
+- [x] 4 [tdd] Add `core/seed.py` with `seed_all` + unit tests + wire into runner
   — `src/atm/core/seed.py` (new), `src/atm/core/__init__.py`,
   `src/atm/experiment/runner.py`, `tests/unit/core/test_seed.py` (new)
   - Acceptance: `uv run pytest tests/unit/core/test_seed.py -q` green;
@@ -79,7 +79,7 @@
   - Notes: `torch.manual_seed` wrapped in `try/except ImportError`. Use
     `# type: ignore[import-not-found]` for torch. Depends On: 1.
 
-- [ ] 5 [tdd] Capture `model_version_snapshot` in `LLMWrapper`, persist on `Run`
+- [x] 5 [tdd] Capture `model_version_snapshot` in `LLMWrapper`, persist on `Run`
   — `src/atm/llm/wrapper.py`, `src/atm/experiment/runner.py`,
   `tests/unit/llm/test_model_version_snapshot.py` (new)
   - Acceptance: unit test asserts `last_model_version` updates after `ainvoke` with
@@ -92,7 +92,7 @@
     Collect `{role: wrapper.last_model_version for role, wrapper in wrappers.items()
     if wrapper.last_model_version is not None}`. Depends On: 1, 4.
 
-- [ ] 6 [tdd] Capture `sandbox_image_digest` in `DockerSandbox`, persist on `Run`
+- [x] 6 [tdd] Capture `sandbox_image_digest` in `DockerSandbox`, persist on `Run`
   — `src/atm/tools/sandbox/base.py`, `src/atm/tools/sandbox/docker_sandbox.py`,
   `src/atm/tools/sandbox/subprocess_sandbox.py`, `src/atm/experiment/runner.py`,
   `tests/unit/tools/test_sandbox_digest.py` (new)

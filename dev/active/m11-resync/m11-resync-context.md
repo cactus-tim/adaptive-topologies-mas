@@ -9,6 +9,31 @@
   Pulled audit-driven `arch/PLAN.md` from `origin/feat/m9` (commit 00c95c0) to add G2/G6/G7/G8/G10.
   All 4 post-merge invariants verified.
 
+### COMPLETED
+- Step 4: Created `src/atm/core/seed.py::seed_all(seed)` seeding `random`, `numpy` (optional), `torch` (optional).
+  Re-exported from `src/atm/core/__init__.py`. Wired `seed_all(cfg.seed)` into `src/atm/experiment/runner.py::run_one`
+  before `_ensure_experiment`. 9 new unit tests in `tests/unit/core/test_seed.py`. 1122/1122 unit tests pass.
+
+### COMPLETED
+- Step 5: Added `_extract_model_version(response_metadata)` helper and `last_model_version: str | None`
+  attribute to `LLMWrapper`. Captures Anthropic `response_metadata['model']` and OpenAI
+  `response_metadata['system_fingerprint']` (with `model_name` / `model` fallback) after each
+  successful `ainvoke`. Added `model_version_snapshot` UPDATE in `finally` block of `runner.run_one`
+  (collects non-None snapshots from all role wrappers; only fires when at least one entry exists).
+  16 new unit tests in `tests/unit/llm/test_model_version_snapshot.py`. 1138/1138 unit tests pass.
+  UPDATE call: `src/atm/experiment/runner.py:773`.
+
+### COMPLETED
+- Step 6: Added `image_digest: str | None` instance attribute to `DockerSandbox` (captured in
+  `__init__` via `client.images.get(image_map["python"]).id`, wrapped in
+  `except (DockerException, ImageNotFound, OSError, KeyError) -> None`; outer `docker.from_env()`
+  also wrapped in `except (DockerException, OSError)` to handle unavailable daemon).
+  Added class-level `image_digest: ClassVar[str | None] = None` to `SubprocessSandbox`.
+  Added `sandbox_image_digest` UPDATE in `finally` block of `runner.run_one` at
+  `src/atm/experiment/runner.py:794` (only fires when `sandbox.image_digest` is non-None;
+  truncates to 80 chars for String(80) column).
+  12 new unit tests in `tests/unit/tools/test_sandbox_digest.py`. 1150/1150 unit tests pass.
+
 ### IN PROGRESS
 - Step 2 (Wave 2): Rewrite `evaluation/ground_truth.py` using `_DEPS` table
 
@@ -77,7 +102,7 @@
 **`src/atm/core/seed.py`** (new)
 - Role: Reproducibility seeding helper.
 - Planned change: Create with `seed_all(seed: int) -> None` seeding `random`, `numpy`, optional `torch`.
-- Status: NOT STARTED
+- Status: DONE — seeds `random` + numpy (if installed) + torch (if installed); wired into runner.py.
 
 **`src/atm/observability/log_processors.py`** (new)
 - Role: Custom structlog processors.
