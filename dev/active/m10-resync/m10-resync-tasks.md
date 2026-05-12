@@ -38,11 +38,11 @@
 
 ---
 
-## Волна 2: GSM8K → CommonGen → DABench (TDD, строго последовательно) — НЕ НАЧАТО
+## Волна 2: GSM8K → CommonGen → DABench (TDD, строго последовательно) — В РАБОТЕ
 
 > Шаги 2.1, 2.2, 2.3 нельзя параллелить: все три редактируют `src/atm/tasks/__init__.py`. Следуй порядку.
 
-- [ ] 2.1 Добавить GSM8K загрузчик + numeric-match оценщик + 7 тестов — `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`, `__init__.py`
+- [x] 2.1 Добавить GSM8K загрузчик + numeric-match оценщик + 7 тестов — `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`, `__init__.py`
   - Тип: tdd
   - Зависит от: 1.1, 1.2
   - Параллельно с: ничем (редактирует `__init__.py`)
@@ -150,7 +150,7 @@
 - Всего задач: 11 (1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 3.1, 3.2, 4.1, 5.1)
 - Новых тестов: 7 (GSM8K) + 9 (CommonGen) + 11 (DABench) + 3 (smoke sampling) = **30 новых тестов**
 - Оценка: ~6h
-- Выполнено: 0 / 11
+- Выполнено: 1 / 11
 
 ## Как обновлять
 
