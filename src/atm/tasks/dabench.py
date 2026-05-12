@@ -122,9 +122,7 @@ def _serialise_common_answers(pairs: list[tuple[str, str]]) -> str:
         >>> _serialise_common_answers([("b", "2.5"), ("a", "1.0")])
         '@a[1.0] @b[2.5]'
     """
-    return " ".join(
-        f"@{name}[{value}]" for name, value in sorted(pairs, key=lambda p: p[0])
-    )
+    return " ".join(f"@{name}[{value}]" for name, value in sorted(pairs, key=lambda p: p[0]))
 
 
 def _load_curated_jsonl() -> list[TaskSpec]:
@@ -398,9 +396,7 @@ class DABenchEvaluator:
             # Numeric comparison with abs_tol=1e-2
             pair_correct: bool
             try:
-                pair_correct = math.isclose(
-                    float(extracted), float(exp_val), abs_tol=1e-2
-                )
+                pair_correct = math.isclose(float(extracted), float(exp_val), abs_tol=1e-2)
             except ValueError:
                 # Categorical fallback: case-insensitive string comparison
                 pair_correct = extracted.strip().lower() == exp_val.strip().lower()

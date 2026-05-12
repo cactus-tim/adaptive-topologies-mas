@@ -37,9 +37,7 @@ from atm.tasks.dabench import DABenchEvaluator, DABenchLoader
 # Fixture helpers
 # ---------------------------------------------------------------------------
 
-_FIXTURE_PATH = (
-    Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "dabench_curated.jsonl"
-)
+_FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "dabench_curated.jsonl"
 
 _PAIR_RE = re.compile(r"@([A-Za-z_][\w]*)\[([^\]]+)\]")
 
@@ -99,9 +97,7 @@ def test_dabench_offline_curated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
         assert spec.evaluator_key == "dabench_numeric_exact", (
             f"Expected evaluator_key='dabench_numeric_exact', got {spec.evaluator_key!r}"
         )
-        assert spec.id.startswith("dabench/"), (
-            f"id should start with 'dabench/', got {spec.id!r}"
-        )
+        assert spec.id.startswith("dabench/"), f"id should start with 'dabench/', got {spec.id!r}"
 
     # N1: at least one spec must have exactly two @name[value] pairs in sorted name order
     multi_pair_specs = [s for s in specs if len(_PAIR_RE.findall(s.expected or "")) >= 2]
@@ -129,12 +125,8 @@ def test_dabench_remote_serialises_common_answers(tmp_path: Path) -> None:
     Input:  common_answers = [["b_metric", "2.5"], ["a_metric", "1.0"]]
     Output: expected = "@a_metric[1.0] @b_metric[2.5]"  (sorted by name)
     """
-    questions = [
-        {"id": 1, "question": "What are the metrics?"}
-    ]
-    labels = [
-        {"id": 1, "common_answers": [["b_metric", "2.5"], ["a_metric", "1.0"]]}
-    ]
+    questions = [{"id": 1, "question": "What are the metrics?"}]
+    labels = [{"id": 1, "common_answers": [["b_metric", "2.5"], ["a_metric", "1.0"]]}]
 
     with patch("atm.tasks.dabench.datasets.load_dataset") as mock_ld:
         q_split = _make_mock_hf_split(questions)
@@ -158,12 +150,8 @@ def test_dabench_remote_serialises_common_answers(tmp_path: Path) -> None:
 
 def test_dabench_remote_multi_pair_sorted(tmp_path: Path) -> None:
     """Sort order is deterministic regardless of input order of common_answers."""
-    questions = [
-        {"id": 10, "question": "Calculate z, y, x metrics."}
-    ]
-    labels = [
-        {"id": 10, "common_answers": [["z_val", "3.0"], ["x_val", "1.0"], ["y_val", "2.0"]]}
-    ]
+    questions = [{"id": 10, "question": "Calculate z, y, x metrics."}]
+    labels = [{"id": 10, "common_answers": [["z_val", "3.0"], ["x_val", "1.0"], ["y_val", "2.0"]]}]
 
     with patch("atm.tasks.dabench.datasets.load_dataset") as mock_ld:
         q_split = _make_mock_hf_split(questions)
@@ -221,8 +209,7 @@ def test_dabench_falls_back_on_network_error(tmp_path: Path) -> None:
         for record in cap_logs
     )
     assert warning_found, (
-        f"Expected a structlog warning about dabench remote unavailability. "
-        f"Got: {cap_logs}"
+        f"Expected a structlog warning about dabench remote unavailability. Got: {cap_logs}"
     )
 
 
@@ -278,9 +265,7 @@ async def test_dabench_evaluator_full_match() -> None:
     result = await evaluator.evaluate(spec, "The mean fare is @mean_fare[34.65] per passenger.")
 
     assert result.passed is True, f"Expected passed=True, got {result.passed}"
-    assert math.isclose(result.score, 1.0, abs_tol=1e-9), (
-        f"Expected score=1.0, got {result.score}"
-    )
+    assert math.isclose(result.score, 1.0, abs_tol=1e-9), f"Expected score=1.0, got {result.score}"
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +394,9 @@ async def test_dabench_evaluator_vacuous() -> None:
 
     result = await evaluator.evaluate(spec, "Any answer at all.")
 
-    assert result.passed is True, f"Expected passed=True for vacuous (empty) expected, got {result.passed}"
+    assert result.passed is True, (
+        f"Expected passed=True for vacuous (empty) expected, got {result.passed}"
+    )
     assert math.isclose(result.score, 1.0, abs_tol=1e-9), (
         f"Expected score=1.0 for vacuous case, got {result.score}"
     )

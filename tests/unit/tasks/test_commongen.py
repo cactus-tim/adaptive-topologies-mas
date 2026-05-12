@@ -39,9 +39,7 @@ from atm.tasks.commongen import CommonGenEvaluator, CommonGenLoader, _rouge_l
 # Fixture helpers
 # ---------------------------------------------------------------------------
 
-_FIXTURE_PATH = (
-    Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "commongen_sample.json"
-)
+_FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "commongen_sample.json"
 
 
 def _load_fixture_rows() -> list[dict[str, Any]]:
@@ -107,8 +105,7 @@ def test_commongen_loader_via_dataset(tmp_path: Path) -> None:
     assert len(shared_specs) == 1, "Expected exactly 1 spec with 'ski' concept"
     shared_spec = shared_specs[0]
     assert len(shared_spec.metadata["references"]) == 2, (  # type: ignore[index]
-        f"Expected 2 references for shared idx=0, got "
-        f"{len(shared_spec.metadata['references'])}"  # type: ignore[index]
+        f"Expected 2 references for shared idx=0, got {len(shared_spec.metadata['references'])}"  # type: ignore[index]
     )
 
     # All specs must conform to the expected structure
@@ -177,9 +174,7 @@ def test_rouge_l_exact() -> None:
     """pred == ref → _rouge_l returns 1.0 (within float epsilon)."""
     text = "the quick brown fox jumps over the lazy dog"
     result = _rouge_l(text, text)
-    assert math.isclose(result, 1.0, abs_tol=1e-9), (
-        f"Expected _rouge_l(x, x) == 1.0, got {result}"
-    )
+    assert math.isclose(result, 1.0, abs_tol=1e-9), f"Expected _rouge_l(x, x) == 1.0, got {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +199,7 @@ def test_rouge_l_partial() -> None:
     ref = "the cat sat on a mat"
     result = _rouge_l(pred, ref)
     assert math.isclose(result, 5 / 6, abs_tol=1e-6), (
-        f"Expected _rouge_l({pred!r}, {ref!r}) ≈ {5/6:.6f}, got {result}"
+        f"Expected _rouge_l({pred!r}, {ref!r}) ≈ {5 / 6:.6f}, got {result}"
     )
 
 
