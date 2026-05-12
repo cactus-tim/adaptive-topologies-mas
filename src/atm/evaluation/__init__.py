@@ -25,7 +25,7 @@ from atm.evaluation.metrics import (
     humaneval_pass_at_k,
     time_per_quality,
 )
-from atm.evaluation.tlx import NasaTLX, aggregate_tlx
+from atm.evaluation.tlx import NasaTLX, aggregate_tlx, persist_tlx
 
 __all__ = [
     "NasaTLX",
@@ -41,6 +41,7 @@ __all__ = [
     "cost_per_quality",
     "humaneval_pass_at_k",
     "persist_quality",
+    "persist_tlx",
     "score_ground_truth",
     "time_per_quality",
 ]

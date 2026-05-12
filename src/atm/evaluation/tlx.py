@@ -1,13 +1,16 @@
-"""NASA-TLX model and aggregation helper.
+"""NASA-TLX model, aggregation helper, and TLX persistence.
 
 Reference: arch.md §13.3
 Storage: human_interactions.tlx_scores (JSONB) + raw_tlx_score (DOUBLE PRECISION).
-M9 owns the write path; this module provides the model and aggregate helper only.
 """
 
 from __future__ import annotations
 
+import uuid
+
+import sqlalchemy as sa
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class NasaTLX(BaseModel):
@@ -43,3 +46,30 @@ class NasaTLX(BaseModel):
 def aggregate_tlx(ratings: list[NasaTLX]) -> float:
     """Return the mean raw_score across a list of NasaTLX ratings."""
     return sum(r.raw_score for r in ratings) / len(ratings)
+
+
+async def persist_tlx(
+    session: AsyncSession,
+    interaction_id: uuid.UUID,
+    raw_score: float,
+) -> None:
+    """Idempotent UPDATE: write raw_tlx_score to human_interactions row.
+
+    Mirrors the style of evaluation/aggregator.py::persist_quality.
+    If the row does not exist the UPDATE affects 0 rows and the call is a
+    no-op (caller decides whether to treat that as an error).
+
+    Args:
+        session:        An open AsyncSession (caller owns transaction scope).
+        interaction_id: UUID of the human_interactions row to update.
+        raw_score:      The aggregated TLX score to persist.
+    """
+    table = sa.table(
+        "human_interactions",
+        sa.column("id"),
+        sa.column("raw_tlx_score"),
+    )
+    await session.execute(
+        sa.update(table).where(table.c.id == interaction_id).values(raw_tlx_score=raw_score)
+    )
+    await session.commit()

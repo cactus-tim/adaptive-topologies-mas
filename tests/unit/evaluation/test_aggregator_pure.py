@@ -25,11 +25,11 @@ from atm.tasks.base import EvalResult, TaskSpec
 
 def _make_spec(**kwargs: Any) -> TaskSpec:
     defaults: dict[str, Any] = {
-        "id": "mmlu/test/0",
-        "type": "qa",
+        "id": "gsm8k/test/0",
+        "type": "reasoning",
         "input": "What is 2+2?",
         "expected": "4",
-        "evaluator_key": "mmlu_exact_match",
+        "evaluator_key": "gsm8k_numeric",
     }
     defaults.update(kwargs)
     return TaskSpec(**defaults)

@@ -190,11 +190,11 @@ async def test_registered_task_calls_compute_quality() -> None:
     final_state = _make_final_state(final_answer="some answer")
 
     fake_spec = TaskSpec(
-        id="mmlu:mmlu_test_001",
-        type="qa",
+        id="gsm8k:gsm8k_test_001",
+        type="reasoning",
         input="What is 2+2?",
-        expected="A",
-        evaluator_key="mmlu_exact_match",
+        expected="4",
+        evaluator_key="gsm8k_numeric",
     )
 
     mock_pw = AsyncMock()

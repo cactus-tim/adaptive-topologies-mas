@@ -172,6 +172,10 @@ class EvaluatorRegistry:
                 f"{name!r} not registered. Known: {sorted(self._registry.keys())}"
             ) from None
 
+    def names(self) -> list[str]:
+        """Return sorted list of registered evaluator names."""
+        return sorted(self._registry.keys())
+
 
 # ---------------------------------------------------------------------------
 # TaskRegistry

@@ -24,10 +24,10 @@ def test_resolve_spec_registered_name_returns_task_spec() -> None:
     # We patch TASKS.get to avoid needing actual dataset files
     fake_spec = TaskSpec(
         id="mmlu/test/0",
-        type="qa",
+        type="reasoning",
         input="Question text",
         expected="A",
-        evaluator_key="mmlu_exact_match",
+        evaluator_key="gsm8k_numeric",
     )
 
     mock_task_cfg = MagicMock()
@@ -72,17 +72,17 @@ def test_resolve_spec_seed_determinism() -> None:
     """resolve_spec called twice with same seed returns same TaskSpec."""
     fake_spec_a = TaskSpec(
         id="mmlu/test/42",
-        type="qa",
+        type="reasoning",
         input="Question A",
         expected="B",
-        evaluator_key="mmlu_exact_match",
+        evaluator_key="gsm8k_numeric",
     )
     fake_spec_b = TaskSpec(
         id="mmlu/test/42",
-        type="qa",
+        type="reasoning",
         input="Question A",
         expected="B",
-        evaluator_key="mmlu_exact_match",
+        evaluator_key="gsm8k_numeric",
     )
 
     mock_task_cfg = MagicMock()
