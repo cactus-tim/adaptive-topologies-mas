@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.core.errors import BudgetExceededError
 from atm.core.types import HumanRole, Phase
+from atm.evaluation import human_sim_cognitive_load_proxy
 from atm.experiment._evaluator import evaluate
 from atm.experiment.config import ExperimentConfig, HumanCfg
 from atm.human.role_router import (
@@ -293,20 +294,43 @@ async def _update_run_success(
     quality_score: float,
     budget_spent_usd: float,
     iterations: int,
+    human_role: str | None = None,
+    cognitive_load_proxy: float | None = None,
 ) -> None:
-    """Update run row to completed status."""
+    """Update run row to completed status.
+
+    Args:
+        session_factory:      Async session factory.
+        run_id:               UUID of the run row.
+        exp_id:               UUID of the parent experiment (unused directly but kept
+                              for call-site symmetry with _update_run_failed).
+        quality_score:        Evaluation quality score.
+        budget_spent_usd:     Total budget spent.
+        iterations:           Total iteration count.
+        human_role:           Dynamic role value from the last human_interactions row
+                              (if any). When not None, overwrites the static value that
+                              was written at INSERT time.  When None, the column is left
+                              as-is (initial value from cfg.human.role).
+        cognitive_load_proxy: NASA-TLX proxy float; always written (NULL is fine for
+                              Postgres — budget-failed runs get NULL implicitly).
+    """
+    values: dict[str, object] = {
+        "status": "completed",
+        "finish_reason": FinishReason.SUCCESS.value,
+        "quality_score": quality_score,
+        "budget_spent_usd": Decimal(str(budget_spent_usd)),
+        "iterations": iterations,
+        "finished_at": datetime.now(UTC),
+        "cognitive_load_proxy": cognitive_load_proxy,
+    }
+    if human_role is not None:
+        values["human_role"] = human_role
+
     async with session_scope(session_factory) as session:
         await session.execute(
             sa.update(Run)
             .where(Run.id == run_id)
-            .values(
-                status="completed",
-                finish_reason=FinishReason.SUCCESS.value,
-                quality_score=quality_score,
-                budget_spent_usd=Decimal(str(budget_spent_usd)),
-                iterations=iterations,
-                finished_at=datetime.now(UTC),
-            )
+            .values(**values)
         )
 
 
@@ -676,6 +700,44 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
 
+        # Step 12a: resolve dynamic human_role and cognitive_load_proxy.
+        # Both operations are wrapped in try/except so that a DB or metric failure
+        # NEVER prevents _update_run_success from completing (fk M2).
+        # budget-failed runs skip this block entirely → both fields remain NULL (fk M3).
+        dynamic_human_role: str | None = None
+        dynamic_cog_proxy: float | None = None
+
+        try:
+            async with session_scope(session_factory) as _hi_session:
+                last_role_result = await _hi_session.execute(
+                    sa.text(
+                        "SELECT role FROM human_interactions"
+                        " WHERE run_id = :rid"
+                        " ORDER BY requested_at DESC LIMIT 1"
+                    ).bindparams(rid=run_id)
+                )
+                last_role_row = last_role_result.fetchone()
+                if last_role_row is not None:
+                    dynamic_human_role = str(last_role_row[0])
+        except Exception:
+            logger.warning(
+                "failed to query last human_interactions.role; human_role left as-is",
+                run_id=str(run_id),
+                exc_info=True,
+            )
+
+        try:
+            async with session_scope(session_factory) as _cog_session:
+                dynamic_cog_proxy = await human_sim_cognitive_load_proxy(
+                    _cog_session, run_id
+                )
+        except Exception:
+            logger.warning(
+                "failed to compute cognitive_load_proxy; leaving NULL",
+                run_id=str(run_id),
+                exc_info=True,
+            )
+
         # Step 12: update run to completed
         await _update_run_success(
             session_factory,
@@ -684,6 +746,8 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             quality_score=quality_score,
             budget_spent_usd=budget_spent,
             iterations=iterations,
+            human_role=dynamic_human_role,
+            cognitive_load_proxy=dynamic_cog_proxy,
         )
 
         log.info(
