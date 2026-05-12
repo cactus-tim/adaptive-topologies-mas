@@ -8,9 +8,10 @@
 - Phase 3 (Cache + Judge): реализован `src/atm/tasks/_cache.py` — atomic write/read via os.replace, pyarrow bytes-metadata, `dataset_revision`; написан `src/atm/tasks/_judge.py` — `_invoke_judge` с JSON parse + regex fallback; 7 тестов в `tests/unit/tasks/test_cache.py`; mypy --strict + ruff clean; 983 unit-тестов зелёных.
 - Phase 4 (Loaders): реализованы все 4 loader/evaluator пары — HumanEval, MMLU, Creative, Analysis; все тесты зелёные.
 - Phase 5 (Finalization): финализирован `src/atm/tasks/__init__.py` с guarded imports всех 4 loader-модулей; добавлен re-export `TASKS, EVALUATORS` в `src/atm/__init__.py`; создан `tests/unit/tasks/test_registry_smoke.py` (4 теста: loader registration, no-network sample, determinism, different seeds); обновлён `dev/codebase-map.md` секция Tasks & Evaluation; 1013 unit-тестов зелёных; mypy --strict clean; ruff clean.
+- Phase-5 Verification Fixes: исправлены все BLOCKING/SECURITY/MINOR findings: MMLU regex расширен на lowercase+parens; Evaluator Protocol + все 4 реализации получили `artifacts` kwarg; `_run_structural_checks` обёрнут в try/except для re.error и ValueError; `cache_dir()` больше не создаёт директорию (side-effect убран); KeyError-сообщения в Registry улучшены; добавлен тест детерминизма сэмплера с очисткой кэша; 1019 unit-тестов зелёных; mypy --strict clean; ruff clean.
 
 ### IN PROGRESS
-- Все 5 фаз complete; готово к verification и PR
+- All steps complete. Phase-5 verification findings fixed and committed.
 
 ### BLOCKERS
 - None
