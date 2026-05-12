@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from atm.storage.models import Base
@@ -62,9 +63,22 @@ async def pg_engine_alembic(pg_dsn: str) -> AsyncGenerator[AsyncEngine, None]:
     DSN is passed via PG_DSN env var (as expected by alembic/env.py).
     alembic/env.py builds an async engine via async_engine_from_config,
     so the asyncpg driver suffix (postgresql+asyncpg://) MUST be kept.
+
+    Resets the ``public`` schema before ``upgrade head`` so the migration
+    actually executes regardless of leftover state. Without this reset,
+    ``pg_engine_fast`` (function-scoped) drops business tables via
+    ``Base.metadata.drop_all`` but leaves the ``alembic_version`` table
+    untouched (it is not in ``Base.metadata``); alembic then sees "already at
+    head" and skips DDL, and this test fails with missing-tables errors.
     """
     env = os.environ.copy()
     env["PG_DSN"] = pg_dsn
+
+    reset_engine = create_engine(pg_dsn, echo=False)
+    async with reset_engine.begin() as conn:
+        await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    await reset_engine.dispose()
 
     subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
