@@ -147,11 +147,30 @@
 
 **Persistence:** emitted via `adispatch_custom_event("human_request"|"human_response", ...)` from the `human_reviewer` node in Chain topology; handled by `ExperimentCallbackHandler` (`callbacks.py`) which writes to `human_interactions` table. Single-writer invariant (arch.md §10.2); idempotency by PG UNIQUE constraint `uq_human_interactions_run_request` on `(run_id, request_id)` (migration `0002_human_interactions_idempotency.py`). `on_custom_event` handles two new event names: `human_request` (INSERT ON CONFLICT DO NOTHING) and `human_response` (UPDATE WHERE response_json IS NULL).
 
-**Topology integration (M9):** Chain only — `human_reviewer` node inserted after `executor` and before `critic` when `human_cfg.enabled=True`. Other topologies (Star/Mesh/Debate/Hierarchical/Adaptive): follow-up in later milestones.
+**Topology integration (M9.1):** All 6 topologies now support HITL. Each inserts a HITL node when `human_cfg.enabled=True`; without it, the graph is byte-for-byte identical to pre-M9.1 behaviour.
+
+| Topology | HITL node | Key design | `HumanCfg.extra` keys |
+|---|---|---|---|
+| Chain | `human_reviewer` | after `executor`, before `critic`; reference implementation from M9 | — |
+| Star | `human_reviewer` | after `critic_postprocess`; `_route_from_coord` reads + clears `signals["human_phase_override"]` (`"advance"/"stay"/"finalize"`) | — |
+| Mesh | `human_peer` | added to `agent_order`; skipped until `activation_round` (default 2); `mesh_postprocess` sets `signals["consensus_pending"]` on split-vote | `activation_round: int` |
+| Debate | `human_judge` / `judge_combined` | mode `"human"`: replaces LLM judge; mode `"both"`: sequential composite (LLM → human → aggregate, human > critic); mode `"critic"` (default): no-op | `judge: "critic" \| "human" \| "both"` |
+| Hierarchical | `human_top_reviewer` / `human_sub_reviewer` | `scope="top"` (default): fires once after top coordinator; `scope="sub_team"`: fires inside each compiled subgraph (WARNING: CLIGateway not supported in subgraph, deferred to M9.2) | `scope: "top" \| "sub_team"` |
+| Adaptive | `human_advisor` | advisory mode (default): writes hint to `signals["human_advisor_hint"]`, routing unchanged; override mode: replaces `TopologyDecision`, writes `TopologyTransition.decided_by="human_override"`, SwitchGuards respected | `human_can_override_router: bool` |
+
+**`HumanCfg.extra` (M9.1):** Optional `dict[str, Any] | None = None` field added to `HumanCfg`. Per-topology keys documented in the table above; typos pass silently (caller responsibility, plan GAP-2).
+
+**`runs.human_role` (M9.1):** Now written by `Runner._insert_run` as `cfg.human.role.value` when `human_cfg.enabled=True`, `None` otherwise. Field was declared in `storage/models.py` since M3 but not written until M9.1.
+
+**`decided_by` Literal (M9.1):** Both `TopologyDecision.decided_by` and `TopologyTransition.decided_by` in `src/atm/core/types.py` now include `"human_override"`. No Alembic migration needed (DB column is `String(24)`, 14-char value fits).
+
+**Deferred to M9.2:** Subgraph-level interrupt-resume for CLIGateway inside Hierarchical `scope="sub_team"` subgraphs. WARNING docstring present on `_build_subgraph_with_human` and `_build_human_sub_reviewer_node` in `hierarchical.py`.
+
+**Cross-topology acceptance test:** `tests/integration/human/test_hitl_cross_topology.py` — 6 parametrized scenarios (one per topology), PG-gated via `ATM_ENABLE_PG_TESTS=1`. Each scenario asserts `human_interactions count >= 1` and `runs.human_role = 'reviewer'`.
 
 **Config:** `conf/human/llm_simulated.yaml` and `conf/human/cli.yaml` define `HumanCfg` parameters; `ExperimentConfig.human: HumanCfg | None = None` (default=None for back-compat).
 
-**Status:** M9 complete.
+**Status:** M9 complete, M9.1 complete (all 6 topologies HITL-enabled).
 
 ### Storage Layer (`storage/`) — M3 complete
 
