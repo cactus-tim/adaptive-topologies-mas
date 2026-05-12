@@ -8,9 +8,10 @@
 - Шаг 1.3: Переименование enum-ключей `"qa"` → `"reasoning"`, `"analysis"` → `"decision"` в `tests/fixtures/oracle_table.json`
 - Шаг 2.1: GSM8K загрузчик + numeric-match оценщик + 7 тестов (7/7 зелёных); создан `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`; guarded import добавлен в `__init__.py`
 - Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов (9/9 зелёных); создан `src/atm/tasks/commongen.py`, `tests/unit/tasks/test_commongen.py`, `tests/fixtures/tasks/commongen_sample.json`; guarded import `commongen` добавлен в `__init__.py`; mypy --strict + ruff clean
+- Шаг 2.3: DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов (11/11 зелёных); создан `src/atm/tasks/dabench.py`, `tests/unit/tasks/test_dabench.py`, `tests/fixtures/tasks/dabench_curated.jsonl` (8 строк, включая multi-pair entries); guarded import `dabench` добавлен в `__init__.py` (алфавитный порядок: commongen, dabench, gsm8k, humaneval); mypy --strict + ruff clean
 
 ### В РАБОТЕ
-- Шаг 2.3: DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов
+- Шаг 3.1: Аудит + финализация `__init__.py` + grep
 
 ### БЛОКЕРЫ
 - Нет
