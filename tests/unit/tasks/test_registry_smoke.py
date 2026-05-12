@@ -1,10 +1,12 @@
 """Smoke tests for the TaskRegistry with pre-seeded fixture cache.
 
 Verifies:
-1. All four loaders are registered after importing atm.tasks.
+1. All four loaders/evaluators are registered after importing atm.tasks.
 2. TASKS.sample("humaneval", n=10, seed=42) returns exactly 10 TaskSpec
    without any network calls (HumanEvalLoader.load is patched).
 3. Determinism: two calls with the same seed return identical results.
+4. Sampling tests for gsm8k, commongen, and dabench — each monkeypatches
+   the respective loader.load and verifies correct type/evaluator_key.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from atm.core.types import TaskSpec
-from atm.tasks import TASKS
+from atm.tasks import EVALUATORS, TASKS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,7 +22,7 @@ from atm.tasks import TASKS
 
 
 def _make_fake_specs(n: int) -> list[TaskSpec]:
-    """Create ``n`` fake TaskSpec instances with deterministic IDs."""
+    """Create ``n`` fake humaneval TaskSpec instances with deterministic IDs."""
     return [
         TaskSpec(
             id=f"humaneval/{i:03d}",
@@ -37,17 +39,80 @@ def _make_fake_specs(n: int) -> list[TaskSpec]:
     ]
 
 
+def _make_fake_gsm8k_specs(n: int = 20) -> list[TaskSpec]:
+    """Create ``n`` fake GSM8K TaskSpec instances with deterministic IDs."""
+    return [
+        TaskSpec(
+            id=f"gsm8k/{i:03d}",
+            type="reasoning",
+            input=f"Question {i}: If you have {i} apples and give away {i // 2}, how many remain?",
+            expected=f"{i - i // 2}",
+            evaluator_key="gsm8k_numeric",
+            metadata={},
+        )
+        for i in range(n)
+    ]
+
+
+def _make_fake_commongen_specs(n: int = 20) -> list[TaskSpec]:
+    """Create ``n`` fake CommonGen TaskSpec instances with deterministic IDs."""
+    return [
+        TaskSpec(
+            id=f"commongen/{i:03d}",
+            type="creative",
+            input=f"concepts: word_{i}, action_{i}",
+            expected=None,
+            evaluator_key="commongen_rouge_coverage",
+            metadata={
+                "concepts": [f"word_{i}", f"action_{i}"],
+                "references": [f"A sentence using word_{i} and action_{i}."],
+            },
+        )
+        for i in range(n)
+    ]
+
+
+def _make_fake_dabench_specs(n: int = 20) -> list[TaskSpec]:
+    """Create ``n`` fake DABench TaskSpec instances with deterministic IDs."""
+    return [
+        TaskSpec(
+            id=f"dabench/{i:03d}",
+            type="decision",
+            input=f"Calculate the mean of column_{i} in the dataset.",
+            expected=f"@mean_{i}[{float(i):.2f}]",
+            evaluator_key="dabench_numeric_exact",
+            metadata={
+                "concepts": [f"mean_{i}"],
+                "constraints": "Round to 2 decimals",
+                "format": f"@mean_{i}[value]",
+                "level": "easy",
+                "file_name": f"dataset_{i}.csv",
+            },
+        )
+        for i in range(n)
+    ]
+
+
 # ---------------------------------------------------------------------------
-# Test 1: All four loaders are registered
+# Test 1: All four loaders and evaluators are registered
 # ---------------------------------------------------------------------------
 
 
 def test_all_loaders_registered() -> None:
-    """All four loader modules are registered in TASKS after import."""
-    for loader_name in ("humaneval", "mmlu", "creative", "analysis"):
-        loader_cls = TASKS.get(loader_name)
-        assert loader_cls is not None, f"Loader '{loader_name}' not found in TASKS"
-        assert loader_cls.name == loader_name
+    """All four loader/evaluator modules are registered in TASKS/EVALUATORS after import."""
+    assert set(TASKS._registry.keys()) >= {
+        "humaneval",
+        "gsm8k",
+        "commongen",
+        "dabench",
+    }, f"Expected loaders not found. Got: {sorted(TASKS._registry.keys())}"
+
+    assert set(EVALUATORS._registry.keys()) >= {
+        "humaneval_pytest",
+        "gsm8k_numeric",
+        "commongen_rouge_coverage",
+        "dabench_numeric_exact",
+    }, f"Expected evaluators not found. Got: {sorted(EVALUATORS._registry.keys())}"
 
 
 # ---------------------------------------------------------------------------
@@ -152,3 +217,72 @@ def test_sample_humaneval_determinism_fresh_load(monkeypatch: pytest.MonkeyPatch
     second = TASKS.sample("humaneval", n=10, seed=42)
 
     assert first == second, "Same seed must produce identical sample even after cache clear"
+
+
+# ---------------------------------------------------------------------------
+# Test 6: GSM8K sample determinism
+# ---------------------------------------------------------------------------
+
+
+def test_gsm8k_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """sample("gsm8k", n=10, seed=42) returns 10 reasoning specs; same seed is stable."""
+    TASKS._cache.pop("gsm8k", None)  # N3 cache eviction
+    fake_specs = _make_fake_gsm8k_specs(20)
+    monkeypatch.setattr(
+        "atm.tasks.gsm8k.GSM8KLoader.load",
+        lambda self, cache_dir=None: fake_specs,
+    )
+    out = TASKS.sample("gsm8k", n=10, seed=42)
+    assert len(out) == 10
+    assert all(s.type == "reasoning" for s in out)
+    assert all(s.evaluator_key == "gsm8k_numeric" for s in out)
+    # determinism: same seed → same selection
+    TASKS._cache.pop("gsm8k", None)
+    out2 = TASKS.sample("gsm8k", n=10, seed=42)
+    assert [s.id for s in out] == [s.id for s in out2]
+
+
+# ---------------------------------------------------------------------------
+# Test 7: CommonGen sample determinism
+# ---------------------------------------------------------------------------
+
+
+def test_commongen_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """sample("commongen", n=10, seed=42) returns 10 creative specs; same seed is stable."""
+    TASKS._cache.pop("commongen", None)  # N3 cache eviction
+    fake_specs = _make_fake_commongen_specs(20)
+    monkeypatch.setattr(
+        "atm.tasks.commongen.CommonGenLoader.load",
+        lambda self, cache_dir=None: fake_specs,
+    )
+    out = TASKS.sample("commongen", n=10, seed=42)
+    assert len(out) == 10
+    assert all(s.type == "creative" for s in out)
+    assert all(s.evaluator_key == "commongen_rouge_coverage" for s in out)
+    # determinism: same seed → same selection
+    TASKS._cache.pop("commongen", None)
+    out2 = TASKS.sample("commongen", n=10, seed=42)
+    assert [s.id for s in out] == [s.id for s in out2]
+
+
+# ---------------------------------------------------------------------------
+# Test 8: DABench sample determinism
+# ---------------------------------------------------------------------------
+
+
+def test_dabench_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """sample("dabench", n=10, seed=42) returns 10 decision specs; same seed is stable."""
+    TASKS._cache.pop("dabench", None)  # N3 cache eviction
+    fake_specs = _make_fake_dabench_specs(20)
+    monkeypatch.setattr(
+        "atm.tasks.dabench.DABenchLoader.load",
+        lambda self, cache_dir=None: fake_specs,
+    )
+    out = TASKS.sample("dabench", n=10, seed=42)
+    assert len(out) == 10
+    assert all(s.type == "decision" for s in out)
+    assert all(s.evaluator_key == "dabench_numeric_exact" for s in out)
+    # determinism: same seed → same selection
+    TASKS._cache.pop("dabench", None)
+    out2 = TASKS.sample("dabench", n=10, seed=42)
+    assert [s.id for s in out] == [s.id for s in out2]

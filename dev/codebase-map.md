@@ -24,7 +24,7 @@
   - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
   - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3 complete)
   - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), serializers (M3 complete)
-  - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations (M10)
+  - `tasks/` — TaskSpec base, HumanEval/GSM8K/CommonGen/DABench loaders + evaluators (M10-resync)
   - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX (M11)
   - `experiment/` — Pydantic config schemas + OmegaConf loader, single-run runner (`run_one`), Typer CLI (`atm run`), inline evaluator (M6 complete; grid + sweep in M12)
   - `analysis/` — Loaders, plots (M13)
@@ -182,35 +182,40 @@ Post-hoc quality scoring, LLM-as-judge protocols, pure metric functions, and NAS
 - **Integration tests location:** `tests/integration/evaluation/` — `test_aggregator.py` (4 PG tests: persist idempotency, unknown run-id noop, compute+persist round-trip), `test_aggregator_e2e.py` (1 e2e contract test: `run_one → runs.quality_score == 1.0` for scripted MMLU answer "B").
 - **Status:** M11 complete.
 
-### Tasks & Evaluation (`tasks/`) — M10 complete
+### Tasks & Evaluation (`tasks/`) — M10-resync complete
 
-Benchmark task infrastructure: registry of loaders and evaluators, four loader modules, four evaluator types, Parquet cache for HuggingFace datasets, YAML prompts for creative/analysis tasks.
+Benchmark task infrastructure: registry of loaders and evaluators, four loader modules, four evaluator types, Parquet cache for HuggingFace datasets.
 
 - **Exports (from `atm.tasks`):** `TASKS`, `EVALUATORS`, `TaskRegistry`, `EvaluatorRegistry`, `TaskSpec`, `TaskLoader`, `Evaluator`, `EvalResult`, `LLMLike`.
 - **Top-level re-exports (from `atm`):** `TASKS`, `EVALUATORS`.
+- **`TaskSpec.type` enum:** `Literal["programming", "reasoning", "creative", "decision"]`
 - **Loader names (registered in TASKS):**
-  - `"humaneval"` — `HumanEvalLoader` (openai/openai_humaneval from HuggingFace)
-  - `"mmlu"` — `MMLULoader` (TIGER-Lab/MMLU-Pro, 10-way A-J multi-choice, limit=500)
-  - `"creative"` — `CreativeLoader` (local YAML: `conf/tasks/creative_prompts.yaml`, min 5 prompts)
-  - `"analysis"` — `AnalysisLoader` (local YAML: `conf/tasks/analysis_prompts.yaml`, min 5 prompts)
+  - `"humaneval"` — `HumanEvalLoader` (openai/openai_humaneval from HuggingFace; type=`programming`)
+  - `"gsm8k"` — `GSM8KLoader` (openai/gsm8k, split `test`; type=`reasoning`)
+  - `"commongen"` — `CommonGenLoader` (allenai/common_gen, split `validation`; type=`creative`)
+  - `"dabench"` — `DABenchLoader` (pinned GitHub raw URLs; type=`decision`)
 - **Evaluator keys (registered in EVALUATORS):**
   - `"humaneval_pytest"` — `HumanEvalEvaluator` (SubprocessSandbox code execution, 10s timeout)
-  - `"mmlu_exact_match"` — `MMLUEvaluator` (regex word-boundary A-J extraction)
-  - `"creative_judge"` — `CreativeJudgeEvaluator` (LLM-judge via `_invoke_judge`, passed ≥ 0.6)
-  - `"analysis_hybrid"` — `AnalysisHybridEvaluator` (0.5 × structural + 0.5 × judge, passed ≥ 0.6)
+  - `"gsm8k_numeric"` — `GSM8KMatcher` (last number extracted from answer, `math.isclose(abs_tol=1e-6)`)
+  - `"commongen_rouge_coverage"` — `CommonGenEvaluator` (in-house ROUGE-L + concept coverage, score=0.5×rouge+0.5×coverage, passed≥0.5; NO `rouge-score` pip dep; concept coverage uses substring matching to accept morphological variants)
+  - `"dabench_numeric_exact"` — `DABenchEvaluator` (`@name[value]` format; per-pair numeric compare via `math.isclose(abs_tol=1e-2)`; string case-insensitive fallback on ValueError; `passed = score==1.0`)
+- **DABench specifics:**
+  - Pinned commit SHA: `6ad4a487a3968682cdcbb9ae24664e680f8981a6`
+  - Offline fallback: set `ATM_DABENCH_OFFLINE=1` env var or use curated fixture `tests/fixtures/tasks/dabench_curated.jsonl` (8 entries, includes multi-pair entries); also falls back automatically on `(OSError, ConnectionError, URLError)`
+  - Expected format serialized as `" ".join(f"@{name}[{value}]" for name, value in sorted(pairs))` (alphabetical by name for determinism)
 - **Cache:** `data/cache/tasks/` — Parquet files, atomic write via `os.replace`, bytes metadata (pyarrow footgun: keys+values must be `bytes`). Cache dir is gitignored globally.
 - **Submodules (file map):**
   - `src/atm/tasks/base.py` — Protocols (`LLMLike`, `Evaluator`, `TaskLoader`), `EvalResult`, `TaskRegistry`, `EvaluatorRegistry`, `TASKS`, `EVALUATORS` singletons
   - `src/atm/tasks/_cache.py` — `write_cache`, `read_cache`, `is_cached`, `cache_dir` (Parquet, atomic)
-  - `src/atm/tasks/_judge.py` — `_invoke_judge(llm_like, *, prompt, agent_id)` shared judge helper (JSON parse + regex fallback)
+  - `src/atm/tasks/_judge.py` — `_invoke_judge(llm_like, *, prompt, agent_id)` shared judge helper (JSON parse + regex fallback); retained but currently unused after M10-resync
   - `src/atm/tasks/humaneval.py` — `HumanEvalLoader`, `HumanEvalEvaluator`, `_strip_code_fences`
-  - `src/atm/tasks/mmlu.py` — `MMLULoader`, `MMLUEvaluator`
-  - `src/atm/tasks/creative.py` — `CreativeLoader`, `CreativeJudgeEvaluator`
-  - `src/atm/tasks/analysis.py` — `AnalysisLoader`, `AnalysisHybridEvaluator`
-- **New dependency:** `datasets>=2.20,<4` (HuggingFace Datasets library)
-- **Registration pattern:** guarded `importlib.import_module` calls in `atm/tasks/__init__.py` (same pattern as `atm/topology/__init__.py`); loaders/evaluators auto-register via `@TASKS.register` / `@EVALUATORS.register` decorators on import.
-- **Test coverage:** 56 unit tests in `tests/unit/tasks/` (test_base, test_cache, test_humaneval, test_mmlu, test_creative, test_analysis, test_registry_smoke); no network calls in unit tests (HF dataset calls mocked via monkeypatch).
-- **Status:** M10 complete.
+  - `src/atm/tasks/gsm8k.py` — `GSM8KLoader`, `GSM8KMatcher`, `_extract_final_number`
+  - `src/atm/tasks/commongen.py` — `CommonGenLoader`, `CommonGenEvaluator`, `_rouge_l` (LCS-based F1, whitespace tokenized)
+  - `src/atm/tasks/dabench.py` — `DABenchLoader`, `DABenchEvaluator`, `_serialise_common_answers`
+- **Dependencies:** `datasets>=2.20,<4` (HuggingFace Datasets library); no `rouge-score` dep (ROUGE-L is in-house).
+- **Registration pattern:** guarded `importlib.import_module` calls in `atm/tasks/__init__.py` in alphabetical order: `commongen`, `dabench`, `gsm8k`, `humaneval`; loaders/evaluators auto-register via `@TASKS.register` / `@EVALUATORS.register` decorators on import.
+- **Test coverage:** 86 unit tests in `tests/unit/tasks/` (test_base, test_cache, test_humaneval, test_gsm8k, test_commongen, test_dabench, test_registry_smoke); no network calls in unit tests (HF dataset calls mocked via monkeypatch).
+- **Status:** M10-resync complete.
 
 ### Experiment Runner & CLI (`experiment/`)
 - **Exports (M12 planned):** Pydantic schemas, `ConfigLoader`, `Runner`, `GridExecutor`, CLI commands.
@@ -315,7 +320,7 @@ Benchmark task infrastructure: registry of loaders and evaluators, four loader m
 ## Test Setup
 - **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
 - **Structure:** `tests/unit/{core,llm,tools,agents,topology}/`, `tests/integration/{llm,tools,topology}/`, `tests/fixtures/{llm,agents,tools/corpus}/`.
-- **Total tests:** 1065 unit tests pass (M0-M11), including 56 M10 tests in `tests/unit/tasks/` and ~46 new M11 tests in `tests/unit/evaluation/` + `tests/unit/tasks/test_resolve_spec.py` + `tests/unit/experiment/`.
+- **Total tests:** M11+M10-resync combined; includes 86 task unit tests in `tests/unit/tasks/` (GSM8K + CommonGen + DABench + HumanEval + smoke sampling) and ~46 M11 evaluation tests in `tests/unit/evaluation/` + `tests/unit/tasks/test_resolve_spec.py` + `tests/unit/experiment/`.
 - **M4 test markers:** `@pytest.mark.docker` and `@pytest.mark.network` gated via ATM_ENABLE_DOCKER_TESTS and ATM_ENABLE_NETWORK_TESTS env vars; 29 such tests auto-skipped otherwise.
 - **M5 test markers:** None (all agent tests run by default).
 - **M7 test markers:** None (all topology tests run by default).
