@@ -84,9 +84,9 @@
 
 ---
 
-## Волна 3: Аудит + правка test_base.py (параллельно) — НЕ НАЧАТО
+## Волна 3: Аудит + правка test_base.py (параллельно) — В РАБОТЕ
 
-- [ ] 3.1 Аудит humaneval.py, финальная консолидация `__init__.py`, расширенный grep — `src/atm/tasks/__init__.py`, `src/atm/tasks/humaneval.py` (только чтение), `tests/`, `dev/`
+- [x] 3.1 Аудит humaneval.py, финальная консолидация `__init__.py`, расширенный grep — `src/atm/tasks/__init__.py`, `src/atm/tasks/humaneval.py` (только чтение), `tests/`, `dev/`
   - Тип: simple
   - Зависит от: 2.1, 2.2, 2.3
   - Параллельно с: 3.2 (разные файлы)
