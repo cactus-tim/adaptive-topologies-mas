@@ -38,7 +38,7 @@
 
 ---
 
-## Волна 2: GSM8K → CommonGen → DABench (TDD, строго последовательно) — В РАБОТЕ (2.3 осталось)
+## Волна 2: GSM8K → CommonGen → DABench (TDD, строго последовательно) — ВЫПОЛНЕНО
 
 > Шаги 2.1, 2.2, 2.3 нельзя параллелить: все три редактируют `src/atm/tasks/__init__.py`. Следуй порядку.
 
@@ -67,7 +67,7 @@
     - 9 тестов: #1 loader-via-dataset (агрегация references), #2 cache-hit, #3 rouge-exact, #4 rouge-partial (precomputed F1), #5 rouge-disjoint==0, #6 evaluator-full-match, #7 evaluator-partial-coverage, #8 empty-concepts-vacuous, #9 **Parquet round-trip** (`write_cache` → `read_cache`, list equality для `concepts` и `references`)
     - `__init__.py`: добавить guarded import для `commongen`
 
-- [ ] 2.3 Добавить DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов — `src/atm/tasks/dabench.py`, `tests/unit/tasks/test_dabench.py`, `tests/fixtures/tasks/dabench_curated.jsonl`, `__init__.py`
+- [x] 2.3 Добавить DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов — `src/atm/tasks/dabench.py`, `tests/unit/tasks/test_dabench.py`, `tests/fixtures/tasks/dabench_curated.jsonl`, `__init__.py`
   - Тип: tdd
   - Зависит от: 1.1, 1.2, 2.1, 2.2 (сериализация `__init__.py`)
   - Параллельно с: ничем
