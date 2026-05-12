@@ -108,9 +108,9 @@
 
 ---
 
-## Волна 4: Smoke test (exit criterion) — НЕ НАЧАТО
+## Волна 4: Smoke test (exit criterion) — ВЫПОЛНЕНО
 
-- [ ] 4.1 Переписать `test_registry_smoke.py` для нового четырёхзадачного mix — `tests/unit/tasks/test_registry_smoke.py`
+- [x] 4.1 Переписать `test_registry_smoke.py` для нового четырёхзадачного mix — `tests/unit/tasks/test_registry_smoke.py`
   - Тип: tdd
   - Зависит от: 1.1, 1.2, 2.1, 2.2, 2.3, **3.1** (финализированный `__init__.py`)
   - Параллельно с: ничем
