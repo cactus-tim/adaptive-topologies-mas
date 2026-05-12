@@ -139,7 +139,13 @@ class HumanEvalEvaluator:
     def __init__(self, sandbox: SubprocessSandbox | None = None) -> None:
         self._sandbox: SubprocessSandbox = sandbox if sandbox is not None else SubprocessSandbox()
 
-    async def evaluate(self, spec: TaskSpec, answer: str) -> EvalResult:
+    async def evaluate(
+        self,
+        spec: TaskSpec,
+        answer: str,
+        *,
+        artifacts: dict[str, Any] | None = None,
+    ) -> EvalResult:
         """Evaluate ``answer`` against the HumanEval ``spec``.
 
         Steps:
@@ -149,8 +155,9 @@ class HumanEvalEvaluator:
         4. passed = exit_code == 0; score = 1.0 if passed else 0.0.
 
         Args:
-            spec:   The ``TaskSpec`` from ``HumanEvalLoader``.
-            answer: Model-generated code (may be fenced or plain).
+            spec:      The ``TaskSpec`` from ``HumanEvalLoader``.
+            answer:    Model-generated code (may be fenced or plain).
+            artifacts: Unused. Present for ``Evaluator`` Protocol compatibility.
 
         Returns:
             An ``EvalResult`` with score, passed, details, and optional error.

@@ -69,7 +69,7 @@ class Evaluator(Protocol):
 
     Conforming classes must expose:
     - ``name: str`` — class-level attribute used for registry key
-    - ``evaluate(spec, answer) -> EvalResult`` — async evaluation method
+    - ``evaluate(spec, answer, *, artifacts) -> EvalResult`` — async evaluation method
     """
 
     name: str
@@ -78,6 +78,8 @@ class Evaluator(Protocol):
         self,
         spec: TaskSpec,
         answer: str,
+        *,
+        artifacts: dict[str, Any] | None = None,
     ) -> EvalResult:
         """Evaluate ``answer`` against ``spec`` and return an ``EvalResult``."""
         ...
@@ -166,7 +168,9 @@ class EvaluatorRegistry:
         try:
             return self._registry[name]
         except KeyError:
-            raise KeyError(name) from None
+            raise KeyError(
+                f"{name!r} not registered. Known: {sorted(self._registry.keys())}"
+            ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +217,9 @@ class TaskRegistry:
         try:
             return self._registry[name]
         except KeyError:
-            raise KeyError(name) from None
+            raise KeyError(
+                f"{name!r} not registered. Known: {sorted(self._registry.keys())}"
+            ) from None
 
     def _load_and_cache(self, name: str) -> list[TaskSpec]:
         """Load tasks for ``name`` if not already cached, and return sorted pool."""
