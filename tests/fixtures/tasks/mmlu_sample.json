@@ -1,5 +1,0 @@
-[
-  {"question_id": "mmlu_pro_0001", "question": "A train travels at 60 km/h for 2 hours. How far does it travel?", "options": ["60 km", "120 km", "180 km", "90 km", "150 km", "240 km", "30 km", "100 km", "110 km", "200 km"], "answer": "B", "answer_index": 1, "category": "math"},
-  {"question_id": "mmlu_pro_0002", "question": "What is the chemical symbol for water?", "options": ["HO", "H2O", "OH2", "H3O", "H2O2", "HO2", "O2H", "H2", "O2", "H4O"], "answer": "B", "answer_index": 1, "category": "chemistry"},
-  {"question_id": "mmlu_pro_0003", "question": "Who wrote 'Pride and Prejudice'?", "options": ["Charlotte Bronte", "Jane Austen", "Emily Bronte", "George Eliot", "Virginia Woolf", "Mary Shelley", "Agatha Christie", "Elizabeth Gaskell", "Louisa May Alcott", "Edith Wharton"], "answer": "B", "answer_index": 1, "category": "literature"}
-]
