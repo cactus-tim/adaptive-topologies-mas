@@ -3,10 +3,13 @@
 ## ПРОГРЕСС СЕССИИ (2026-05-12)
 
 ### ВЫПОЛНЕНО
-- (ничего — план только что утверждён, реализация не начата)
+- Шаг 1.1: Миграция `TaskSpec.type` Literal enum (`programming|qa|creative|analysis` → `programming|reasoning|creative|decision`) в `src/atm/core/types.py`
+- Шаг 1.2: Удаление creative/analysis/mmlu модулей, конфигов, фикстур, тестов; очистка `src/atm/tasks/__init__.py` (атомарный коммит совместно с 1.1)
+- Шаг 1.3: Переименование enum-ключей `"qa"` → `"reasoning"`, `"analysis"` → `"decision"` в `tests/fixtures/oracle_table.json`
+- Шаг 2.1: GSM8K загрузчик + numeric-match оценщик + 7 тестов (7/7 зелёных); создан `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`; guarded import добавлен в `__init__.py`
 
 ### В РАБОТЕ
-- Не начато
+- Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов
 
 ### БЛОКЕРЫ
 - Нет

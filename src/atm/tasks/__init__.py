@@ -3,12 +3,13 @@
 Re-exports all public symbols from ``atm.tasks.base``.
 
 Side-effect imports (guarded):
-  - humaneval.py registers its loader and evaluator via
+  - Each loader/evaluator module registers itself via
     ``@TASKS.register`` / ``@EVALUATORS.register`` when imported.
     Guards ensure this package loads cleanly even if a module does not
     yet exist.
 
-Registration list: humaneval.py (Wave 2 will add gsm8k, commongen, dabench).
+Registration list: gsm8k.py, humaneval.py
+  (Wave 2 will add commongen, dabench).
 """
 
 from __future__ import annotations
@@ -44,6 +45,9 @@ __all__ = [
 # Side-effect registration — guarded imports so the package loads cleanly
 # even when a loader module does not yet exist.
 # ---------------------------------------------------------------------------
+
+with contextlib.suppress(ImportError):
+    importlib.import_module("atm.tasks.gsm8k")
 
 with contextlib.suppress(ImportError):
     importlib.import_module("atm.tasks.humaneval")
