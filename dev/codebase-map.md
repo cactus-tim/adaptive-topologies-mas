@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-05-11*
+*Auto-generated. Last updated: 2026-05-12*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -193,7 +193,7 @@ Benchmark task infrastructure: registry of loaders and evaluators, four loader m
   - `src/atm/tasks/analysis.py` — `AnalysisLoader`, `AnalysisHybridEvaluator`
 - **New dependency:** `datasets>=2.20,<4` (HuggingFace Datasets library)
 - **Registration pattern:** guarded `importlib.import_module` calls in `atm/tasks/__init__.py` (same pattern as `atm/topology/__init__.py`); loaders/evaluators auto-register via `@TASKS.register` / `@EVALUATORS.register` decorators on import.
-- **Test coverage:** 50 unit tests in `tests/unit/tasks/` (test_base, test_cache, test_humaneval, test_mmlu, test_creative, test_analysis, test_registry_smoke); no network calls in unit tests (HF dataset calls mocked via monkeypatch).
+- **Test coverage:** 56 unit tests in `tests/unit/tasks/` (test_base, test_cache, test_humaneval, test_mmlu, test_creative, test_analysis, test_registry_smoke); no network calls in unit tests (HF dataset calls mocked via monkeypatch).
 - **Status:** M10 complete.
 
 ### Experiment Runner & CLI (`experiment/`)
@@ -299,7 +299,7 @@ Benchmark task infrastructure: registry of loaders and evaluators, four loader m
 ## Test Setup
 - **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
 - **Structure:** `tests/unit/{core,llm,tools,agents,topology}/`, `tests/integration/{llm,tools,topology}/`, `tests/fixtures/{llm,agents,tools/corpus}/`.
-- **Total tests:** ~580+ (91 agents + 121 tools + 13 non-docker integration tools + 67+ unit topology + 15+ integration topology + 263 legacy unit/integration core+llm).
+- **Total tests:** 1019 unit tests pass (M0-M10), including 56 new M10 tests in `tests/unit/tasks/`.
 - **M4 test markers:** `@pytest.mark.docker` and `@pytest.mark.network` gated via ATM_ENABLE_DOCKER_TESTS and ATM_ENABLE_NETWORK_TESTS env vars; 29 such tests auto-skipped otherwise.
 - **M5 test markers:** None (all agent tests run by default).
 - **M7 test markers:** None (all topology tests run by default).
