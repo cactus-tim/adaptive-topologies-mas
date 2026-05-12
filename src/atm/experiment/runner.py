@@ -280,6 +280,7 @@ def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
     """
     return {
         "shared": {
+            "run_id": run_id,
             "task_id": cfg.task.name,
             "task_input": cfg.task.input,
             "phase": Phase.PLANNING,
@@ -542,6 +543,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 agents,
                 topology_cfg,
                 checkpointer=checkpointer,
+                human_cfg=cfg.human,
             )
 
             # Adaptive meta-graph runs many super-steps per task tick (4 nodes

@@ -2,7 +2,7 @@
 
 ---
 
-## >> CURRENT WAVE: Wave B <<
+## >> CURRENT WAVE: Wave D <<
 
 ---
 
@@ -77,9 +77,9 @@
 
 ---
 
-## Wave C — Runner wiring (sequential) NOT STARTED
+## Wave C — Runner wiring (sequential) COMPLETE
 
-- [ ] 3.1 Runner — `run_id` в shared + `human_cfg` kwarg в topology.build
+- [x] 3.1 Runner — `run_id` в shared + `human_cfg` kwarg в topology.build
   - Type: tdd
   - Files: `src/atm/experiment/runner.py` (modify: 2 точки), `tests/unit/experiment/test_runner_initial_state.py` (create or modify), `src/atm/core/state.py` (conditional modify — только если SharedState TypedDict total=True)
   - Depends On: 2.4 (нужен HumanCfg тип)
@@ -90,7 +90,7 @@
 
 ---
 
-## Wave D — Chain topology (sequential) NOT STARTED
+## Wave D — Chain topology (sequential) IN PROGRESS
 
 - [ ] 4.1 Chain topology — `human_reviewer` node с interrupt() и dispatch
   - Type: simple

@@ -9,8 +9,10 @@
 - Step 2.3 (Observability callbacks): расширен `src/atm/observability/callbacks.py` — два elif в `on_custom_event` + два private метода `_handle_human_request` (pg_insert + on_conflict_do_nothing constraint=CONSTRAINT_NAME) и `_handle_human_response` (UPDATE WHERE response_json IS NULL). CONSTRAINT_NAME константа на уровне модуля. 8 тестов зелёных (57/57 всего), mypy clean.
 - Step 2.4 (HumanCfg + YAML configs): добавлен `HumanCfg` (frozen Pydantic v2) в `src/atm/experiment/config.py` и поле `human: HumanCfg | None = None` в `ExperimentConfig`. Созданы `conf/human/llm_simulated.yaml`, `conf/human/cli.yaml`. 17 тестов зелёных, mypy clean, существующие тесты (21/21) без изменений.
 
+- Step 3.1 (Runner wiring): `_build_initial_state` теперь добавляет `"run_id": run_id` в `state["shared"]`; `topology_instance.build(...)` получает `human_cfg=cfg.human` как явный kwarg. SharedState total=False — state.py не изменялся. 3 новых теста + 68/68 существующих зелёных, mypy clean.
+
 ### IN PROGRESS
-- Wave C: Step 3.1 Runner wiring (depends on 2.4 — now done)
+- Wave D: Step 4.1 Chain topology — human_reviewer node (depends on 1.1, 2.3, 3.1)
 
 ### BLOCKERS
 - Нет
@@ -86,10 +88,10 @@
 - Роль: YAML конфиг для CLIGateway
 - Статус: ГОТОВО (Step 2.4)
 
-**`src/atm/experiment/runner.py` (lines 281–308)**
-- Роль: `Runner._build_initial_state` — формирует initial state с 14+ ключами в `shared`
-- Плановое изменение: MODIFY в Step 8 (Wave C) — (a) добавить `"run_id": run_id` в shared, (b) добавить `human_cfg=cfg.human` в вызов `topology.build(...)`
-- Статус: НЕ НАЧАТО
+**`src/atm/experiment/runner.py` (lines 282–309, 542–546)**
+- Роль: `Runner._build_initial_state` — формирует initial state с 15 ключами в `shared`
+- Плановое изменение: MODIFY в Step 3.1 (Wave C) — (a) добавить `"run_id": run_id` в shared, (b) добавить `human_cfg=cfg.human` в вызов `topology.build(...)`
+- Статус: ГОТОВО (Step 3.1) — run_id в shared, human_cfg kwarg пробрасывается
 
 **`src/atm/topology/chain.py` (lines 195–283)**
 - Роль: Chain-топология `START → planner → executor → critic → ...`
@@ -108,8 +110,8 @@
 
 **`src/atm/core/state.py`**
 - Роль: `SharedState` TypedDict — определяет ключи общего состояния
-- Плановое изменение: CONDITIONAL MODIFY в Step 8 — добавить `run_id: UUID` если TypedDict total=True
-- Статус: ТРЕБУЕТ ПРОВЕРКИ (grep перед Step 8)
+- Плановое изменение: CONDITIONAL MODIFY — добавить `run_id: UUID` если TypedDict total=True
+- Статус: СТАБИЛЬНО (total=False — изменение не требуется)
 
 **`dev/codebase-map.md`**
 - Роль: карта кодовой базы проекта
