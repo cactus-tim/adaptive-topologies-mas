@@ -34,7 +34,7 @@ from atm.tasks.base import (
 def _make_task_spec(task_id: str) -> TaskSpec:
     return TaskSpec(
         id=task_id,
-        type="qa",
+        type="reasoning",
         input="What is 2+2?",
         expected="4",
         evaluator_key="dummy",

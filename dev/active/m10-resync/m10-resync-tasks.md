@@ -84,7 +84,7 @@
 
 ---
 
-## Волна 3: Аудит + правка test_base.py (параллельно) — НЕ НАЧАТО
+## Волна 3: Аудит + правка test_base.py (параллельно) — В РАБОТЕ
 
 - [ ] 3.1 Аудит humaneval.py, финальная консолидация `__init__.py`, расширенный grep — `src/atm/tasks/__init__.py`, `src/atm/tasks/humaneval.py` (только чтение), `tests/`, `dev/`
   - Тип: simple
@@ -99,7 +99,7 @@
     - Обновить docstring модуля `__init__.py` — список четырёх загрузчиков
     - Запустить: `python -c "import atm.tasks; print(sorted(atm.tasks.TASKS._registry))"`
 
-- [ ] 3.2 Исправить `_make_task_spec` в test_base.py: `type="qa"` → `type="reasoning"` — `tests/unit/tasks/test_base.py`
+- [x] 3.2 Исправить `_make_task_spec` в test_base.py: `type="qa"` → `type="reasoning"` — `tests/unit/tasks/test_base.py`
   - Тип: simple
   - Зависит от: 1.1
   - Параллельно с: 3.1 (разные файлы)
