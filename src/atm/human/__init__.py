@@ -14,6 +14,8 @@ Public API
 - build_role_prompt         — Build (system_prompt, user_prompt) for a role + context.
 - ROLE_SYSTEM_PROMPTS       — Mapping of HumanRole → per-role system prompt string.
 - build_human_node_factory  — DRY factory for LangGraph HITL nodes (M9.1).
+- HumanRoleRouter           — Protocol for dynamic HumanRole selection (M9.2).
+- FixedRoleRouter           — Constant-role implementation (back-compat default).
 """
 
 from atm.human._node_factory import build_human_node_factory
@@ -22,15 +24,18 @@ from atm.human.cli_gateway import CLIGateway
 from atm.human.gateway import HumanContext, HumanGateway, HumanResponse, HumanRole
 from atm.human.llm_simulated import LLMSimulatedGateway
 from atm.human.prompts import ROLE_SYSTEM_PROMPTS, build_role_prompt
+from atm.human.role_router import FixedRoleRouter, HumanRoleRouter
 from atm.human.runner import MaxInteractionsExceededError, run_with_human
 
 __all__ = [
     "ROLE_SYSTEM_PROMPTS",
     "CLIGateway",
+    "FixedRoleRouter",
     "HumanContext",
     "HumanGateway",
     "HumanResponse",
     "HumanRole",
+    "HumanRoleRouter",
     "LLMSimulatedGateway",
     "MaxInteractionsExceededError",
     "build_human_node_factory",
