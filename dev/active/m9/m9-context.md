@@ -13,8 +13,10 @@
 - Step 4.1 (Chain topology HITL): `chain.py` wired — `build()` теперь читает `human_cfg` из kwargs; если `enabled=True`, вставляет `human_reviewer` node между `critic_postprocess` и conditional edge. `_build_human_reviewer_node` уже была реализована ранее. `HumanCfg.timeout_s` исправлен на `float | None` (был `float`) для соответствия планово-спецификации. 14/14 тестов зелёных, mypy clean, 141/141 topology тестов без регрессий.
 - Step 5.1 (run_with_human resume loop): создан `src/atm/human/runner.py` — `run_with_human` async helper; полный interrupt/resume цикл с `Command(resume=...)`, idempotency cache по `(thread_id, request_id)`, `MaxInteractionsExceededError` guard, RuntimeError при >1 simultaneous interrupts. 10 тестов зелёных (74/74 в human/, mypy clean).
 
+- Step 6.1 (Module wiring + public exports + codebase-map update): `src/atm/human/__init__.py` finalized with full `__all__` (11 symbols); `dev/codebase-map.md` updated with complete M9 `human/` section and last-updated date 2026-05-12. All 74 unit tests green, mypy clean.
+
 ### IN PROGRESS
-- Wave F: Step 6.1 Module wiring + public exports + codebase-map update (depends on all)
+- All steps complete (Wave F done; integration tests 6.2–6.4 are PG-required, out of scope for this step)
 
 ### BLOCKERS
 - Нет

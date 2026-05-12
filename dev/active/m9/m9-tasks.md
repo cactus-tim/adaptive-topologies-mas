@@ -2,7 +2,7 @@
 
 ---
 
-## >> CURRENT WAVE: Wave E <<
+## >> CURRENT WAVE: Wave F (COMPLETE — integration tests 6.2–6.4 pending PG) <<
 
 ---
 
@@ -116,9 +116,9 @@
 
 ---
 
-## Wave F — Finalization (sequential) NOT STARTED
+## Wave F — Finalization (sequential) COMPLETE
 
-- [ ] 6.1 Module wiring + public exports + codebase-map update
+- [x] 6.1 Module wiring + public exports + codebase-map update
   - Type: simple
   - Files: `src/atm/human/__init__.py` (finalize with full `__all__`), `dev/codebase-map.md` (modify: секция M9)
   - Depends On: 2.1, 2.2, 2.5, 4.1, 5.1

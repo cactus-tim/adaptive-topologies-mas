@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-05-11*
+*Auto-generated. Last updated: 2026-05-12*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -134,9 +134,24 @@
 - **Test coverage:** 23 unit tests in `tests/unit/phases/test_manager.py` — 4 signal guards (ready_for_execution, ready_for_verification, critic_approved, iter_caps), iter-cap advance, terminal DONE, custom guard override, PhaseLimits frozen, LLMPhaseRouter happy-path + 4 fallback scenarios (JSON parse error, non-monotonic phase, network failure, invalid JSON), all using AsyncMock.
 - **Status:** M8.1 + M8.2 complete (PhaseRouter Protocol, RuleBasedPhaseRouter, LLMPhaseRouter with async/await, JSON validation + monotonicity checks, comprehensive fallback coverage).
 
-### Human Gateway & HITL (`human/`)
-- **Exports (M9 planned):** `HumanGateway` protocol, `LLMSimulatedGateway`, `CLIGateway`.
-- **Status:** M0 skeleton, M9 not started.
+### `src/atm/human/` — HITL gateways (M9)
+
+- `gateway.py` — `HumanGateway` Protocol (runtime_checkable) + re-exports of `HumanContext`/`HumanResponse`/`HumanRole` from `atm.core.types`; `TimeoutPolicy` Literal alias.
+- `llm_simulated.py` — `LLMSimulatedGateway`: implements Protocol via `LLMWrapper`; role-aware prompts via `build_role_prompt`; single JSON-retry on bad LLM output; in-process idempotency cache `dict[(run_id, request_id), HumanResponse]` + `asyncio.Lock`; `source="llm_sim"` always.
+- `cli_gateway.py` — `CLIGateway`: renders context to stdout, reads decision via `asyncio.to_thread(input, ...)`; no external dependencies; idempotency cache; `source="human"`; invalid action → `allowed_actions[0]` fallback.
+- `_timeout.py` — `request_with_timeout(gateway, ctx, *, request_id, timeout_s, policy, llm_fallback_gateway=None) -> HumanResponse`: three policies (`fail` / `llm_fallback` / `skip`); `timeout_s=None` passes through with no deadline; `policy="llm_fallback"` + `llm_fallback_gateway=None` → `ValueError` at call time; fallback response always has `source="fallback"`.
+- `runner.py` — `run_with_human(graph, initial_state, *, thread_id, gateway, ...)`: forward-compatible interrupt/resume orchestrator for M14+; detects `__interrupt__` key in ainvoke result; in-process idempotency cache on `(thread_id, request_id)`; `MaxInteractionsExceededError` guard (default `max_interactions=10`); >1 interrupt in single result → `RuntimeError`.
+- `prompts.py` — `ROLE_SYSTEM_PROMPTS: dict[HumanRole, str]` for 5 roles (Coordinator/Reviewer/Judge/Peer/Monitor); `build_role_prompt(role, ctx) -> tuple[str, str]` renders (system_prompt, user_prompt); `allowed_actions` mentioned in user prompt.
+
+**Exports (from `atm.human`):** `HumanGateway`, `HumanContext`, `HumanResponse`, `HumanRole`, `LLMSimulatedGateway`, `CLIGateway`, `request_with_timeout`, `run_with_human`, `MaxInteractionsExceededError`, `build_role_prompt`, `ROLE_SYSTEM_PROMPTS`.
+
+**Persistence:** emitted via `adispatch_custom_event("human_request"|"human_response", ...)` from the `human_reviewer` node in Chain topology; handled by `ExperimentCallbackHandler` (`callbacks.py`) which writes to `human_interactions` table. Single-writer invariant (arch.md §10.2); idempotency by PG UNIQUE constraint `uq_human_interactions_run_request` on `(run_id, request_id)` (migration `0002_human_interactions_idempotency.py`). `on_custom_event` handles two new event names: `human_request` (INSERT ON CONFLICT DO NOTHING) and `human_response` (UPDATE WHERE response_json IS NULL).
+
+**Topology integration (M9):** Chain only — `human_reviewer` node inserted after `executor` and before `critic` when `human_cfg.enabled=True`. Other topologies (Star/Mesh/Debate/Hierarchical/Adaptive): follow-up in later milestones.
+
+**Config:** `conf/human/llm_simulated.yaml` and `conf/human/cli.yaml` define `HumanCfg` parameters; `ExperimentConfig.human: HumanCfg | None = None` (default=None for back-compat).
+
+**Status:** M9 complete.
 
 ### Storage Layer (`storage/`) — M3 complete
 
