@@ -442,6 +442,16 @@ class AdaptiveTopology:
                 else (shared.get("active_topology") or "linear")
             )
 
+            # Sanity guard: refuse to dispatch into the adaptive meta-graph
+            # itself (would cause infinite recursion). Any caller that returns
+            # "adaptive" as the chosen sub-topology gets rerouted to "linear".
+            if topo_name == self.name:
+                _log.warning(
+                    "adaptive: refused to dispatch into self (topology=%r); falling back to 'linear'",
+                    topo_name,
+                )
+                topo_name = "linear"
+
             # Increment iter_total before delegating to subgraph
             iter_total: int = int(shared.get("iter_total", 0)) + 1
             shared["iter_total"] = iter_total
