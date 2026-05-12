@@ -13,8 +13,10 @@
 
 - Шаг 3.2: `_make_task_spec` в `tests/unit/tasks/test_base.py` — `type="qa"` → `type="reasoning"`; 13/13 тестов зелёных
 
+- Шаг 4.1: Перезапись `tests/unit/tasks/test_registry_smoke.py` — новый `test_all_loaders_registered` проверяет `{"humaneval","gsm8k","commongen","dabench"}` через `>=`; добавлены 3 sampling теста (gsm8k/commongen/dabench) с `_make_fake_*_specs(20)` и N3 cache eviction; 8/8 тестов зелёных; ruff + mypy --strict чисто
+
 ### В РАБОТЕ
-- Шаг 3.2: Исправление `_make_task_spec` в test_base.py (`type="qa"` → `type="reasoning"`)
+- Шаг 5.1: Обновление `dev/codebase-map.md`
 
 ### БЛОКЕРЫ
 - Нет
