@@ -684,8 +684,7 @@ async def test_hitl_cross_topology_acceptance(
 
         assert run_row is not None, f"[{topology}] No run row found for run_id={run_id}"
         assert run_row.human_role == "reviewer", (
-            f"[{topology}] Expected runs.human_role='reviewer', "
-            f"got {run_row.human_role!r}"
+            f"[{topology}] Expected runs.human_role='reviewer', got {run_row.human_role!r}"
         )
 
     finally:
