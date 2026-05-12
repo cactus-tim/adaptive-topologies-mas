@@ -166,9 +166,35 @@ LangGraph callback handler + serializers.
 
 - `versions/0001_initial_business_schema.py` — creates 6 business tables (not checkpoint tables; those are owned by `AsyncPostgresSaver.setup()`). Chained off `bc5f66dd0897` placeholder. Downgrade in reverse FK order.
 
-### Tasks & Evaluation (`tasks/`, `evaluation/`)
-- **Exports (M10-M11 planned):** `TaskSpec`, `TaskRegistry`, evaluators, NASA-TLX aggregator.
-- **Status:** M0 skeleton, not started.
+### Tasks & Evaluation (`tasks/`) — M10 complete
+
+Benchmark task infrastructure: registry of loaders and evaluators, four loader modules, four evaluator types, Parquet cache for HuggingFace datasets, YAML prompts for creative/analysis tasks.
+
+- **Exports (from `atm.tasks`):** `TASKS`, `EVALUATORS`, `TaskRegistry`, `EvaluatorRegistry`, `TaskSpec`, `TaskLoader`, `Evaluator`, `EvalResult`, `LLMLike`.
+- **Top-level re-exports (from `atm`):** `TASKS`, `EVALUATORS`.
+- **Loader names (registered in TASKS):**
+  - `"humaneval"` — `HumanEvalLoader` (openai/openai_humaneval from HuggingFace)
+  - `"mmlu"` — `MMLULoader` (TIGER-Lab/MMLU-Pro, 10-way A-J multi-choice, limit=500)
+  - `"creative"` — `CreativeLoader` (local YAML: `conf/tasks/creative_prompts.yaml`, min 5 prompts)
+  - `"analysis"` — `AnalysisLoader` (local YAML: `conf/tasks/analysis_prompts.yaml`, min 5 prompts)
+- **Evaluator keys (registered in EVALUATORS):**
+  - `"humaneval_pytest"` — `HumanEvalEvaluator` (SubprocessSandbox code execution, 10s timeout)
+  - `"mmlu_exact_match"` — `MMLUEvaluator` (regex word-boundary A-J extraction)
+  - `"creative_judge"` — `CreativeJudgeEvaluator` (LLM-judge via `_invoke_judge`, passed ≥ 0.6)
+  - `"analysis_hybrid"` — `AnalysisHybridEvaluator` (0.5 × structural + 0.5 × judge, passed ≥ 0.6)
+- **Cache:** `data/cache/tasks/` — Parquet files, atomic write via `os.replace`, bytes metadata (pyarrow footgun: keys+values must be `bytes`). Cache dir is gitignored globally.
+- **Submodules (file map):**
+  - `src/atm/tasks/base.py` — Protocols (`LLMLike`, `Evaluator`, `TaskLoader`), `EvalResult`, `TaskRegistry`, `EvaluatorRegistry`, `TASKS`, `EVALUATORS` singletons
+  - `src/atm/tasks/_cache.py` — `write_cache`, `read_cache`, `is_cached`, `cache_dir` (Parquet, atomic)
+  - `src/atm/tasks/_judge.py` — `_invoke_judge(llm_like, *, prompt, agent_id)` shared judge helper (JSON parse + regex fallback)
+  - `src/atm/tasks/humaneval.py` — `HumanEvalLoader`, `HumanEvalEvaluator`, `_strip_code_fences`
+  - `src/atm/tasks/mmlu.py` — `MMLULoader`, `MMLUEvaluator`
+  - `src/atm/tasks/creative.py` — `CreativeLoader`, `CreativeJudgeEvaluator`
+  - `src/atm/tasks/analysis.py` — `AnalysisLoader`, `AnalysisHybridEvaluator`
+- **New dependency:** `datasets>=2.20,<4` (HuggingFace Datasets library)
+- **Registration pattern:** guarded `importlib.import_module` calls in `atm/tasks/__init__.py` (same pattern as `atm/topology/__init__.py`); loaders/evaluators auto-register via `@TASKS.register` / `@EVALUATORS.register` decorators on import.
+- **Test coverage:** 50 unit tests in `tests/unit/tasks/` (test_base, test_cache, test_humaneval, test_mmlu, test_creative, test_analysis, test_registry_smoke); no network calls in unit tests (HF dataset calls mocked via monkeypatch).
+- **Status:** M10 complete.
 
 ### Experiment Runner & CLI (`experiment/`)
 - **Exports (M12 planned):** Pydantic schemas, `ConfigLoader`, `Runner`, `GridExecutor`, CLI commands.
