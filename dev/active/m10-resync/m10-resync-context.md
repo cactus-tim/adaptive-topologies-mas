@@ -15,8 +15,10 @@
 
 - Шаг 4.1: Перезапись `tests/unit/tasks/test_registry_smoke.py` — новый `test_all_loaders_registered` проверяет `{"humaneval","gsm8k","commongen","dabench"}` через `>=`; добавлены 3 sampling теста (gsm8k/commongen/dabench) с `_make_fake_*_specs(20)` и N3 cache eviction; 8/8 тестов зелёных; ruff + mypy --strict чисто
 
+- Шаг 5.1: Обновлён `dev/codebase-map.md` — секция Tasks & Evaluation переписана для нового четырёхзадачного mix (humaneval/gsm8k/commongen/dabench); добавлены заметки о DABench (pinned SHA, offline fallback, `@name[value]` evaluator) и CommonGen (in-house ROUGE-L без `rouge-score` dep); убраны все упоминания `creative.py`, `analysis.py`, `mmlu.py`, YAML-промптов; счётчик тестов обновлён до 1067 pass / 32 skip; `Last updated` = 2026-05-12; oracle_table.json не упоминался в карте — N4 пропущен по плану.
+
 ### В РАБОТЕ
-- Шаг 5.1: Обновление `dev/codebase-map.md`
+- Все 11 шагов завершены; готово к верификации.
 
 ### БЛОКЕРЫ
 - Нет
