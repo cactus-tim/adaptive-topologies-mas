@@ -16,12 +16,17 @@ Architecture (arch.md §7.2):
 With HITL enabled (human_cfg.enabled=True, default role=reviewer):
   After critic_postprocess, a human_reviewer node is inserted before routing.
   Reviewer mode (default): human reviews critic output; approve → continue, reject → loop back.
-  Coordinator mode (extra["override_coordinator"]=True): human can write
-    signals["human_phase_override"] ∈ {"advance","stay","finalize"} via apply_decision callback.
 
-  _route_from_coord FIRST checks signals["human_phase_override"] (set by human_coordinator mode);
-  if present and one of {"advance","stay","finalize"}, forces the routing decision and clears
-  the signal. Falls through to normal phase-based routing otherwise.
+  Coordinator-override mode (extra["override_coordinator"]=True):
+    DEFERRED to M9.2 — only reviewer mode is wired up in M9.1.
+    ``extra.override_coordinator`` and ``signals["human_phase_override"]`` reader in
+    _route_from_coord exist as scaffolding for M9.2.  No built-in code path currently
+    writes ``human_phase_override`` from inside the topology.
+
+  _route_from_coord FIRST checks signals["human_phase_override"] as scaffolding for M9.2;
+  # known-limitation: no M9.1 code path writes this signal — it will only become
+  # functional when the coordinator-override custom apply_decision is wired in M9.2.
+  Falls through to normal phase-based routing if signal is absent/None.
 
 Nodes (HITL disabled — back-compat):
   coordinator, planner, executor, critic, critic_postprocess
@@ -291,7 +296,11 @@ class StarTopology:
             signals_raw: dict[str, Any] = shared_raw.get("signals") or {}
             current_phase = shared_raw.get("phase") or Phase.PLANNING
 
-            # ---- Human phase override (coordinator mode) ----
+            # ---- Human phase override (coordinator mode scaffolding) ----
+            # known-limitation (M9.2 deferral): coordinator-override mode is not
+            # implemented in M9.1.  No built-in code path writes this signal.
+            # The read+clear logic below is scaffolding for M9.2 where a custom
+            # apply_decision callback will populate human_phase_override.
             override = signals_raw.get("human_phase_override")
             if override is not None and override in ("advance", "stay", "finalize"):
                 # Clear the signal in the original signals dict (consumed)
@@ -410,6 +419,12 @@ class StarTopology:
 
         if hitl_enabled:
             assert human_cfg is not None  # narrowing for mypy
+            # known-limitation (M9.2 deferral): extra.override_coordinator is read here
+            # as scaffolding but coordinator-override mode is not implemented in M9.1.
+            # When M9.2 is implemented, pass a custom apply_decision to
+            # build_human_node_factory that maps action → signals["human_phase_override"].
+            # _override_coordinator = bool((human_cfg.extra or {}).get("override_coordinator"))
+
             # Build gateway
             gateway_llm: Any = kwargs.get("human_gateway_llm")
             if human_cfg.gateway == "cli":

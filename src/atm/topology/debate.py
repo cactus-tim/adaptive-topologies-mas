@@ -70,6 +70,15 @@ Invariants:
 
 Registration:
   @TopologyRegistry.register("debate") — side-effect on import
+
+Notes:
+  iter_total double-increment: In all judge modes, ``iter_total`` is incremented
+  TWICE per debate round — once in ``planner_node`` (at the start of each round)
+  and once inside ``_judge_postprocess`` (after judging).  This means that if
+  ``cfg.max_iterations=N``, the effective maximum number of debate rounds before
+  the global-max-iter guard fires is approximately N/2.  Size ``max_iterations``
+  accordingly (e.g. ``max_iterations = max_rounds * 2 + 1``).  This matches the
+  pattern established in chain.py where each router tick increments iter_total.
 """
 
 from __future__ import annotations
@@ -212,6 +221,7 @@ async def _judge_postprocess(
 
     # Increment global iter_total — mirrors chain.py/_route_from_critic pattern;
     # ensures max_iter (global) precedence fires inside the debate loop.
+    # See planner_node — iter_total increments twice per round (planner-tick + judge-tick).
     iter_total: int = int(existing_shared.get("iter_total") or 0) + 1
     existing_shared["iter_total"] = iter_total
 
@@ -609,7 +619,9 @@ class DebateTopology:
             if planner_agent is None:
                 return {}
             result: dict[str, Any] = await planner_agent.step(state)
-            # Increment iter_total on each planner call
+            # Increment iter_total on each planner call.
+            # Note: iter_total also increments in _judge_postprocess. Effective iterations
+            # per debate round = 2. Size cfg.max_iterations accordingly.
             shared: dict[str, Any] = dict((result.get("shared") or state.get("shared")) or {})
             shared["iter_total"] = int(shared.get("iter_total") or 0) + 1
             result["shared"] = shared

@@ -28,6 +28,10 @@ Design decisions
   signature type (not a direct dep in pyproject.toml).
 - Topology-specific semantics (judge outbox write, subgraph scope, router
   override) are NOT covered here — use inline closures for those.
+- MeshTopology deliberately rolls its own ``human_peer_node`` inline closure
+  because broadcast_bus voting semantics and round-aware activation are tightly
+  coupled to the mesh dispatcher and cannot be expressed via the default
+  ``apply_decision`` without a new overload.  See mesh.py module docstring.
 """
 
 from __future__ import annotations

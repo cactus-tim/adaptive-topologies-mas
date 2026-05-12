@@ -79,7 +79,14 @@ from atm.core.types import (
     TopologyDecision,
     TopologyTransition,
 )
-from atm.phases.guards import GuardedRouter, SwitchGuards
+from atm.phases.guards import (
+    GuardedRouter,
+    SwitchGuards,
+    _violates_cooldown,
+    _violates_max_per_phase,
+    _violates_max_per_run,
+    _violates_min_dwell,
+)
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
 from atm.phases.topology_router import RuleBasedTopologyRouter
 from atm.topology.base import TopologyConfig, TopologyRegistry
@@ -465,13 +472,14 @@ class AdaptiveTopology:
             if gateway_type == "cli" and _CLIGateway is not None:
                 _gateway = _CLIGateway()
             elif _LLMSimulatedGateway is not None:
-                # Build LLMWrapper for LLMSimulatedGateway if llm_wrapper kwarg provided
-                llm_wrapper = kwargs.get("llm_wrapper")
+                # Build LLMWrapper for LLMSimulatedGateway if human_gateway_llm kwarg provided.
+                # NOTE: kwarg name is "human_gateway_llm" (matches Runner.run_one contract).
+                llm_wrapper = kwargs.get("human_gateway_llm")
                 if llm_wrapper is not None:
                     _gateway = _LLMSimulatedGateway(llm_wrapper)
                 else:
                     _log.warning(
-                        "adaptive: human_cfg.enabled=True but no llm_wrapper kwarg provided; "
+                        "adaptive: human_cfg.enabled=True but no human_gateway_llm kwarg provided; "
                         "HITL gateway unavailable — falling back to no-op advisory mode"
                     )
                     _hitl_enabled = False
@@ -655,26 +663,39 @@ class AdaptiveTopology:
                         else (),
                     )
 
-                    # Apply GuardedRouter validation if topo_router is a GuardedRouter
+                    # Apply guard violation checks directly against proposed_topo.
+                    # Re-calling topo_router.decide() would re-evaluate the inner
+                    # router (not the proposed topology), producing a tautological
+                    # result.  Instead, read the SwitchGuards config from topo_router
+                    # and evaluate each guard violation function directly.
                     if use_guards:
                         _raw_shared = state.get("shared")
                         _shared_state: SharedState = (
                             _raw_shared if _raw_shared is not None else SharedState()
                         )
-                        guard_decision: TopologyDecision = await topo_router.decide(_shared_state)
-                        # GuardedRouter decided based on the override proposal — but topo_router
-                        # already has internal state.  We re-check guards by inspecting if
-                        # current_decision was already guard_override or if the proposed topology
-                        # would be blocked.  Simpler: apply guards against the proposed topology
-                        # by temporarily setting inner router to return proposed_topo.
-                        # Actual approach: check if the guard_decision topology != proposed_topo.
-                        # If guards would have blocked a switch to proposed_topo, they return
-                        # current_topo. We use guard_decision as an oracle here.
-                        if (
-                            guard_decision.topology == proposed_topo
-                            or guard_decision.decided_by != "guard_override"
-                        ):
-                            # Guards allow (or proposed equals guard's choice)
+                        # Extract guards config from the GuardedRouter (if available).
+                        # Fall back to default SwitchGuards if topo_router is not a
+                        # GuardedRouter (use_guards=True but router type changed).
+                        _guards_cfg: SwitchGuards = (
+                            topo_router._guards
+                            if isinstance(topo_router, GuardedRouter)
+                            else SwitchGuards()
+                        )
+                        # Only evaluate guards when the human proposes an ACTUAL switch.
+                        # If current_topo == proposed_topo the guards don't apply.
+                        _applied: list[str] = []
+                        if proposed_topo != current_topo:
+                            if _violates_min_dwell(_shared_state, _guards_cfg):
+                                _applied.append("min_dwell")
+                            if _violates_cooldown(_shared_state, proposed_topo, _guards_cfg):
+                                _applied.append("cooldown")
+                            if _violates_max_per_run(_shared_state, _guards_cfg):
+                                _applied.append("max_per_run")
+                            if _violates_max_per_phase(_shared_state, _guards_cfg):
+                                _applied.append("max_per_phase")
+
+                        if not _applied:
+                            # Guards allow — accept the human override
                             _topo_dec_slot[0] = override_decision
                             signals["human_advisor_hint"] = f"override_applied:{proposed_topo}"
                             _log.info(
@@ -683,24 +704,24 @@ class AdaptiveTopology:
                             )
                         else:
                             # Guards blocked — record human intent in considered_alternatives
+                            _current_dec = _topo_dec_slot[0]
                             blocked_with_intent = TopologyDecision(
-                                topology=guard_decision.topology,
-                                reason=guard_decision.reason,
-                                decided_by=guard_decision.decided_by,
+                                topology=current_topo,
+                                reason=f"guards={_applied}: keep '{current_topo}'",
+                                decided_by="guard_override",
                                 considered_alternatives=(
-                                    *guard_decision.considered_alternatives,
+                                    *(_current_dec.considered_alternatives if _current_dec else ()),
                                     proposed_topo,
                                 ),
-                                router_cost_usd=guard_decision.router_cost_usd,
                             )
                             _topo_dec_slot[0] = blocked_with_intent
                             signals["human_advisor_hint"] = (
                                 f"override_blocked_by_guards:{proposed_topo}"
                             )
                             _log.warning(
-                                "adaptive human_advisor: override to %r blocked by guards (%s)",
+                                "adaptive human_advisor: override to %r blocked by guards %s",
                                 proposed_topo,
-                                guard_decision.reason,
+                                _applied,
                             )
                     else:
                         # No guards — apply override directly

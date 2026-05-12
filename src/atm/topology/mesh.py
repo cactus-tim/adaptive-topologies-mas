@@ -42,6 +42,15 @@ Stopping precedence (arch.md §7.1):
 Vote payload format (MC-7 / task 2.2 test_consensus_vote_payload_str_format):
   MessageKind.DECISION with payload={"vote_for": str}
   Non-string vote_for values are silently ignored during tally.
+
+Design note — inline closure vs. build_human_node_factory:
+  Mesh's human_peer uses an inline closure (not ``build_human_node_factory``) because
+  broadcast_bus voting semantics and round-aware activation are tightly coupled to
+  mesh's dispatcher.  The node must read ``_mesh_dispatch_round`` from signals and
+  append a DECISION vote directly to ``broadcast_bus``, rather than writing
+  ``shared["human_approved"]`` / ``needs_rerun`` (the factory's default behaviour).
+  Migration to the shared factory would require a new ``apply_decision`` overload that
+  knows about broadcast_bus; this is deferred to a future refactor.
 """
 
 from __future__ import annotations
@@ -356,7 +365,11 @@ class MeshTopology:
                     else _uuid_mod.uuid4()
                 )
 
-                request_id = f"mesh:{run_id}:{dispatch_round_now}:peer"
+                # request_id includes iter_total (monotonic across checkpointer-resume)
+                # and dispatch_round (per-resume-cycle uniqueness).  dispatch_round alone
+                # is not monotonic across resume — (run_id, request_id) must be UNIQUE.
+                iter_total_now: int = int(shared.get("iter_total", 0))
+                request_id = f"mesh:{run_id}:{iter_total_now}:{dispatch_round_now}:peer"
 
                 # Build HumanContext — extract question from bus or use default
                 from atm.core.types import HumanContext, Message, MessageKind

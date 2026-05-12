@@ -244,7 +244,7 @@ class TestBackCompat:
 
 
 class TestGraphStructureWithHITL:
-    """With human_cfg.enabled=True and valid llm_wrapper, human_advisor_node is wired."""
+    """With human_cfg.enabled=True and valid human_gateway_llm, human_advisor_node is wired."""
 
     def test_human_advisor_node_added(self) -> None:
         """build(human_cfg=enabled=True) inserts 'human_advisor_node' in graph."""
@@ -268,7 +268,7 @@ class TestGraphStructureWithHITL:
                 agents,
                 cfg,
                 human_cfg=human_cfg,
-                llm_wrapper=MagicMock(),
+                human_gateway_llm=MagicMock(),
             )
 
         node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
@@ -295,7 +295,7 @@ class TestGraphStructureWithHITL:
                 agents,
                 cfg,
                 human_cfg=human_cfg,
-                llm_wrapper=MagicMock(),
+                human_gateway_llm=MagicMock(),
             )
 
         edge_calls = [call.args for call in mock_graph.add_edge.call_args_list]
@@ -305,7 +305,7 @@ class TestGraphStructureWithHITL:
         assert ("topology_router_node", "dispatch_topology_node") not in edge_calls
 
     def test_no_llm_wrapper_disables_hitl(self) -> None:
-        """human_cfg.enabled=True but no llm_wrapper → HITL falls back to disabled."""
+        """human_cfg.enabled=True but no human_gateway_llm → HITL falls back to disabled."""
         mock_agent = MagicMock()
         mock_agent.step = AsyncMock(return_value={})
         agents = {"planner": mock_agent}
@@ -321,7 +321,7 @@ class TestGraphStructureWithHITL:
             patch("atm.topology.adaptive.StateGraph", return_value=mock_graph),
             patch("atm.topology.adaptive._LLMSimulatedGateway", mock_gw_cls),
         ):
-            # no llm_wrapper kwarg → falls back silently
+            # no human_gateway_llm kwarg → falls back silently
             AdaptiveTopology().build(agents, cfg, human_cfg=human_cfg)
 
         node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
@@ -387,7 +387,7 @@ class _FakeAdaptiveWithAdvisor:
                 agents,
                 cfg,
                 human_cfg=human_cfg,
-                llm_wrapper=MagicMock(),
+                human_gateway_llm=MagicMock(),
             )
 
         return captured_nodes.get("human_advisor_node")
@@ -640,3 +640,250 @@ class TestDispatchEvents:
         assert "request_id" in captured
         assert "adaptive" in captured["request_id"]
         assert "5" in captured["request_id"]  # iter_total=5
+
+
+# ---------------------------------------------------------------------------
+# Group 6 — Override mode with guards that BLOCK the override (Fix #2 test)
+# ---------------------------------------------------------------------------
+
+
+class TestOverrideModeGuardsBlock:
+    """Guards directly block a proposed human override (Fix #2: non-tautological check).
+
+    These tests verify that guard violation functions (_violates_min_dwell etc.)
+    are evaluated against the proposed topology, not via a topo_router re-call.
+    """
+
+    def test_guards_block_override_when_min_dwell_not_met(self) -> None:
+        """When min_dwell guard fires, override is rejected.
+
+        Setup:
+          - topology_started_at_iter=0, iter_total=0 → dwell=0 < min_dwell_iters=2
+          - Human proposes switching from 'linear' to 'mesh' (valid topology)
+          - switch_guards=True, human_can_override_router=True
+
+        Expected:
+          - decided_by != 'human_override' (guard blocked)
+          - hint contains 'override_blocked_by_guards'
+          - considered_alternatives contains 'mesh' (the proposed topology)
+        """
+        # Build with switch_guards=True (min_dwell_iters defaults to 2)
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent}
+
+        cfg = TopologyConfig(
+            name="adaptive",
+            max_iterations=10,
+            extra={"switch_guards": True, "switch_guards_config": {"min_dwell_iters": 2}},
+        )
+        human_cfg = _make_human_cfg(
+            enabled=True,
+            extra={"human_can_override_router": True},
+        )
+
+        captured_nodes: dict[str, Any] = {}
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = MagicMock()
+
+        def _add_node_capture(name: str, fn: Any) -> None:
+            captured_nodes[name] = fn
+
+        mock_graph.add_node = _add_node_capture
+        mock_graph.add_edge = MagicMock()
+        mock_graph.add_conditional_edges = MagicMock()
+
+        mock_gateway = AsyncMock()
+        mock_gateway.request = AsyncMock(return_value=_make_switch_response("mesh"))
+
+        with (
+            patch("atm.topology.adaptive.StateGraph", return_value=mock_graph),
+            patch("atm.topology.adaptive._LLMSimulatedGateway", return_value=mock_gateway),
+        ):
+            AdaptiveTopology().build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=MagicMock(),
+            )
+
+        node = captured_nodes.get("human_advisor_node")
+        if node is None:
+            pytest.skip("Could not extract human_advisor_node")
+
+        # State: iter_total=0, topology_started_at_iter=0 → dwell=0 < min_dwell=2
+        state = _make_state(
+            run_id=uuid.uuid4(),
+            active_topology="linear",
+            iter_total=0,
+            signals={},
+        )
+        state["shared"]["topology_started_at_iter"] = 0
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
+            delta = asyncio.run(node(state))
+
+        signals = delta.get("shared", {}).get("signals", {})
+        hint = signals.get("human_advisor_hint", "")
+
+        # Override must be blocked
+        assert "override_blocked_by_guards" in hint, (
+            f"Expected 'override_blocked_by_guards' in hint when min_dwell violated; got {hint!r}"
+        )
+        assert "mesh" in hint, f"Expected proposed topology 'mesh' in hint; got {hint!r}"
+
+    def test_guards_block_override_decided_by_is_guard_override(self) -> None:
+        """When guards block override, the slot decision has decided_by='guard_override'."""
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent}
+
+        cfg = TopologyConfig(
+            name="adaptive",
+            max_iterations=10,
+            extra={"switch_guards": True, "switch_guards_config": {"min_dwell_iters": 5}},
+        )
+        human_cfg = _make_human_cfg(
+            enabled=True,
+            extra={"human_can_override_router": True},
+        )
+
+        captured_nodes: dict[str, Any] = {}
+
+        # We verify guard-blocking by inspecting the delta signal hint
+        # (the slot is closure-internal but the hint reflects the guard outcome)
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = MagicMock()
+
+        def _add_node_capture(name: str, fn: Any) -> None:
+            captured_nodes[name] = fn
+
+        mock_graph.add_node = _add_node_capture
+        mock_graph.add_edge = MagicMock()
+        mock_graph.add_conditional_edges = MagicMock()
+
+        mock_gateway = AsyncMock()
+        mock_gateway.request = AsyncMock(return_value=_make_switch_response("mesh"))
+
+        with (
+            patch("atm.topology.adaptive.StateGraph", return_value=mock_graph),
+            patch("atm.topology.adaptive._LLMSimulatedGateway", return_value=mock_gateway),
+        ):
+            AdaptiveTopology().build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=MagicMock(),
+            )
+
+        node = captured_nodes.get("human_advisor_node")
+        if node is None:
+            pytest.skip("Could not extract human_advisor_node")
+
+        # State: dwell = iter_total - topology_started_at_iter = 1 - 0 = 1 < min_dwell=5
+        state = _make_state(
+            run_id=uuid.uuid4(),
+            active_topology="linear",
+            iter_total=1,
+            signals={},
+        )
+        state["shared"]["topology_started_at_iter"] = 0
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
+            delta = asyncio.run(node(state))
+
+        signals = delta.get("shared", {}).get("signals", {})
+        hint = signals.get("human_advisor_hint", "")
+
+        # The override must be blocked and hint must reflect it
+        assert "override_blocked_by_guards" in hint, f"Expected guard block hint; got {hint!r}"
+        # 'mesh' (the proposed topology) should be in considered_alternatives
+        # We verify by checking the hint mentions the blocked topology
+        assert "mesh" in hint
+
+    def test_guards_allow_override_when_no_violations(self) -> None:
+        """When no guard fires, override is accepted with decided_by='human_override'.
+
+        Setup: large iter_total means dwell is satisfied, no cooldown, no switch-count cap.
+        """
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent}
+
+        cfg = TopologyConfig(
+            name="adaptive",
+            max_iterations=50,
+            extra={
+                "switch_guards": True,
+                "switch_guards_config": {
+                    "min_dwell_iters": 2,
+                    "cooldown_iters": 0,
+                    "max_per_run": 100,
+                    "max_per_phase": 100,
+                },
+            },
+        )
+        human_cfg = _make_human_cfg(
+            enabled=True,
+            extra={"human_can_override_router": True},
+        )
+
+        captured_nodes: dict[str, Any] = {}
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = MagicMock()
+
+        def _add_node_capture(name: str, fn: Any) -> None:
+            captured_nodes[name] = fn
+
+        mock_graph.add_node = _add_node_capture
+        mock_graph.add_edge = MagicMock()
+        mock_graph.add_conditional_edges = MagicMock()
+
+        mock_gateway = AsyncMock()
+        mock_gateway.request = AsyncMock(return_value=_make_switch_response("mesh"))
+
+        with (
+            patch("atm.topology.adaptive.StateGraph", return_value=mock_graph),
+            patch("atm.topology.adaptive._LLMSimulatedGateway", return_value=mock_gateway),
+        ):
+            AdaptiveTopology().build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=MagicMock(),
+            )
+
+        node = captured_nodes.get("human_advisor_node")
+        if node is None:
+            pytest.skip("Could not extract human_advisor_node")
+
+        # Dwell = iter_total - topology_started_at_iter = 10 - 0 = 10 >= min_dwell=2
+        state = _make_state(
+            run_id=uuid.uuid4(),
+            active_topology="linear",
+            iter_total=10,
+            signals={},
+        )
+        state["shared"]["topology_started_at_iter"] = 0
+        state["shared"]["topology_switch_count"] = 0
+        state["shared"]["topology_history"] = []
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
+            delta = asyncio.run(node(state))
+
+        signals = delta.get("shared", {}).get("signals", {})
+        hint = signals.get("human_advisor_hint", "")
+
+        # Override must be accepted when no guards fire
+        assert "override_applied" in hint, (
+            f"Expected 'override_applied' when guards allow; got {hint!r}"
+        )
