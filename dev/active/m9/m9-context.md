@@ -10,9 +10,10 @@
 - Step 2.4 (HumanCfg + YAML configs): добавлен `HumanCfg` (frozen Pydantic v2) в `src/atm/experiment/config.py` и поле `human: HumanCfg | None = None` в `ExperimentConfig`. Созданы `conf/human/llm_simulated.yaml`, `conf/human/cli.yaml`. 17 тестов зелёных, mypy clean, существующие тесты (21/21) без изменений.
 
 - Step 3.1 (Runner wiring): `_build_initial_state` теперь добавляет `"run_id": run_id` в `state["shared"]`; `topology_instance.build(...)` получает `human_cfg=cfg.human` как явный kwarg. SharedState total=False — state.py не изменялся. 3 новых теста + 68/68 существующих зелёных, mypy clean.
+- Step 4.1 (Chain topology HITL): `chain.py` wired — `build()` теперь читает `human_cfg` из kwargs; если `enabled=True`, вставляет `human_reviewer` node между `critic_postprocess` и conditional edge. `_build_human_reviewer_node` уже была реализована ранее. `HumanCfg.timeout_s` исправлен на `float | None` (был `float`) для соответствия планово-спецификации. 14/14 тестов зелёных, mypy clean, 141/141 topology тестов без регрессий.
 
 ### IN PROGRESS
-- Wave D: Step 4.1 Chain topology — human_reviewer node (depends on 1.1, 2.3, 3.1)
+- Wave E: Step 5.1 run_with_human — resume loop orchestrator (depends on 2.5, 4.1)
 
 ### BLOCKERS
 - Нет
@@ -93,10 +94,10 @@
 - Плановое изменение: MODIFY в Step 3.1 (Wave C) — (a) добавить `"run_id": run_id` в shared, (b) добавить `human_cfg=cfg.human` в вызов `topology.build(...)`
 - Статус: ГОТОВО (Step 3.1) — run_id в shared, human_cfg kwarg пробрасывается
 
-**`src/atm/topology/chain.py` (lines 195–283)**
-- Роль: Chain-топология `START → planner → executor → critic → ...`
-- Плановое изменение: MODIFY в Step 9 (Wave D) — вставить `human_reviewer` node между executor и critic при `human_cfg.enabled=True`
-- Статус: НЕ НАЧАТО
+**`src/atm/topology/chain.py`**
+- Роль: Chain-топология `START → planner → executor → critic → critic_postprocess → [human_reviewer →] conditional`
+- Плановое изменение: MODIFY в Step 4.1 (Wave D)
+- Статус: ГОТОВО — human_reviewer вставляется при `enabled=True`; default path неизменён
 
 **`alembic/versions/0002_human_interactions_idempotency.py`**
 - Роль: Alembic-миграция — UNIQUE CONSTRAINT `uq_human_interactions_run_request` на `(run_id, request_id)`

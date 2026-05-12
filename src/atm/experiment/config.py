@@ -131,7 +131,7 @@ class HumanCfg(BaseModel):
     enabled: bool = False
     gateway: Literal["llm_simulated", "cli"] = "llm_simulated"
     role: HumanRole = HumanRole.REVIEWER
-    timeout_s: float = 900.0
+    timeout_s: float | None = 900.0
     timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
     model: str | None = None
 

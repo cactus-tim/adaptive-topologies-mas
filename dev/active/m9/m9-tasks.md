@@ -2,7 +2,7 @@
 
 ---
 
-## >> CURRENT WAVE: Wave D <<
+## >> CURRENT WAVE: Wave E <<
 
 ---
 
@@ -90,9 +90,9 @@
 
 ---
 
-## Wave D — Chain topology (sequential) IN PROGRESS
+## Wave D — Chain topology (sequential) COMPLETE
 
-- [ ] 4.1 Chain topology — `human_reviewer` node с interrupt() и dispatch
+- [x] 4.1 Chain topology — `human_reviewer` node с interrupt() и dispatch
   - Type: simple
   - Files: `src/atm/topology/chain.py` (modify), `tests/unit/topology/test_chain_human.py` (create)
   - Depends On: 1.1, 2.3, 3.1
