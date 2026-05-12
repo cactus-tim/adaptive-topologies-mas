@@ -125,6 +125,12 @@ try:
 except ImportError:  # pragma: no cover
     request_with_timeout = None
 
+HumanRoleRouter: Any
+try:
+    from atm.human.role_router import HumanRoleRouter as HumanRoleRouter
+except ImportError:  # pragma: no cover
+    HumanRoleRouter = None
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -322,6 +328,7 @@ def _build_human_judge_node(
     judge_id: str,
     debater_pro_id: str,
     debater_contra_id: str,
+    role_router: Any = None,
 ) -> Any:
     """Build an async HITL node that synthesizes a DECISION message for the judge.
 
@@ -346,10 +353,13 @@ def _build_human_judge_node(
         judge_id:  Agent id of the judge (where DECISION is written).
         debater_pro_id:   Agent id of pro debater.
         debater_contra_id: Agent id of contra debater.
+        role_router: Optional HumanRoleRouter; when not None, overrides human_cfg.role
+            dynamically via ``await role_router.decide(phase, state)``.
 
     Returns:
         An async callable compatible with LangGraph node signature.
     """
+    _role_router = role_router
 
     async def human_judge_node(state: GraphState) -> dict[str, Any]:
         """HITL judge node — calls gateway and writes synthesized DECISION to judge outbox."""
@@ -381,10 +391,20 @@ def _build_human_judge_node(
             "Do you approve? Action: 'approve' to approve pro side, 'reject' otherwise."
         )
 
+        # --- Resolve active role (dynamic via role_router or static from cfg) ---
+        from atm.core.types import Phase
+
+        if _role_router is not None:
+            _raw_phase = shared.get("phase", "execution")
+            _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+            active_role = await _role_router.decide(_phase, shared)
+        else:
+            active_role = human_cfg.role
+
         # --- Build HumanContext ---
         ctx = HumanContext(
             run_id=run_id,
-            role=human_cfg.role,
+            role=active_role,
             question=question,
             recent_messages=tuple(state.get("messages", [])[-5:]),
             allowed_actions=("approve", "reject"),
@@ -400,7 +420,7 @@ def _build_human_judge_node(
                     "run_id": run_id,
                     "request_id": request_id,
                     "role": str(
-                        human_cfg.role.value if hasattr(human_cfg.role, "value") else human_cfg.role
+                        active_role.value if hasattr(active_role, "value") else active_role
                     ),
                     "context_json": ctx.model_dump(mode="json"),
                     "requested_at": _requested_at,
@@ -569,6 +589,7 @@ class DebateTopology:
         """
         checkpointer = kwargs.get("checkpointer")
         human_cfg: HumanCfg | None = kwargs.get("human_cfg")
+        role_router: Any = kwargs.get("role_router")
 
         # Build gateway from human_gateway_llm kwarg (Runner pattern, mirrors chain.py).
         # Tests may also pass a pre-built gateway directly via kwargs["gateway"].
@@ -747,6 +768,7 @@ class DebateTopology:
                 judge_id=judge_id,
                 debater_pro_id=debater_pro_id,
                 debater_contra_id=debater_contra_id,
+                role_router=role_router,
             )
 
             # Node: judge_postprocess — reads from judge_id outbox (unchanged)
@@ -865,9 +887,19 @@ class DebateTopology:
                     "Override? 'approve' to finalize, 'reject' to continue debate."
                 )
 
+                # --- Resolve active role (dynamic via role_router or static from cfg) ---
+                from atm.core.types import Phase
+
+                if role_router is not None:
+                    _raw_phase = shared_state.get("phase", "execution")
+                    _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+                    active_role_both = await role_router.decide(_phase, shared_state)
+                else:
+                    active_role_both = human_cfg.role
+
                 ctx = HumanContext(
                     run_id=run_id,
-                    role=human_cfg.role,
+                    role=active_role_both,
                     question=question,
                     recent_messages=tuple(state.get("messages", [])[-5:]),
                     allowed_actions=("approve", "reject"),
@@ -884,9 +916,9 @@ class DebateTopology:
                             "run_id": run_id,
                             "request_id": h_request_id,
                             "role": str(
-                                human_cfg.role.value
-                                if hasattr(human_cfg.role, "value")
-                                else human_cfg.role
+                                active_role_both.value
+                                if hasattr(active_role_both, "value")
+                                else active_role_both
                             ),
                             "context_json": ctx.model_dump(mode="json"),
                             "requested_at": _requested_at,

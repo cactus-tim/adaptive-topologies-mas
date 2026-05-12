@@ -90,6 +90,12 @@ try:
 except ImportError:  # pragma: no cover
     request_with_timeout = None
 
+HumanRoleRouter: Any
+try:
+    from atm.human.role_router import HumanRoleRouter as HumanRoleRouter
+except ImportError:  # pragma: no cover
+    HumanRoleRouter = None
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -155,6 +161,8 @@ class MeshTopology:
             **kwargs: Optional; checkpointer=... forwarded to graph.compile().
                       human_cfg=HumanCfg enables HITL (human_peer in agent_order).
                       human_gateway_llm=LLMWrapper forwarded to LLMSimulatedGateway.
+                      role_router=HumanRoleRouter | None — when not None, overrides
+                          human_cfg.role dynamically via await role_router.decide(phase, state).
 
         Returns:
             CompiledStateGraph ready for ainvoke.
@@ -175,6 +183,7 @@ class MeshTopology:
         # ----------------------------------------------------------------
         human_cfg: Any = kwargs.get("human_cfg")
         human_enabled: bool = human_cfg is not None and bool(getattr(human_cfg, "enabled", False))
+        role_router: Any = kwargs.get("role_router")
 
         # Per-topology HITL extra config
         human_extra: dict[str, Any] = {}
@@ -337,6 +346,7 @@ class MeshTopology:
 
             _hcfg = human_cfg
             _hgw = human_gateway
+            _role_router = role_router
 
             async def human_peer_node(state: GraphState) -> dict[str, Any]:
                 """HITL peer node — requests a vote from the human gateway.
@@ -372,7 +382,7 @@ class MeshTopology:
                 request_id = f"mesh:{run_id}:{iter_total_now}:{dispatch_round_now}:peer"
 
                 # Build HumanContext — extract question from bus or use default
-                from atm.core.types import HumanContext, Message, MessageKind
+                from atm.core.types import HumanContext, Message, MessageKind, Phase
 
                 bus: list[Any] = list(shared.get("broadcast_bus") or [])
                 question = "Please vote for the best answer. Reply with your choice as 'vote_for'."
@@ -381,9 +391,19 @@ class MeshTopology:
                         question = getattr(msg, "content", question) or question
                         break
 
+                # Resolve active role — dynamic via role_router or static from cfg
+                if _role_router is not None:
+                    _raw_phase = shared.get("phase", "execution")
+                    _phase = (
+                        Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+                    )
+                    active_role = await _role_router.decide(_phase, shared)
+                else:
+                    active_role = _hcfg.role
+
                 ctx = HumanContext(
                     run_id=run_id,
-                    role=_hcfg.role,
+                    role=active_role,
                     question=question,
                     recent_messages=(),
                     allowed_actions=("vote",),
@@ -399,7 +419,9 @@ class MeshTopology:
                             "run_id": run_id,
                             "request_id": request_id,
                             "role": str(
-                                _hcfg.role.value if hasattr(_hcfg.role, "value") else _hcfg.role
+                                active_role.value
+                                if hasattr(active_role, "value")
+                                else active_role
                             ),
                             "context_json": ctx.model_dump(mode="json"),
                             "requested_at": _requested_at,

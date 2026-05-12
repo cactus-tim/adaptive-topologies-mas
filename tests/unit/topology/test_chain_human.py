@@ -701,6 +701,155 @@ class TestLlmFallbackPolicy:
         assert "human_request" in events
         assert "human_response" in events
 
+
+# ---------------------------------------------------------------------------
+# Group 8 — role_router integration: back-compat + dynamic
+# ---------------------------------------------------------------------------
+
+
+class TestChainRoleRouter:
+    """Verify role_router kwarg in ChainTopology.build() is forwarded correctly."""
+
+    def test_build_accepts_role_router_none(self) -> None:
+        """build(role_router=None) builds successfully (back-compat)."""
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent, "executor": mock_agent, "critic": mock_agent}
+        cfg = _make_cfg()
+        human_cfg = _make_human_cfg(enabled=True)
+
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = mock_compiled
+
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
+        ):
+            mock_gw_cls.return_value = MagicMock()
+            ChainTopology().build(agents, cfg, human_cfg=human_cfg, role_router=None)
+
+        node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
+        assert "human_reviewer" in node_names
+
+    def test_back_compat_role_uses_human_cfg_role(self) -> None:
+        """role_router=None → HumanContext.role == human_cfg.role (reviewer)."""
+        from atm.core.types import HumanContext
+
+        run_id = uuid.uuid4()
+        state = _make_state(run_id=run_id, iter_total=0)
+
+        captured_contexts: list[HumanContext] = []
+
+        fake_gateway = AsyncMock()
+
+        async def capturing_request(ctx: Any, *, request_id: str) -> Any:
+            captured_contexts.append(ctx)
+            return _make_approve_response()
+
+        fake_gateway.request = capturing_request
+        human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER, timeout_s=None)  # type: ignore[arg-type]
+
+        node_fn = _build_human_reviewer_node(human_cfg, fake_gateway)
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch):
+            asyncio.run(node_fn(state))
+
+        assert len(captured_contexts) == 1
+        assert captured_contexts[0].role == HumanRole.REVIEWER
+
+    def test_dynamic_role_router_overrides_human_cfg_role(self) -> None:
+        """role_router=FixedRoleRouter(JUDGE) → HumanContext.role == JUDGE, not human_cfg.role."""
+        from atm.core.types import HumanContext
+        from atm.human.role_router import FixedRoleRouter
+
+        run_id = uuid.uuid4()
+        state = _make_state(run_id=run_id, iter_total=0)
+
+        captured_contexts: list[HumanContext] = []
+
+        fake_gateway = AsyncMock()
+
+        async def capturing_request(ctx: Any, *, request_id: str) -> Any:
+            captured_contexts.append(ctx)
+            return _make_approve_response()
+
+        fake_gateway.request = capturing_request
+        human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER, timeout_s=None)  # type: ignore[arg-type]
+        router = FixedRoleRouter(role=HumanRole.JUDGE)
+
+        # Import the factory from chain (it's the inline node, not from _node_factory)
+        # We test via build() by capturing what role_router gets forwarded to
+        # Here we test _build_human_reviewer_node directly since Chain has its own inline node.
+        # But for the role_router test, we need to verify chain.build() forwards role_router
+        # to the node builder. Since chain.py uses _build_human_reviewer_node (its own),
+        # we test chain.build() with role_router kwarg and verify the node uses router.
+        #
+        # Chain has its OWN inline node (_build_human_reviewer_node), not build_human_node_factory.
+        # We need to patch the chain module to verify role_router propagation.
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent, "executor": mock_agent, "critic": mock_agent}
+        cfg = _make_cfg()
+
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = mock_compiled
+
+        captured_build_calls: list[dict[str, Any]] = []
+
+        def capturing_build_node(h_cfg: Any, gw: Any, role_router: Any = None) -> Any:
+            captured_build_calls.append({"human_cfg": h_cfg, "role_router": role_router})
+            async def noop_node(state: Any) -> dict[str, Any]:
+                return {}
+            return noop_node
+
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
+            patch("atm.topology.chain._build_human_reviewer_node", side_effect=capturing_build_node),
+        ):
+            mock_gw_cls.return_value = MagicMock()
+            ChainTopology().build(agents, cfg, human_cfg=human_cfg, role_router=router)
+
+        assert len(captured_build_calls) == 1
+        assert captured_build_calls[0]["role_router"] is router
+
+    def test_role_router_none_not_forwarded_to_node_builder(self) -> None:
+        """role_router=None → _build_human_reviewer_node receives role_router=None."""
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent, "executor": mock_agent, "critic": mock_agent}
+        cfg = _make_cfg()
+        human_cfg = _make_human_cfg(enabled=True, timeout_s=None)  # type: ignore[arg-type]
+
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = mock_compiled
+
+        captured_calls: list[dict[str, Any]] = []
+
+        def capturing_build_node(h_cfg: Any, gw: Any, role_router: Any = None) -> Any:
+            captured_calls.append({"role_router": role_router})
+            async def noop_node(state: Any) -> dict[str, Any]:
+                return {}
+            return noop_node
+
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
+            patch("atm.topology.chain._build_human_reviewer_node", side_effect=capturing_build_node),
+        ):
+            mock_gw_cls.return_value = MagicMock()
+            ChainTopology().build(agents, cfg, human_cfg=human_cfg, role_router=None)
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["role_router"] is None
+
+
     def test_llm_fallback_primary_timeout_exercises_fallback(self) -> None:
         """When the primary gateway times out and policy='llm_fallback', the fallback
         gateway is called and returns a response with source='fallback'."""

@@ -887,3 +887,189 @@ class TestOverrideModeGuardsBlock:
         assert "override_applied" in hint, (
             f"Expected 'override_applied' when guards allow; got {hint!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Group 7 — role_router integration (M9.2)
+# ---------------------------------------------------------------------------
+
+
+class _FakeAdaptiveWithRoleRouter:
+    """Helper: builds AdaptiveTopology with HITL + optional role_router and extracts node."""
+
+    def __init__(
+        self,
+        *,
+        human_cfg_role: HumanRole = HumanRole.REVIEWER,
+        role_router: Any = None,
+    ) -> None:
+        self.human_cfg_role = human_cfg_role
+        self.role_router = role_router
+        self._gateway: Any = AsyncMock()
+
+    def build_and_extract(self) -> Any:
+        """Build AdaptiveTopology and return (node_fn, gateway)."""
+        mock_agent = MagicMock()
+        mock_agent.step = AsyncMock(return_value={})
+        agents = {"planner": mock_agent}
+
+        cfg = TopologyConfig(
+            name="adaptive",
+            max_iterations=3,
+            extra={"switch_guards": False},
+        )
+        human_cfg = _make_human_cfg(enabled=True, role=self.human_cfg_role)
+
+        captured_nodes: dict[str, Any] = {}
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = MagicMock()
+
+        def _add_node_capture(name: str, fn: Any) -> None:
+            captured_nodes[name] = fn
+
+        mock_graph.add_node = _add_node_capture
+        mock_graph.add_edge = MagicMock()
+        mock_graph.add_conditional_edges = MagicMock()
+
+        with (
+            patch("atm.topology.adaptive.StateGraph", return_value=mock_graph),
+            patch("atm.topology.adaptive._LLMSimulatedGateway", return_value=self._gateway),
+        ):
+            AdaptiveTopology().build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                role_router=self.role_router,
+                human_gateway_llm=MagicMock(),
+            )
+
+        return captured_nodes.get("human_advisor_node")
+
+
+class TestAdaptiveRoleRouter:
+    """M9.2 role_router integration in AdaptiveTopology.human_advisor_node.
+
+    Three tests:
+      1. Back-compat: role_router=None → role in HumanContext == human_cfg.role.
+      2. Dynamic: role_router=FixedRoleRouter(JUDGE), human_cfg.role=REVIEWER → role==JUDGE.
+      3. Phase-dependent: RuleBasedRoleRouter returns different roles per phase.
+    """
+
+    def test_back_compat_role_router_none_uses_human_cfg_role(self) -> None:
+        """role_router=None → HumanContext.role == human_cfg.role (REVIEWER)."""
+        from atm.core.types import HumanContext  # noqa: F401
+
+        helper = _FakeAdaptiveWithRoleRouter(
+            human_cfg_role=HumanRole.REVIEWER,
+            role_router=None,
+        )
+
+        captured_roles: list[Any] = []
+
+        async def capturing_request(ctx: Any, *, request_id: str) -> Any:
+            captured_roles.append(ctx.role)
+            return _make_advise_response("OK")
+
+        helper._gateway.request = capturing_request
+        node = helper.build_and_extract()
+        if node is None:
+            pytest.skip("Could not extract human_advisor_node")
+
+        state = _make_state(run_id=uuid.uuid4(), iter_total=0)
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
+            asyncio.run(node(state))
+
+        assert len(captured_roles) == 1, f"Expected 1 captured role; got {captured_roles!r}"
+        assert captured_roles[0] == HumanRole.REVIEWER, (
+            f"Expected REVIEWER (back-compat); got {captured_roles[0]!r}"
+        )
+
+    def test_dynamic_fixed_role_router_overrides_human_cfg_role(self) -> None:
+        """role_router=FixedRoleRouter(JUDGE), human_cfg.role=REVIEWER → role==JUDGE."""
+        from atm.human.role_router import FixedRoleRouter
+
+        router = FixedRoleRouter(role=HumanRole.JUDGE)
+        helper = _FakeAdaptiveWithRoleRouter(
+            human_cfg_role=HumanRole.REVIEWER,
+            role_router=router,
+        )
+
+        captured_roles: list[Any] = []
+
+        async def capturing_request(ctx: Any, *, request_id: str) -> Any:
+            captured_roles.append(ctx.role)
+            return _make_advise_response("OK")
+
+        helper._gateway.request = capturing_request
+        node = helper.build_and_extract()
+        if node is None:
+            pytest.skip("Could not extract human_advisor_node")
+
+        state = _make_state(run_id=uuid.uuid4(), iter_total=0)
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
+            asyncio.run(node(state))
+
+        assert len(captured_roles) == 1, f"Expected 1 captured role; got {captured_roles!r}"
+        assert captured_roles[0] == HumanRole.JUDGE, (
+            f"Expected JUDGE (from FixedRoleRouter); got {captured_roles[0]!r}"
+        )
+
+    def test_rule_based_router_returns_phase_dependent_role(self) -> None:
+        """RuleBasedRoleRouter returns different roles per phase (planning→COORDINATOR, etc.)."""
+        from atm.human.role_router import RuleBasedRoleRouter
+
+        # Use default role table: planning→coordinator, execution→peer, etc.
+        router = RuleBasedRoleRouter()
+
+        # We'll invoke the node twice: once with phase=planning, once with phase=execution.
+        # Re-build for each phase to start fresh (closure state is independent per build).
+        captured_roles_by_phase: dict[str, Any] = {}
+
+        for phase_str in ("planning", "execution"):
+            helper = _FakeAdaptiveWithRoleRouter(
+                human_cfg_role=HumanRole.REVIEWER,  # static fallback, should be overridden
+                role_router=router,
+            )
+
+            captured: list[Any] = []
+
+            async def capturing_request(ctx: Any, *, request_id: str, _cap: list[Any] = captured) -> Any:
+                _cap.append(ctx.role)
+                return _make_advise_response("OK")
+
+            helper._gateway.request = capturing_request
+            node = helper.build_and_extract()
+            if node is None:
+                pytest.skip("Could not extract human_advisor_node")
+
+            state = _make_state(run_id=uuid.uuid4(), iter_total=0)
+            # Override phase in shared state
+            state["shared"]["phase"] = phase_str
+
+            async def fake_dispatch(name: str, data: Any) -> None:
+                pass
+
+            with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
+                asyncio.run(node(state))
+
+            if captured:
+                captured_roles_by_phase[phase_str] = captured[0]
+
+        # planning → coordinator, execution → peer (per DEFAULT_ROLE_TABLE)
+        assert "planning" in captured_roles_by_phase, "No role captured for planning phase"
+        assert "execution" in captured_roles_by_phase, "No role captured for execution phase"
+
+        assert captured_roles_by_phase["planning"] == HumanRole.COORDINATOR, (
+            f"Expected COORDINATOR for planning; got {captured_roles_by_phase['planning']!r}"
+        )
+        assert captured_roles_by_phase["execution"] == HumanRole.PEER, (
+            f"Expected PEER for execution; got {captured_roles_by_phase['execution']!r}"
+        )

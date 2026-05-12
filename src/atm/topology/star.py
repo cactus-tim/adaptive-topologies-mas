@@ -69,6 +69,7 @@ logger = logging.getLogger(__name__)
 
 LLMSimulatedGateway: Any
 CLIGateway: Any
+build_human_node_factory: Any
 
 try:
     from atm.human.llm_simulated import LLMSimulatedGateway as LLMSimulatedGateway
@@ -79,6 +80,11 @@ try:
     from atm.human.cli_gateway import CLIGateway as CLIGateway
 except ImportError:  # pragma: no cover
     CLIGateway = None
+
+try:
+    from atm.human._node_factory import build_human_node_factory as build_human_node_factory
+except ImportError:  # pragma: no cover
+    build_human_node_factory = None
 
 # ---------------------------------------------------------------------------
 # Constants — default phase caps
@@ -443,9 +449,7 @@ class StarTopology:
                     "Ensure atm.human is installed."
                 )
 
-            # Build human_reviewer node using build_human_node_factory
-            from atm.human import build_human_node_factory
-
+            # Build human_reviewer node using build_human_node_factory (module-level import)
             def _star_question_extractor(state: dict[str, Any]) -> str:
                 """Extract question from critic's latest DECISION message."""
                 agents_s: dict[str, Any] = state.get("agents", {})
@@ -457,12 +461,14 @@ class StarTopology:
                         return str(q)
                 return question
 
+            role_router: Any = kwargs.get("role_router")
             human_reviewer_node = build_human_node_factory(
                 topology_name="star",
                 human_cfg=human_cfg,
                 gateway=gateway_instance,
                 request_id_template="star:{run_id}:{iter_total}:reviewer",
                 question_extractor=_star_question_extractor,
+                role_router=role_router,
             )
 
             graph.add_node("human_reviewer", human_reviewer_node)

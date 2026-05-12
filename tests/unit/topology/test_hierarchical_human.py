@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 import atm.topology.hierarchical  # noqa: F401 — triggers registry registration
@@ -507,3 +508,161 @@ class TestDefaultScope:
 
         node_names = set(compiled.get_graph().nodes.keys())
         assert "human_top_reviewer" in node_names
+
+
+# ---------------------------------------------------------------------------
+# Test group: role_router integration — back-compat + dynamic for top + sub_team
+# ---------------------------------------------------------------------------
+
+
+class TestHierarchicalRoleRouter:
+    """role_router=None → back-compat (human_cfg.role); role_router set → dynamic role."""
+
+    def _capture_top_reviewer_roles(
+        self,
+        cfg_role: HumanRole,
+        role_router: Any | None,
+    ) -> list[HumanRole]:
+        """Build scope='top' graph, run it, and capture HumanContext.role values."""
+        import asyncio
+
+        from atm.core.types import HumanContext
+
+        topology = HierarchicalTopology()
+        cfg = _make_cfg(max_iterations=20)
+        agents = _make_agents()
+        human_cfg = _make_human_cfg(scope="top", role=cfg_role)
+        run_id = uuid.uuid4()
+
+        captured_roles: list[HumanRole] = []
+
+        from atm.human.gateway import HumanResponse
+
+        async def capturing_request(ctx: HumanContext, *, request_id: str) -> HumanResponse:
+            captured_roles.append(ctx.role)
+            return HumanResponse(
+                action="approve",
+                comment="unit test",
+                source="llm_sim",
+                timed_out=False,
+            )
+
+        mock_gateway = MagicMock()
+        mock_gateway.request = capturing_request
+
+        with patch("atm.topology.hierarchical.LLMSimulatedGateway") as mock_gw:
+            mock_gw.return_value = mock_gateway
+            compiled = topology.build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=MagicMock(),
+                role_router=role_router,
+            )
+
+        initial_state = _make_state(run_id=run_id)
+        asyncio.run(compiled.ainvoke(initial_state))
+        return captured_roles
+
+    @pytest.mark.parametrize(
+        "use_router,cfg_role,expected_role",
+        [
+            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),      # back-compat
+            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),    # dynamic
+        ],
+        ids=["back_compat", "dynamic"],
+    )
+    def test_scope_top_role(
+        self,
+        use_router: bool,
+        cfg_role: HumanRole,
+        expected_role: HumanRole,
+    ) -> None:
+        """scope='top' HITL point: back-compat uses human_cfg.role; dynamic uses router.decide()."""
+        from atm.human.role_router import FixedRoleRouter
+
+        router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
+        roles = self._capture_top_reviewer_roles(cfg_role=cfg_role, role_router=router)
+
+        assert len(roles) >= 1, (
+            f"Expected at least 1 gateway call (top reviewer), got {roles}"
+        )
+        assert roles[0] == expected_role, (
+            f"scope=top: Expected role={expected_role!r}, got {roles[0]!r}"
+        )
+
+    def _capture_sub_reviewer_roles(
+        self,
+        cfg_role: HumanRole,
+        role_router: Any | None,
+    ) -> list[HumanRole]:
+        """Build scope='sub_team' graph, run it, and capture HumanContext.role values."""
+        import asyncio
+
+        from atm.core.types import HumanContext
+
+        topology = HierarchicalTopology()
+        cfg = _make_cfg(max_iterations=20)
+        agents = _make_agents()
+        human_cfg = _make_human_cfg(scope="sub_team", role=cfg_role)
+        run_id = uuid.uuid4()
+
+        captured_roles: list[HumanRole] = []
+
+        from atm.human.gateway import HumanResponse
+
+        async def capturing_request(ctx: HumanContext, *, request_id: str) -> HumanResponse:
+            captured_roles.append(ctx.role)
+            return HumanResponse(
+                action="approve",
+                comment="unit test",
+                source="llm_sim",
+                timed_out=False,
+            )
+
+        mock_gateway = MagicMock()
+        mock_gateway.request = capturing_request
+
+        with patch("atm.topology.hierarchical.LLMSimulatedGateway") as mock_gw:
+            mock_gw.return_value = mock_gateway
+            compiled = topology.build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=MagicMock(),
+                role_router=role_router,
+            )
+
+        initial_state = _make_state(run_id=run_id)
+        asyncio.run(compiled.ainvoke(initial_state))
+        return captured_roles
+
+    @pytest.mark.parametrize(
+        "use_router,cfg_role,expected_role",
+        [
+            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),      # back-compat
+            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),    # dynamic
+        ],
+        ids=["back_compat", "dynamic"],
+    )
+    def test_scope_sub_team_role(
+        self,
+        use_router: bool,
+        cfg_role: HumanRole,
+        expected_role: HumanRole,
+    ) -> None:
+        """scope='sub_team' HITL points: back-compat uses human_cfg.role; dynamic uses router."""
+        from atm.human.role_router import FixedRoleRouter
+
+        router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
+        roles = self._capture_sub_reviewer_roles(cfg_role=cfg_role, role_router=router)
+
+        # Two teams → at least 2 calls
+        assert len(roles) >= 2, (
+            f"Expected at least 2 sub-reviewer calls (one per team), got: {roles}"
+        )
+        # All calls should use the expected role
+        for i, role in enumerate(roles):
+            assert role == expected_role, (
+                f"scope=sub_team call[{i}]: Expected role={expected_role!r}, got {role!r}"
+            )

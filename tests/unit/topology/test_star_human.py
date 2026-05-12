@@ -561,6 +561,252 @@ class TestRouteFromCoordOverride:
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# 6. role_router integration: back-compat + dynamic
+# ---------------------------------------------------------------------------
+
+
+class TestStarRoleRouter:
+    """Verify role_router kwarg in StarTopology.build() is forwarded to factory."""
+
+    def test_build_accepts_role_router_none(self) -> None:
+        """build(role_router=None) builds successfully without error (back-compat)."""
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = mock_compiled
+        mock_gw = MagicMock()
+
+        human_cfg = _make_human_cfg(enabled=True)
+        _build_star_graph(human_cfg=human_cfg, mock_graph=mock_graph, mock_gw_cls=mock_gw)
+
+        node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
+        assert "human_reviewer" in node_names
+
+    def test_build_with_role_router_none_passes_none_to_factory(self) -> None:
+        """build(role_router=None) → build_human_node_factory called with role_router=None."""
+        from atm.topology.star import StarTopology
+
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = mock_compiled
+        mock_gw = MagicMock()
+        mock_gw_cls = MagicMock(return_value=mock_gw)
+
+        human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
+        agents = {
+            "planner": _make_mock_agent("planner"),
+            "executor": _make_mock_agent("executor"),
+            "critic": _make_mock_agent("critic"),
+        }
+        cfg = _make_cfg()
+
+        captured_factory_calls: list[dict[str, Any]] = []
+
+        def capturing_factory(
+            topology_name: str,
+            human_cfg: Any,
+            gateway: Any,
+            *,
+            request_id_template: str,
+            question_extractor: Any,
+            apply_decision: Any = None,
+            role_router: Any = None,
+        ) -> Any:
+            captured_factory_calls.append({"role_router": role_router})
+            async def noop_node(state: Any) -> dict[str, Any]:
+                return {}
+            return noop_node
+
+        with (
+            patch("atm.topology.star.StateGraph", return_value=mock_graph),
+            patch("atm.topology.star.LLMSimulatedGateway", mock_gw_cls),
+            patch("atm.topology.star.build_human_node_factory", side_effect=capturing_factory),
+        ):
+            StarTopology().build(agents, cfg, human_cfg=human_cfg, role_router=None)
+
+        assert len(captured_factory_calls) == 1
+        assert captured_factory_calls[0]["role_router"] is None
+
+    def test_build_with_role_router_dynamic_passes_router_to_factory(self) -> None:
+        """build(role_router=FixedRoleRouter(JUDGE)) → factory receives the router."""
+        from atm.human.role_router import FixedRoleRouter
+        from atm.topology.star import StarTopology
+
+        mock_compiled = MagicMock()
+        mock_graph = MagicMock()
+        mock_graph.compile.return_value = mock_compiled
+        mock_gw = MagicMock()
+        mock_gw_cls = MagicMock(return_value=mock_gw)
+
+        human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
+        agents = {
+            "planner": _make_mock_agent("planner"),
+            "executor": _make_mock_agent("executor"),
+            "critic": _make_mock_agent("critic"),
+        }
+        cfg = _make_cfg()
+        router = FixedRoleRouter(role=HumanRole.JUDGE)
+
+        captured_factory_calls: list[dict[str, Any]] = []
+
+        def capturing_factory(
+            topology_name: str,
+            human_cfg: Any,
+            gateway: Any,
+            *,
+            request_id_template: str,
+            question_extractor: Any,
+            apply_decision: Any = None,
+            role_router: Any = None,
+        ) -> Any:
+            captured_factory_calls.append({"role_router": role_router})
+            async def noop_node(state: Any) -> dict[str, Any]:
+                return {}
+            return noop_node
+
+        with (
+            patch("atm.topology.star.StateGraph", return_value=mock_graph),
+            patch("atm.topology.star.LLMSimulatedGateway", mock_gw_cls),
+            patch("atm.topology.star.build_human_node_factory", side_effect=capturing_factory),
+        ):
+            StarTopology().build(agents, cfg, human_cfg=human_cfg, role_router=router)
+
+        assert len(captured_factory_calls) == 1
+        assert captured_factory_calls[0]["role_router"] is router
+
+    @pytest.mark.asyncio
+    async def test_dynamic_role_router_overrides_cfg_role_in_node(self) -> None:
+        """End-to-end: role_router=FixedRoleRouter(JUDGE) → HumanContext.role == JUDGE."""
+        from atm.core.types import HumanContext
+        from atm.human.role_router import FixedRoleRouter
+
+        decision_msg = Message(
+            sender="critic",
+            kind=MessageKind.DECISION,
+            content="APPROVE",
+            payload={"approved": True},
+        )
+        run_id = uuid.uuid4()
+        initial = _make_initial_state(run_id=run_id)
+
+        captured_contexts: list[HumanContext] = []
+
+        async def capturing_gateway_request(ctx: Any, *, request_id: str) -> Any:
+            captured_contexts.append(ctx)
+            return _make_approve_response()
+
+        fake_gateway = MagicMock()
+        fake_gateway.request = capturing_gateway_request
+        mock_gw_cls = MagicMock(return_value=fake_gateway)
+
+        # cfg says REVIEWER but router overrides to JUDGE
+        router = FixedRoleRouter(role=HumanRole.JUDGE)
+
+        agents = {
+            "planner": _make_mock_agent("planner"),
+            "executor": _make_mock_agent("executor"),
+            "critic": _make_mock_agent_with_outbox("critic", [decision_msg]),
+        }
+        cfg = _make_cfg(planning_max_iter=1, exec_max_iter=1, verify_max_iter=3)
+
+        async def _fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with (
+            patch("atm.topology.star.LLMSimulatedGateway", mock_gw_cls),
+            patch(
+                "atm.human._node_factory.adispatch_custom_event",
+                side_effect=_fake_dispatch,
+            ),
+        ):
+            human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
+            graph = _build_star_graph(
+                agents=agents, cfg=cfg, human_cfg=human_cfg
+            )
+            # We need to build with role_router — use StarTopology directly
+            from atm.topology.star import StarTopology
+            from langgraph.checkpoint.memory import MemorySaver
+
+            graph = StarTopology().build(
+                agents, cfg,
+                human_cfg=human_cfg,
+                role_router=router,
+                checkpointer=MemorySaver(),
+            )
+
+        result = await graph.ainvoke(
+            initial,
+            config={"configurable": {"thread_id": f"test-router-{uuid.uuid4()}"}},
+        )
+
+        assert result is not None
+        # The node should have been called with JUDGE role
+        assert len(captured_contexts) >= 1
+        assert captured_contexts[0].role == HumanRole.JUDGE
+
+    @pytest.mark.asyncio
+    async def test_back_compat_role_router_none_uses_cfg_role(self) -> None:
+        """role_router=None → HumanContext.role == human_cfg.role (REVIEWER)."""
+        from atm.core.types import HumanContext
+
+        decision_msg = Message(
+            sender="critic",
+            kind=MessageKind.DECISION,
+            content="APPROVE",
+            payload={"approved": True},
+        )
+        run_id = uuid.uuid4()
+        initial = _make_initial_state(run_id=run_id)
+
+        captured_contexts: list[HumanContext] = []
+
+        async def capturing_gateway_request(ctx: Any, *, request_id: str) -> Any:
+            captured_contexts.append(ctx)
+            return _make_approve_response()
+
+        fake_gateway = MagicMock()
+        fake_gateway.request = capturing_gateway_request
+        mock_gw_cls = MagicMock(return_value=fake_gateway)
+
+        agents = {
+            "planner": _make_mock_agent("planner"),
+            "executor": _make_mock_agent("executor"),
+            "critic": _make_mock_agent_with_outbox("critic", [decision_msg]),
+        }
+        cfg = _make_cfg(planning_max_iter=1, exec_max_iter=1, verify_max_iter=3)
+
+        async def _fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        with (
+            patch("atm.topology.star.LLMSimulatedGateway", mock_gw_cls),
+            patch(
+                "atm.human._node_factory.adispatch_custom_event",
+                side_effect=_fake_dispatch,
+            ),
+        ):
+            human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
+            from atm.topology.star import StarTopology
+            from langgraph.checkpoint.memory import MemorySaver
+
+            graph = StarTopology().build(
+                agents, cfg,
+                human_cfg=human_cfg,
+                role_router=None,
+                checkpointer=MemorySaver(),
+            )
+
+        result = await graph.ainvoke(
+            initial,
+            config={"configurable": {"thread_id": f"test-back-compat-{uuid.uuid4()}"}},
+        )
+
+        assert result is not None
+        assert len(captured_contexts) >= 1
+        assert captured_contexts[0].role == HumanRole.REVIEWER
+
+
 class TestStarBackCompatFullRun:
     """Without human_cfg, full graph run produces same behavior as M7 StarTopology."""
 
