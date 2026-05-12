@@ -10,6 +10,8 @@
 - Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов (9/9 зелёных); создан `src/atm/tasks/commongen.py`, `tests/unit/tasks/test_commongen.py`, `tests/fixtures/tasks/commongen_sample.json`; guarded import `commongen` добавлен в `__init__.py`; mypy --strict + ruff clean
 - Шаг 2.3: DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов (11/11 зелёных); создан `src/atm/tasks/dabench.py`, `tests/unit/tasks/test_dabench.py`, `tests/fixtures/tasks/dabench_curated.jsonl` (8 строк, включая multi-pair entries); guarded import `dabench` добавлен в `__init__.py` (алфавитный порядок: commongen, dabench, gsm8k, humaneval); mypy --strict + ruff clean
 
+- Шаг 3.2: `_make_task_spec` в `tests/unit/tasks/test_base.py` — `type="qa"` → `type="reasoning"`; 13/13 тестов зелёных
+
 ### В РАБОТЕ
 - Шаг 3.1: Аудит + финализация `__init__.py` + grep
 
