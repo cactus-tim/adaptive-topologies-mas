@@ -47,7 +47,21 @@ async def pg_engine_fast(pg_dsn: str) -> AsyncGenerator[AsyncEngine, None]:
     """Create async engine, run create_all DDL, yield, drop_all on teardown.
 
     Fast per-test setup for smoke tests — avoids alembic subprocess overhead.
+
+    Resets the ``public`` schema before ``create_all`` so the model DDL
+    (with ``server_default``s) actually executes regardless of leftover state
+    from a session-scoped ``pg_engine_alembic`` (which uses migration DDL
+    without server_defaults). Without this reset, ``create_all`` would be a
+    no-op when alembic-style tables already exist, and inserts that rely on
+    server defaults (e.g. ``Experiment.started_at``) would fail with
+    NotNullViolationError.
     """
+    reset_engine = create_engine(pg_dsn, echo=False)
+    async with reset_engine.begin() as conn:
+        await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    await reset_engine.dispose()
+
     engine = create_engine(pg_dsn, echo=False, pool_size=2, max_overflow=1)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

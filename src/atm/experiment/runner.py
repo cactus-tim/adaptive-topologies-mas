@@ -502,12 +502,24 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         pricing = _load_pricing()
 
-        # Build judge LLM wrapper (shares the run's BudgetTracker)
-        judge_llm = build_llm(
-            model_id=cfg.evaluation.judge_model,
-            pricing=pricing,
-            budget=budget,
-        )
+        # Build judge LLM wrapper (shares the run's BudgetTracker).
+        # If construction fails (e.g. missing OPENAI_API_KEY when default judge_model
+        # is "openai:gpt-4o" but the run uses fake providers), silently fall back to
+        # judge_llm=None — the aggregator and ground_truth dispatch handle this and
+        # judge-required evaluators will surface a clear error at evaluation time.
+        try:
+            judge_llm = build_llm(
+                model_id=cfg.evaluation.judge_model,
+                pricing=pricing,
+                budget=budget,
+            )
+        except Exception as judge_build_exc:
+            logger.warning(
+                "judge LLM construction failed — proceeding without judge",
+                judge_model=cfg.evaluation.judge_model,
+                error=str(judge_build_exc)[:200],
+            )
+            judge_llm = None
 
         # Step 4: build LLM wrappers per role
         llms = _build_llm_wrappers(cfg, budget, pricing)

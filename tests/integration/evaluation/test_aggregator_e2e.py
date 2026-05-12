@@ -14,7 +14,7 @@ This test:
 Skipped unless ``ATM_INTEGRATION_PG=1`` is set.
 
 Fixtures from ``tests/integration/conftest.py``:
-  - ``pg_engine_alembic`` (session scope) — alembic upgrade head
+  - ``pg_engine_fast`` (function scope) — Base.metadata.create_all DDL
   - ``session_factory_fast`` (function scope) — bound to pg_engine_fast
 """
 
@@ -132,7 +132,7 @@ def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
 
 @pytest.mark.integration
 async def test_mmlu_run_quality_score_is_one(
-    pg_engine_alembic: AsyncEngine,
+    pg_engine_fast: AsyncEngine,
     tmp_path: object,
 ) -> None:
     """Full e2e: run_one with MMLU + scripted answer 'B' → runs.quality_score == 1.0.
@@ -145,7 +145,7 @@ async def test_mmlu_run_quality_score_is_one(
       4. MMLUEvaluator extracts 'B' → score=1.0 → persisted to runs.quality_score.
       5. Assert ``runs.quality_score == 1.0`` via SQLAlchemy read.
     """
-    pg_dsn: str = pg_engine_alembic.url.render_as_string(hide_password=False)
+    pg_dsn: str = pg_engine_fast.url.render_as_string(hide_password=False)
     # asyncpg DSN must include the driver suffix
     if "+asyncpg" not in pg_dsn:
         pg_dsn = pg_dsn.replace("postgresql://", "postgresql+asyncpg://")
@@ -169,7 +169,7 @@ async def test_mmlu_run_quality_score_is_one(
     )
 
     # Verify the value is persisted to PostgreSQL
-    factory = create_session_factory(pg_engine_alembic)
+    factory = create_session_factory(pg_engine_fast)
     async with session_scope(factory) as session:
         row_result = await session.execute(
             select(Run).where(Run.id == result.run_id)
