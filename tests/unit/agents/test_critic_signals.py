@@ -112,9 +112,7 @@ class TestCriticSignalEmission:
         shared_out: dict[str, Any] = delta.get("shared") or {}
         signals: dict[str, Any] = shared_out.get("signals") or {}
         count = signals.get(REJECTED_COUNT, 0)
-        assert count == 2, (
-            f"Expected rejected_count == 2 (was 1, incremented by 1), got {count}"
-        )
+        assert count == 2, f"Expected rejected_count == 2 (was 1, incremented by 1), got {count}"
 
     async def test_critic_three_rejects_sets_needs_debate(self) -> None:
         """After 3 rejects, signals['needs_debate'] == True."""
