@@ -105,7 +105,7 @@
 
 ## Wave E — Orchestration helper (sequential) NOT STARTED
 
-- [ ] 5.1 run_with_human — resume loop orchestrator
+- [x] 5.1 run_with_human — resume loop orchestrator
   - Type: tdd
   - Files: `src/atm/human/runner.py` (create), `tests/unit/human/test_runner_resume_loop.py` (create)
   - Depends On: 2.5, 4.1

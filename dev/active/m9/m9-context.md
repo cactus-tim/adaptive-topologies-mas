@@ -11,9 +11,10 @@
 
 - Step 3.1 (Runner wiring): `_build_initial_state` теперь добавляет `"run_id": run_id` в `state["shared"]`; `topology_instance.build(...)` получает `human_cfg=cfg.human` как явный kwarg. SharedState total=False — state.py не изменялся. 3 новых теста + 68/68 существующих зелёных, mypy clean.
 - Step 4.1 (Chain topology HITL): `chain.py` wired — `build()` теперь читает `human_cfg` из kwargs; если `enabled=True`, вставляет `human_reviewer` node между `critic_postprocess` и conditional edge. `_build_human_reviewer_node` уже была реализована ранее. `HumanCfg.timeout_s` исправлен на `float | None` (был `float`) для соответствия планово-спецификации. 14/14 тестов зелёных, mypy clean, 141/141 topology тестов без регрессий.
+- Step 5.1 (run_with_human resume loop): создан `src/atm/human/runner.py` — `run_with_human` async helper; полный interrupt/resume цикл с `Command(resume=...)`, idempotency cache по `(thread_id, request_id)`, `MaxInteractionsExceededError` guard, RuntimeError при >1 simultaneous interrupts. 10 тестов зелёных (74/74 в human/, mypy clean).
 
 ### IN PROGRESS
-- Wave E: Step 5.1 run_with_human — resume loop orchestrator (depends on 2.5, 4.1)
+- Wave F: Step 6.1 Module wiring + public exports + codebase-map update (depends on all)
 
 ### BLOCKERS
 - Нет
@@ -63,8 +64,8 @@
 
 **`src/atm/human/runner.py`**
 - Роль: `run_with_human(graph, ...)` — orchestration helper, управляет циклом ainvoke → interrupt → resume
-- Плановое изменение: CREATE в Step 10 (Wave E)
-- Статус: НЕ НАЧАТО
+- Плановое изменение: CREATE в Step 5.1 (Wave E)
+- Статус: ГОТОВО (Step 5.1) — MaxInteractionsExceededError, idempotency cache, multi-interrupt, simultaneous guard
 
 **`src/atm/human/__init__.py`**
 - Роль: публичный API модуля `atm.human` — полный `__all__`
