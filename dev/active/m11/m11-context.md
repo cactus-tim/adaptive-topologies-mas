@@ -10,8 +10,20 @@
   _to_answer_relative helper; 3 FakeLLM YAML fixtures; 10 unit tests green;
   mypy --strict clean; ruff clean. Worktree branch: worktree-agent-a21c790c7fdcd2ade.
 
+- Step 2.1: metrics.py (pure functions: quality / efficiency / time / human / RQ2) + 12 unit tests — DONE (merged from feat/m11)
+- Step 2.2: aggregator.py + resolve_spec + EvaluationCfg + unit + integration tests — DONE (merged from feat/m11)
+- Step 3.1: Wire aggregator into runner.py + delete _evaluator.py + test wiring + M6 smoke audit
+  - Replaced `from atm.experiment._evaluator import evaluate` with `compute_quality` + `resolve_spec` + `SubprocessSandbox`
+  - Added judge LLMWrapper built from `cfg.evaluation.judge_model` (fake:echo in tests)
+  - Three callsites updated (success / BudgetExceeded / Exception) with try/except + inline-prompt short-circuit
+  - _update_run_success / _update_run_failed signatures updated to `quality_score: float | None`
+  - Deleted `src/atm/experiment/_evaluator.py`
+  - Removed 4 now-stale evaluate() tests from test_runner.py; updated quality_score == 1.0 → 0.0
+  - Created `tests/unit/experiment/test_runner_evaluation_wiring.py` (2 tests)
+  - All 1065 unit tests green; mypy --strict clean; ruff clean
+
 ### IN PROGRESS
-- Steps 2.1 (metrics.py) and 2.2 (aggregator.py) — next wave
+- Step 4.1 (finalise __init__.py + e2e test + codebase-map) — next
 
 ### BLOCKERS
 - Нет
@@ -74,12 +86,12 @@
 **`src/atm/experiment/runner.py`**
 - Роль: главный раннер; `run_one(cfg) -> RunResult`
 - Запланированное изменение: 3 callsite-замены (`evaluate(...)` → `compute_quality(...)`); добавить judge LLMWrapper + SubprocessSandbox; убрать import `_evaluator`
-- Статус: NOT STARTED
+- Статус: DONE
 
 **`src/atm/experiment/_evaluator.py`**
 - Роль: заглушка M6 (`evaluate(...) → 1.0 if "55" in answer else 0.0`)
 - Запланированное изменение: УДАЛИТЬ в Step 6
-- Статус: NOT STARTED
+- Статус: DONE (DELETED)
 
 **`tests/unit/evaluation/__init__.py`**
 - Роль: пакет unit-тестов evaluation; содержит `import atm.tasks  # noqa: F401`
@@ -124,12 +136,12 @@
 **`tests/unit/experiment/test_runner_evaluation_wiring.py`**
 - Роль: 1–2 теста wiring (monkeypatched compute_quality вызывается run_one)
 - Запланированное изменение: создать
-- Статус: NOT STARTED
+- Статус: DONE (2 tests)
 
 **`tests/unit/experiment/test_runner_*.py`**
 - Роль: существующие smoke-тесты раннера
-- Запланированное изменение: аудит; замена `quality_score == 1.0` на `in (0.0, None)` для inline-prompt fixtures
-- Статус: NOT STARTED
+- Запланированное изменение: аудит; замена `quality_score == 1.0` на 0.0 для inline-prompt fixtures; remove 4 now-stale evaluate() tests
+- Статус: DONE
 
 **`tests/integration/conftest.py`**
 - Роль: общие PG-фикстуры для всего integration-поддерева

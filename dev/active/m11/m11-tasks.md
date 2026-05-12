@@ -44,9 +44,9 @@
   - Acceptance: unit green; `ATM_INTEGRATION_PG=1 uv run pytest tests/integration/evaluation/test_aggregator.py -q` — 4 green; `ATM_INTEGRATION_PG=1 uv run pytest tests/integration/storage -q` — по-прежнему green; mypy strict clean
   - Notes: `compute_quality` → `(None, {"error":...})` при сбое (не бросает); `persist_quality` идемпотентен; `resolve_spec` — None если `task.input` set + name не в TASKS; `EvaluationCfg.judge_model = "openai:gpt-4o"`, `judge_self_consistency_n: int = Field(3, ge=1, le=10)`; `tests/integration/storage/conftest.py` → thin re-export
 
-## Phase 3: Runner Wiring — NOT STARTED
+## Phase 3: Runner Wiring — COMPLETE
 
-- [ ] 3.1 Подключить агрегатор в `runner.py` + удалить `_evaluator.py` + тест wiring + аудит M6 smoke-тестов
+- [x] 3.1 Подключить агрегатор в `runner.py` + удалить `_evaluator.py` + тест wiring + аудит M6 smoke-тестов
   - Type: simple
   - Depends On: 2.2 (aggregator, resolve_spec, EvaluationCfg exist)
   - Can-Parallel-With: none
@@ -69,7 +69,7 @@
 ## Stats
 
 - Total: 7 tasks · ~8h
-- Done: 3 / 7
+- Done: 4 / 7
 
 ## How to Update
 

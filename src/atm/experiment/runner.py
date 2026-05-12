@@ -11,7 +11,7 @@ Full lifecycle:
     8. Build initial_state with all 14 SharedState keys
     9. ainvoke(initial_state, config={callbacks, configurable:{thread_id}})
     10. parquet_writer.close()  — ALWAYS BEFORE _update_run_*
-    11. evaluate(cfg.task, final_state["shared"]["final_answer"])
+    11. compute_quality(spec, answer, sandbox, judge_llm, run_seed) via aggregator
     12. _update_run_success or _update_run_failed
     13. engine.dispose() in finally
 
@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.core.errors import BudgetExceededError
 from atm.core.types import Phase
-from atm.experiment._evaluator import evaluate
+from atm.evaluation.aggregator import compute_quality
 from atm.experiment.config import ExperimentConfig
 from atm.llm.budget import BudgetLevel, BudgetTracker
 from atm.llm.factory import build_llm
@@ -54,6 +54,8 @@ from atm.storage.checkpointer import checkpointer_scope
 from atm.storage.models import Base, Experiment, FinishReason, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
+from atm.tasks import resolve_spec
+from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -215,7 +217,7 @@ async def _update_run_success(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: UUID,
     exp_id: UUID,
-    quality_score: float,
+    quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
 ) -> None:
@@ -240,7 +242,7 @@ async def _update_run_failed(
     run_id: UUID,
     status: str,
     finish_reason: str,
-    quality_score: float,
+    quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
     error_text: str | None = None,
@@ -476,6 +478,8 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
     exp_id: UUID | None = None
     run_id: UUID | None = None
     parquet_writer: ParquetWriter | None = None
+    judge_llm: LLMWrapper | None = None
+    quality_score: float | None = 0.0
     budget_spent: float = 0.0
     iterations: int = 0
     final_answer: str = ""
@@ -497,6 +501,13 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             per_experiment_usd=cfg.budget.per_experiment_usd,
         )
         pricing = _load_pricing()
+
+        # Build judge LLM wrapper (shares the run's BudgetTracker)
+        judge_llm = build_llm(
+            model_id=cfg.evaluation.judge_model,
+            pricing=pricing,
+            budget=budget,
+        )
 
         # Step 4: build LLM wrappers per role
         llms = _build_llm_wrappers(cfg, budget, pricing)
@@ -566,7 +577,27 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
         # Step 11: evaluate
-        quality_score = evaluate(cfg.task, final_answer)
+        sandbox = SubprocessSandbox()
+        spec = resolve_spec(cfg.task)
+        if spec is None:
+            logger.debug(
+                "resolve_spec returned None (inline-prompt path); "
+                "setting quality_score=0.0",
+                task=cfg.task.name,
+            )
+            quality_score = 0.0
+        else:
+            try:
+                quality_score, _details = await compute_quality(
+                    spec,
+                    final_answer,
+                    sandbox=sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning("compute_quality raised unexpectedly; setting quality_score=None")
+                quality_score = None
 
         # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
@@ -606,7 +637,25 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         log.warning("budget exceeded", error=str(exc))
 
-        quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
+        _budget_exc_spec = resolve_spec(cfg.task)
+        if _budget_exc_spec is None or not final_answer or judge_llm is None:
+            quality_score = 0.0
+        else:
+            try:
+                _sandbox = SubprocessSandbox()
+                quality_score, _details = await compute_quality(
+                    _budget_exc_spec,
+                    final_answer,
+                    sandbox=_sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning(
+                    "compute_quality raised unexpectedly on budget exceeded; "
+                    "setting quality_score=None"
+                )
+                quality_score = None
 
         # FLUSH PARQUET BEFORE UPDATE (invariant — even on budget exceeded)
         if parquet_writer is not None:
@@ -647,7 +696,25 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         log.error("run failed", error=str(exc))
 
-        quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
+        _exc_spec = resolve_spec(cfg.task)
+        if _exc_spec is None or not final_answer or judge_llm is None:
+            quality_score = 0.0
+        else:
+            try:
+                _sandbox = SubprocessSandbox()
+                quality_score, _details = await compute_quality(
+                    _exc_spec,
+                    final_answer,
+                    sandbox=_sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning(
+                    "compute_quality raised unexpectedly on run failure; "
+                    "setting quality_score=None"
+                )
+                quality_score = None
         error_text = traceback.format_exc()
 
         # FLUSH PARQUET BEFORE UPDATE (invariant — even on failure)
