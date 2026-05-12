@@ -15,9 +15,11 @@ Cache behaviour:
     Subsequent calls read from Parquet; network is never called again.
 
 Evaluator normalisation:
-    Uses ``re.search(r'\\b([A-J])\\b', answer.strip())`` to extract the first
-    A-J letter from the model's response.  Plain "C" or "The answer is C."
-    both work.  If no letter is found, returns score=0.0 with an error field.
+    Extraction priority:
+    1. ``re.search(r'\\(\\s*([A-Ja-j])\\s*\\)', answer)`` — parenthesised "(A)"
+    2. ``re.search(r'\\b([A-Ja-j])\\b', answer)``          — bare letter
+    The matched character is uppercased before comparison with ``spec.expected``.
+    If no letter is found, returns score=0.0 with an error field.
 """
 
 from __future__ import annotations
@@ -119,28 +121,42 @@ class MMLULoader:
 # MMLUEvaluator
 # ---------------------------------------------------------------------------
 
-# Regex to extract the first A-J letter as a whole word (word-boundary anchored)
-_LETTER_RE = re.compile(r"\b([A-J])\b")
+# Regex to extract letter from parenthesised form: "(A)" or "( a )"
+_PAREN_LETTER_RE = re.compile(r"\(\s*([A-Ja-j])\s*\)")
+# Regex to extract bare letter as a whole word (word-boundary anchored), case-insensitive
+_BARE_LETTER_RE = re.compile(r"\b([A-Ja-j])\b")
 
 
 @EVALUATORS.register
 class MMLUEvaluator:
     """Exact-match evaluator for MMLU-Pro multiple-choice tasks.
 
-    Extracts the first A-J letter from the model's answer using a word-boundary
-    regex, then compares it to ``spec.expected``.
+    Extracts the first A-J letter (case-insensitive) from the model's answer
+    using a two-step regex strategy, then compares the uppercased result to
+    ``spec.expected``.
+
+    Extraction priority:
+    1. Parenthesised form ``(A)`` — ``re.search(r'\\(\\s*([A-Ja-j])\\s*\\)', text)``
+    2. Bare word-boundary letter — ``re.search(r'\\b([A-Ja-j])\\b', text)``
 
     Registered under name ``"mmlu_exact_match"``.
     """
 
     name = "mmlu_exact_match"
 
-    async def evaluate(self, spec: TaskSpec, answer: str) -> EvalResult:
+    async def evaluate(
+        self,
+        spec: TaskSpec,
+        answer: str,
+        *,
+        artifacts: dict[str, Any] | None = None,
+    ) -> EvalResult:
         """Evaluate the model's ``answer`` against the expected choice letter.
 
         Args:
-            spec:   TaskSpec whose ``expected`` field holds the correct letter (A-J).
-            answer: Raw model response string (may contain prose around the letter).
+            spec:      TaskSpec whose ``expected`` field holds the correct letter (A-J).
+            answer:    Raw model response string (may contain prose around the letter).
+            artifacts: Unused. Present for ``Evaluator`` Protocol compatibility.
 
         Returns:
             EvalResult with:
@@ -150,7 +166,12 @@ class MMLUEvaluator:
             - ``error``: "no letter found" if regex found nothing; None otherwise.
         """
         text = answer.strip()
-        match = _LETTER_RE.search(text)
+
+        # Priority 1: parenthesised form "(A)" / "(a)"
+        match = _PAREN_LETTER_RE.search(text)
+        if match is None:
+            # Priority 2: bare word-boundary letter
+            match = _BARE_LETTER_RE.search(text)
 
         if match is None:
             return EvalResult(
@@ -160,7 +181,7 @@ class MMLUEvaluator:
                 error="no letter found",
             )
 
-        normalised: str = match.group(1)
+        normalised: str = match.group(1).upper()
         passed: bool = normalised == spec.expected
         score: float = 1.0 if passed else 0.0
 
