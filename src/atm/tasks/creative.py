@@ -132,13 +132,16 @@ class CreativeJudgeEvaluator:
         self,
         spec: TaskSpec,
         answer: str,
+        *,
+        artifacts: dict[str, Any] | None = None,
     ) -> EvalResult:
         """Evaluate ``answer`` against the creative writing ``spec``.
 
         Args:
-            spec:   The :class:`~atm.core.types.TaskSpec` describing the task.
-                    ``spec.metadata['rubric']`` provides evaluation criteria.
-            answer: The agent's creative writing response.
+            spec:      The :class:`~atm.core.types.TaskSpec` describing the task.
+                       ``spec.metadata['rubric']`` provides evaluation criteria.
+            answer:    The agent's creative writing response.
+            artifacts: Unused. Present for ``Evaluator`` Protocol compatibility.
 
         Returns:
             An :class:`~atm.tasks.base.EvalResult` with:

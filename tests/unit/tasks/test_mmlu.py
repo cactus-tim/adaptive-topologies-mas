@@ -168,3 +168,78 @@ async def test_mmlu_evaluator_wrong_answer_fail() -> None:
     assert result.score == 0.0
     assert result.details["normalised"] == "C"
     assert result.error is None
+
+
+# ---------------------------------------------------------------------------
+# Test 6: evaluator — lowercase letter 'a' matches 'A'
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mmlu_evaluator_lowercase_letter_match() -> None:
+    """MMLUEvaluator: answer='a' expected='A' → passed=True (lowercase normalised to upper)."""
+    spec = TaskSpec(
+        id="mmlu/test_4",
+        type="qa",
+        input="Question?\n\nA. opt1\nB. opt2",
+        expected="A",
+        evaluator_key="mmlu_exact_match",
+        metadata={"category": "math", "answer_index": 0, "options": ["opt1", "opt2"]},
+    )
+    evaluator = MMLUEvaluator()
+    result = await evaluator.evaluate(spec, "a")
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.details["normalised"] == "A"
+    assert result.error is None
+
+
+# ---------------------------------------------------------------------------
+# Test 7: evaluator — parenthesised answer '(B)' matches 'B'
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mmlu_evaluator_parenthesised_answer_match() -> None:
+    """MMLUEvaluator: answer='The answer is (B).' expected='B' → passed=True."""
+    spec = TaskSpec(
+        id="mmlu/test_5",
+        type="qa",
+        input="Question?\n\nA. opt1\nB. opt2",
+        expected="B",
+        evaluator_key="mmlu_exact_match",
+        metadata={"category": "science", "answer_index": 1, "options": ["opt1", "opt2"]},
+    )
+    evaluator = MMLUEvaluator()
+    result = await evaluator.evaluate(spec, "The answer is (B).")
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.details["normalised"] == "B"
+    assert result.error is None
+
+
+# ---------------------------------------------------------------------------
+# Test 8: evaluator — lowercase parenthesised '(c)' matches 'C'
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mmlu_evaluator_lowercase_parenthesised_match() -> None:
+    """MMLUEvaluator: answer='(c)' expected='C' → passed=True."""
+    spec = TaskSpec(
+        id="mmlu/test_6",
+        type="qa",
+        input="Question?\n\nA. opt1\nB. opt2\nC. opt3",
+        expected="C",
+        evaluator_key="mmlu_exact_match",
+        metadata={"category": "history", "answer_index": 2, "options": ["opt1", "opt2", "opt3"]},
+    )
+    evaluator = MMLUEvaluator()
+    result = await evaluator.evaluate(spec, "(c)")
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.details["normalised"] == "C"
+    assert result.error is None

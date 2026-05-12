@@ -41,12 +41,12 @@ _DEFAULT_CACHE_ROOT = Path("data") / "cache" / "tasks"
 def cache_dir() -> Path:
     """Return the default cache directory for task datasets.
 
-    The directory ``data/cache/tasks/`` is created on first access.
-    ``data/`` is globally gitignored, so cached files are never committed.
+    Returns the path ``data/cache/tasks/`` without creating it.
+    Directory creation is a caller responsibility — ``write_cache()`` creates it
+    before writing.  ``data/`` is globally gitignored so cached files are never
+    committed.
     """
-    path = _DEFAULT_CACHE_ROOT
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return _DEFAULT_CACHE_ROOT
 
 
 # ---------------------------------------------------------------------------
