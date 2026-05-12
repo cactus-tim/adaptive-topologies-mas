@@ -538,11 +538,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         # The regular `llms` dict covers planning/execution roles; the human gateway
         # needs its own wrapper so LLMSimulatedGateway receives a non-None llm arg.
         human_gateway_llm: LLMWrapper | None = None
-        if (
-            cfg.human is not None
-            and cfg.human.enabled
-            and cfg.human.gateway == "llm_simulated"
-        ):
+        if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
             human_model_id = cfg.human.model or cfg.model.default
             human_gateway_llm = build_llm(
                 model_id=human_model_id,

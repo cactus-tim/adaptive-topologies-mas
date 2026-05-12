@@ -816,9 +816,7 @@ async def test_run_one_passes_human_gateway_llm_when_human_enabled() -> None:
     """
     from atm.experiment.config import HumanCfg
 
-    cfg = _make_cfg(
-        human=HumanCfg(enabled=True, gateway="llm_simulated", timeout_policy="skip")
-    )
+    cfg = _make_cfg(human=HumanCfg(enabled=True, gateway="llm_simulated", timeout_policy="skip"))
     final_state = _make_final_state(final_answer="The answer is 55")
 
     build_kwargs_log: list[dict[str, Any]] = []
@@ -892,7 +890,9 @@ async def test_run_one_passes_human_gateway_llm_when_human_enabled() -> None:
         await run_one(cfg)
 
     # build() must have been called with human_gateway_llm kwarg
-    assert len(build_kwargs_log) == 1, f"Expected exactly 1 build() call, got {len(build_kwargs_log)}"
+    assert len(build_kwargs_log) == 1, (
+        f"Expected exactly 1 build() call, got {len(build_kwargs_log)}"
+    )
     build_kwargs = build_kwargs_log[0]
 
     assert "human_gateway_llm" in build_kwargs, (

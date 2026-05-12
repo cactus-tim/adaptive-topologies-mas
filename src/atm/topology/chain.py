@@ -187,9 +187,7 @@ def _build_human_reviewer_node(
                     "run_id": run_id,
                     "request_id": request_id,
                     "role": str(
-                        human_cfg.role.value
-                        if hasattr(human_cfg.role, "value")
-                        else human_cfg.role
+                        human_cfg.role.value if hasattr(human_cfg.role, "value") else human_cfg.role
                     ),
                     "context_json": ctx.model_dump(mode="json"),
                     "requested_at": datetime.now(UTC),

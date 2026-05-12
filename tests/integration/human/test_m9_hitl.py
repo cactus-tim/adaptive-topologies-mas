@@ -197,9 +197,7 @@ def _build_handler(
 
 
 @pytest.mark.integration
-async def test_reviewer_e2e_callback_writes_one_row(
-    ephemeral_pg_dsn: str, tmp_path: Path
-) -> None:
+async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     """Scenario A: human_request + human_response events write exactly 1 row in PG.
 
     Verifies:
@@ -283,9 +281,9 @@ async def test_reviewer_e2e_callback_writes_one_row(
         # Assert: exactly 1 row in human_interactions for this run_id
         async with session_scope(factory) as session:
             count_result = await session.execute(
-                select(func.count()).select_from(HumanInteraction).where(
-                    HumanInteraction.run_id == run_id
-                )
+                select(func.count())
+                .select_from(HumanInteraction)
+                .where(HumanInteraction.run_id == run_id)
             )
             count = count_result.scalar_one()
 
@@ -304,7 +302,9 @@ async def test_reviewer_e2e_callback_writes_one_row(
             row = row_result.scalar_one_or_none()
 
         assert row is not None, f"No row found for run_id={run_id}, request_id={request_id}"
-        assert row.response_json is not None, "response_json should be non-NULL after human_response"
+        assert row.response_json is not None, (
+            "response_json should be non-NULL after human_response"
+        )
         assert row.response_json.get("source") == "llm_sim", (
             f"Expected source='llm_sim' in response_json, got {row.response_json.get('source')!r}"
         )
@@ -390,9 +390,9 @@ async def test_chain_node_dispatch_format_writes_row_after_f1_fix(
         # After F1 fix: exactly 1 row should be written
         async with session_scope(factory) as session:
             count_result = await session.execute(
-                select(func.count()).select_from(HumanInteraction).where(
-                    HumanInteraction.run_id == run_id
-                )
+                select(func.count())
+                .select_from(HumanInteraction)
+                .where(HumanInteraction.run_id == run_id)
             )
             count = count_result.scalar_one()
 
@@ -476,9 +476,7 @@ async def test_timeout_fallback_source_is_fallback() -> None:
         llm_fallback_gateway=fallback_gw,
     )
 
-    assert response.source == "fallback", (
-        f"Expected source='fallback', got {response.source!r}"
-    )
+    assert response.source == "fallback", f"Expected source='fallback', got {response.source!r}"
     assert response.timed_out is False, (
         "Fallback responses should not have timed_out=True (only skip policy does)"
     )
@@ -607,9 +605,7 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
             await adispatch_custom_event("human_request", human_request_payload)
             return inputs
 
-        runnable1: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(
-            _first_dispatch
-        )
+        runnable1: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(_first_dispatch)
         await runnable1.ainvoke(
             {},
             config={
@@ -625,9 +621,7 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
             await adispatch_custom_event("human_request", human_request_payload)
             return inputs
 
-        runnable2: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(
-            _second_dispatch
-        )
+        runnable2: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(_second_dispatch)
         await runnable2.ainvoke(
             {},
             config={
@@ -641,7 +635,9 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
         # Assert: exactly 1 row (ON CONFLICT DO NOTHING prevented the duplicate)
         async with session_scope(factory) as session:
             count_result = await session.execute(
-                select(func.count()).select_from(HumanInteraction).where(
+                select(func.count())
+                .select_from(HumanInteraction)
+                .where(
                     HumanInteraction.run_id == run_id,
                     HumanInteraction.request_id == request_id,
                 )
@@ -740,9 +736,7 @@ async def test_idempotency_human_response_update_is_idempotent(
             await adispatch_custom_event("human_response", response_payload_2)
             return inputs
 
-        runnable: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(
-            _full_sequence
-        )
+        runnable: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(_full_sequence)
         await runnable.ainvoke(
             {},
             config={
@@ -756,7 +750,9 @@ async def test_idempotency_human_response_update_is_idempotent(
         # Assert: only 1 row, response_json has the FIRST response (approve, not reject)
         async with session_scope(factory) as session:
             count_result = await session.execute(
-                select(func.count()).select_from(HumanInteraction).where(
+                select(func.count())
+                .select_from(HumanInteraction)
+                .where(
                     HumanInteraction.run_id == run_id,
                     HumanInteraction.request_id == request_id,
                 )

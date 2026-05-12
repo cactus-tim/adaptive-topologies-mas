@@ -548,10 +548,16 @@ class TestDispatchPayloadShape:
 
         # Must have all canonical keys
         assert "run_id" in payload, f"run_id missing from human_request payload: {payload!r}"
-        assert "request_id" in payload, f"request_id missing from human_request payload: {payload!r}"
+        assert "request_id" in payload, (
+            f"request_id missing from human_request payload: {payload!r}"
+        )
         assert "role" in payload, f"role missing from human_request payload: {payload!r}"
-        assert "context_json" in payload, f"context_json missing from human_request payload: {payload!r}"
-        assert "requested_at" in payload, f"requested_at missing from human_request payload: {payload!r}"
+        assert "context_json" in payload, (
+            f"context_json missing from human_request payload: {payload!r}"
+        )
+        assert "requested_at" in payload, (
+            f"requested_at missing from human_request payload: {payload!r}"
+        )
 
         # Must NOT use the old "ctx" key
         assert "ctx" not in payload, (
@@ -601,8 +607,15 @@ class TestDispatchPayloadShape:
         payload = captured_payloads["human_response"]
 
         # Must have all canonical keys
-        for key in ("run_id", "request_id", "answered_at", "response_json",
-                    "source", "timed_out", "latency_s"):
+        for key in (
+            "run_id",
+            "request_id",
+            "answered_at",
+            "response_json",
+            "source",
+            "timed_out",
+            "latency_s",
+        ):
             assert key in payload, f"{key!r} missing from human_response payload: {payload!r}"
 
         # Must NOT use the old "response" key

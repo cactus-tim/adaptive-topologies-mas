@@ -440,12 +440,14 @@ async def test_timeout_s_param_uses_request_with_timeout() -> None:
         policy: Any,
         llm_fallback_gateway: Any = None,
     ) -> HumanResponse:
-        timeout_calls.append({
-            "request_id": request_id,
-            "timeout_s": timeout_s,
-            "policy": policy,
-            "fallback_gateway": llm_fallback_gateway,
-        })
+        timeout_calls.append(
+            {
+                "request_id": request_id,
+                "timeout_s": timeout_s,
+                "policy": policy,
+                "fallback_gateway": llm_fallback_gateway,
+            }
+        )
         return HumanResponse(action="approve", source="llm_sim", timed_out=False)
 
     with patch("atm.human.runner.request_with_timeout", side_effect=fake_request_with_timeout):
@@ -459,7 +461,9 @@ async def test_timeout_s_param_uses_request_with_timeout() -> None:
         )
 
     assert result == final
-    assert len(timeout_calls) == 1, f"Expected 1 request_with_timeout call, got {len(timeout_calls)}"
+    assert len(timeout_calls) == 1, (
+        f"Expected 1 request_with_timeout call, got {len(timeout_calls)}"
+    )
     call = timeout_calls[0]
     assert call["timeout_s"] == 30.0
     assert call["policy"] == "skip"

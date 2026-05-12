@@ -244,11 +244,7 @@ async def run_with_human(
                     {
                         "run_id": _run_id,
                         "request_id": request_id,
-                        "role": str(
-                            ctx.role.value
-                            if hasattr(ctx.role, "value")
-                            else ctx.role
-                        ),
+                        "role": str(ctx.role.value if hasattr(ctx.role, "value") else ctx.role),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": datetime.now(UTC),
                     },
