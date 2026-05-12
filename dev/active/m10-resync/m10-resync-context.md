@@ -9,9 +9,10 @@
 - Шаг 2.1: GSM8K загрузчик + numeric-match оценщик + 7 тестов (7/7 зелёных); создан `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`; guarded import добавлен в `__init__.py`
 - Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов (9/9 зелёных); создан `src/atm/tasks/commongen.py`, `tests/unit/tasks/test_commongen.py`, `tests/fixtures/tasks/commongen_sample.json`; guarded import `commongen` добавлен в `__init__.py`; mypy --strict + ruff clean
 - Шаг 2.3: DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов (11/11 зелёных); создан `src/atm/tasks/dabench.py`, `tests/unit/tasks/test_dabench.py`, `tests/fixtures/tasks/dabench_curated.jsonl` (8 строк, включая multi-pair entries); guarded import `dabench` добавлен в `__init__.py` (алфавитный порядок: commongen, dabench, gsm8k, humaneval); mypy --strict + ruff clean
+- Шаг 3.1: Аудит humaneval.py (чистый: только `type="programming"`, без стейл-литералов), финализация `__init__.py` (уже в алфавитном порядке, docstring актуален), расширенный grep audit — `src/atm/tasks/` чистый; `tests/` содержит два ожидаемых хита в `test_base.py:37` (шаг 3.2) и `test_registry_smoke.py:47` (шаг 4.1); `dev/` вне `done/` содержит хиты только в plan/context/tasks docs (документационный текст) и `codebase-map.md:179` (шаг 5.1); TASKS._registry = ['commongen', 'dabench', 'gsm8k', 'humaneval'] подтверждён; EVALUATORS._registry = ['commongen_rouge_coverage', 'dabench_numeric_exact', 'gsm8k_numeric', 'humaneval_pytest'] подтверждён
 
 ### В РАБОТЕ
-- Шаг 3.1: Аудит + финализация `__init__.py` + grep
+- Шаг 3.2: Исправление `_make_task_spec` в test_base.py (`type="qa"` → `type="reasoning"`)
 
 ### БЛОКЕРЫ
 - Нет
