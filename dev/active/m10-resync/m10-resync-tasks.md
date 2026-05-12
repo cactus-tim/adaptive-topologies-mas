@@ -99,7 +99,7 @@
     - Обновить docstring модуля `__init__.py` — список четырёх загрузчиков
     - Запустить: `python -c "import atm.tasks; print(sorted(atm.tasks.TASKS._registry))"`
 
-- [ ] 3.2 Исправить `_make_task_spec` в test_base.py: `type="qa"` → `type="reasoning"` — `tests/unit/tasks/test_base.py`
+- [x] 3.2 Исправить `_make_task_spec` в test_base.py: `type="qa"` → `type="reasoning"` — `tests/unit/tasks/test_base.py`
   - Тип: simple
   - Зависит от: 1.1
   - Параллельно с: 3.1 (разные файлы)
