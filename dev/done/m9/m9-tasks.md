@@ -127,21 +127,21 @@
   - Verification: `uv run python -c "from atm.human import HumanGateway, LLMSimulatedGateway, CLIGateway, run_with_human" && uv run pytest tests/ -q`
   - Notes: явный `__all__: list[str]`; НЕ экспортировать `persist_human_*` функций (их нет). В codebase-map: новые файлы + `on_custom_event` обрабатывает `human_request`/`human_response`
 
-- [ ] 6.2 Integration тест — Reviewer end-to-end (PG required)
+- [x] 6.2 Integration тест — Reviewer end-to-end (PG required)
   - Type: tdd
   - Files: `tests/integration/human/test_hitl_chain_e2e.py`
   - Depends On: 6.1
   - Can-Parallel-With: 6.3, 6.4
   - Acceptance: Chain с `human.enabled=true, gateway=llm_simulated, role=reviewer` → `SELECT COUNT(*) = 1 AND response_json->>'source' = 'llm_sim' FROM human_interactions`
 
-- [ ] 6.3 Integration тест — Timeout + fallback (PG required)
+- [x] 6.3 Integration тест — Timeout + fallback (PG required)
   - Type: tdd
   - Files: `tests/integration/human/test_hitl_timeout.py`
   - Depends On: 6.1
   - Can-Parallel-With: 6.2, 6.4
   - Acceptance: mock CLIGateway sleeps 5s, `timeout_s=1`, `policy=llm_fallback` → run завершается, `response_json->>'source' = 'fallback'`
 
-- [ ] 6.4 Integration тест — Idempotency на resume (PG required)
+- [x] 6.4 Integration тест — Idempotency на resume (PG required)
   - Type: tdd
   - Files: `tests/integration/human/test_hitl_idempotency.py`
   - Depends On: 6.1
