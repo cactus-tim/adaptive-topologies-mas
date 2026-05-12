@@ -34,6 +34,21 @@
   truncates to 80 chars for String(80) column).
   12 new unit tests in `tests/unit/tools/test_sandbox_digest.py`. 1150/1150 unit tests pass.
 
+### COMPLETED
+- Step 10: Created `.github/workflows/ci.yml` with lint, unit, and integration jobs.
+  Python matrix `['3.11', '3.12']` for lint and unit; integration runs on 3.12 only with
+  postgres:16 service container. `astral-sh/setup-uv@v3` pinned with `cache-dependency-glob: 'uv.lock'`
+  and `enable-cache: true`. Concurrency block cancels in-progress runs on same branch.
+  YAML validated: `python3 -c "import yaml; yaml.safe_load(...)"` exits 0.
+
+### COMPLETED
+- Step 3: Replaced MMLU e2e with GSM8K e2e.
+  Deleted `tests/fixtures/llm/m11_mmlu_e2e_executor.yaml`.
+  Created `tests/fixtures/llm/m11_gsm8k_e2e_executor.yaml` (executor emits "The answer is 42."; GSM8KMatcher last-numeric-token strategy matches expected="42").
+  Rewrote `tests/integration/evaluation/test_aggregator_e2e.py`: `_MMLU_SPEC` → `_GSM8K_SPEC` (type="reasoning", evaluator_key="gsm8k_numeric"), task.name="gsm8k", test renamed to `test_gsm8k_run_quality_score_is_one`.
+  Audited `test_m6_e2e.py`: no mmlu/qa references found — no changes needed.
+  Integration test `test_gsm8k_run_quality_score_is_one` passes (1 passed, 2 skipped).
+
 ### IN PROGRESS
 - Step 2 (Wave 2): Rewrite `evaluation/ground_truth.py` using `_DEPS` table
 
@@ -117,22 +132,22 @@
 **`.github/workflows/ci.yml`** (new)
 - Role: GitHub Actions CI pipeline.
 - Planned change: Create with lint, unit, and integration jobs; Python matrix `['3.11', '3.12']`; `astral-sh/setup-uv@v3` pinned with `cache-dependency-glob: 'uv.lock'`; postgres:16 service container.
-- Status: NOT STARTED
+- Status: DONE
 
 **`tests/integration/evaluation/test_aggregator_e2e.py`**
 - Role: E2e integration test for evaluation aggregation.
 - Planned change: Rewrite from MMLU to GSM8K (`TaskSpec(type="reasoning", evaluator_key="gsm8k_numeric")`).
-- Status: NOT STARTED
+- Status: DONE — rewritten; test `test_gsm8k_run_quality_score_is_one` passes.
 
 **`tests/fixtures/llm/m11_mmlu_e2e_executor.yaml`**
 - Role: Old MMLU scripted executor fixture.
 - Planned change: Delete entirely.
-- Status: NOT STARTED
+- Status: DONE — deleted.
 
 **`tests/fixtures/llm/m11_gsm8k_e2e_executor.yaml`** (new)
 - Role: Scripted executor fixture for GSM8K e2e.
-- Planned change: Create with response containing a GSM8K-extractable answer (verify exact format from `tasks/gsm8k.py` first).
-- Status: NOT STARTED
+- Planned change: Create with response containing a GSM8K-extractable answer.
+- Status: DONE — created; emits "The answer is 42." (last numeric token = 42).
 
 ## Decisions
 

@@ -33,15 +33,12 @@ from atm.tasks.base import EvalResult, TaskSpec
 
 def _mmlu_spec() -> TaskSpec:
     return TaskSpec(
-        id="mmlu/test/0",
-        type="qa",
-        input="The capital of France is?",
-        expected="A",
-        evaluator_key="mmlu_exact_match",
-        metadata={
-            "choices": ["Paris", "London", "Berlin", "Rome"],
-            "answer_idx": 0,
-        },
+        id="gsm8k/test/0",
+        type="reasoning",
+        input="What is 6 * 7?",
+        expected="42",
+        evaluator_key="gsm8k_numeric",
+        metadata={},
     )
 
 
@@ -67,7 +64,7 @@ async def _insert_exp_and_run(
                 id=run_id,
                 exp_id=exp_id,
                 topology="chain",
-                task_id="mmlu/test/0",
+                task_id="gsm8k/test/0",
                 agent_set="canonical_4",
                 seed=42,
                 model="fake:echo",

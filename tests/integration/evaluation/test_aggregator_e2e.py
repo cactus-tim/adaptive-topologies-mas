@@ -5,10 +5,10 @@ Verifies the full contract:
 
 This test:
   - Builds an ExperimentConfig pointing at a Chain topology with scripted FakeLLM.
-  - Mocks ``resolve_spec`` (in runner module) to return a pre-built MMLU TaskSpec
-    with ``expected="B"`` and ``evaluator_key="mmlu_exact_match"``.
-  - The scripted executor fixture emits "The answer is B." as final_answer.
-  - MMLUEvaluator extracts "B" from the answer → score=1.0.
+  - Mocks ``resolve_spec`` (in runner module) to return a pre-built GSM8K TaskSpec
+    with ``expected="42"`` and ``evaluator_key="gsm8k_numeric"``.
+  - The scripted executor fixture emits "The answer is 42." as final_answer.
+  - GSM8KMatcher extracts the last numeric token "42" → score=1.0.
   - Asserts that ``runs.quality_score == 1.0`` is persisted in PostgreSQL.
 
 Skipped unless ``ATM_INTEGRATION_PG=1`` is set.
@@ -37,34 +37,23 @@ from atm.tasks.base import TaskSpec
 
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 
-# Pre-built MMLU TaskSpec with expected="B" — no HuggingFace fetch needed.
-_MMLU_SPEC = TaskSpec(
-    id="mmlu/e2e/0",
-    type="qa",
-    input=(
-        "Which letter comes after A in the alphabet?\n\n"
-        "A. A\n"
-        "B. B\n"
-        "C. C\n"
-        "D. D"
-    ),
-    expected="B",
-    evaluator_key="mmlu_exact_match",
-    metadata={
-        "category": "general",
-        "answer_index": 1,
-        "options": ["A", "B", "C", "D"],
-    },
+# Pre-built GSM8K TaskSpec with expected="42" — no HuggingFace fetch needed.
+_GSM8K_SPEC = TaskSpec(
+    id="gsm8k/e2e/0",
+    type="reasoning",
+    input="What is 6 * 7?",
+    expected="42",
+    evaluator_key="gsm8k_numeric",
 )
 
 
 def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
-    """Build a minimal ExperimentConfig for the MMLU e2e test.
+    """Build a minimal ExperimentConfig for the GSM8K e2e test.
 
     Uses chain topology + scripted FakeLLM (no real LLM calls).
     The ``evaluation.judge_model`` is set to ``fake:echo`` so that the judge
     wrapper in the runner does not trigger real API calls.
-    The ``task.name`` is set to ``"mmlu"`` (registered task); however, we
+    The ``task.name`` is set to ``"gsm8k"`` (registered task); however, we
     mock ``resolve_spec`` in the runner to avoid loading the HuggingFace dataset.
     """
     from atm.experiment.config import (
@@ -79,7 +68,7 @@ def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
     )
 
     planner_fixture = str(_FIXTURES_DIR / "m6_chain_planner.yaml")
-    executor_fixture = str(_FIXTURES_DIR / "m11_mmlu_e2e_executor.yaml")
+    executor_fixture = str(_FIXTURES_DIR / "m11_gsm8k_e2e_executor.yaml")
     critic_fixture = str(_FIXTURES_DIR / "m6_chain_critic.yaml")
 
     for path in [planner_fixture, executor_fixture, critic_fixture]:
@@ -87,7 +76,7 @@ def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
             pytest.skip(f"Fixture not found: {path}")
 
     return ExperimentConfig(
-        name="m11_e2e_mmlu_quality",
+        name="m11_e2e_gsm8k_quality",
         seed=42,
         budget=BudgetCfg(
             per_call_usd=1.0,
@@ -112,7 +101,7 @@ def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
         ),
         agents=AgentSetCfg(set="canonical_4"),
         topology=TopologyCfg(name="chain", max_iterations=5),
-        task=TaskCfg(name="mmlu", input="", split="test", shuffle_seed=0),
+        task=TaskCfg(name="gsm8k", input="", split="test", shuffle_seed=0),
         observability=ObservabilityCfg(
             pg_dsn=pg_dsn,
             parquet_dir=parquet_dir,
@@ -131,18 +120,18 @@ def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
 
 
 @pytest.mark.integration
-async def test_mmlu_run_quality_score_is_one(
+async def test_gsm8k_run_quality_score_is_one(
     pg_engine_fast: AsyncEngine,
     tmp_path: object,
 ) -> None:
-    """Full e2e: run_one with MMLU + scripted answer 'B' → runs.quality_score == 1.0.
+    """Full e2e: run_one with GSM8K + scripted answer '42' → runs.quality_score == 1.0.
 
     Pipeline:
       1. Build ExperimentConfig (chain topology, scripted FakeLLM).
-      2. Mock ``atm.experiment.runner.resolve_spec`` to return _MMLU_SPEC
-         (evaluator_key='mmlu_exact_match', expected='B') — avoids HF download.
-      3. Call ``run_one(cfg)`` — topology produces final_answer "The answer is B."
-      4. MMLUEvaluator extracts 'B' → score=1.0 → persisted to runs.quality_score.
+      2. Mock ``atm.experiment.runner.resolve_spec`` to return _GSM8K_SPEC
+         (evaluator_key='gsm8k_numeric', expected='42') — avoids HF download.
+      3. Call ``run_one(cfg)`` — topology produces final_answer "The answer is 42."
+      4. GSM8KMatcher extracts last numeric token '42' → score=1.0 → persisted.
       5. Assert ``runs.quality_score == 1.0`` via SQLAlchemy read.
     """
     pg_dsn: str = pg_engine_fast.url.render_as_string(hide_password=False)
@@ -154,13 +143,11 @@ async def test_mmlu_run_quality_score_is_one(
 
     from atm.experiment.runner import run_one
 
-    with patch("atm.experiment.runner.resolve_spec", return_value=_MMLU_SPEC):
+    with patch("atm.experiment.runner.resolve_spec", return_value=_GSM8K_SPEC):
         result = await run_one(cfg)  # type: ignore[arg-type]
 
     # The run must complete successfully
-    assert result.status == "completed", (
-        f"Expected status='completed', got {result.status!r}"
-    )
+    assert result.status == "completed", f"Expected status='completed', got {result.status!r}"
 
     # quality_score in RunResult metrics
     quality = result.metrics.get("quality_score")
@@ -171,9 +158,7 @@ async def test_mmlu_run_quality_score_is_one(
     # Verify the value is persisted to PostgreSQL
     factory = create_session_factory(pg_engine_fast)
     async with session_scope(factory) as session:
-        row_result = await session.execute(
-            select(Run).where(Run.id == result.run_id)
-        )
+        row_result = await session.execute(select(Run).where(Run.id == result.run_id))
         run_row = row_result.scalar_one()
 
     assert run_row is not None, f"Run row not found for run_id={result.run_id}"

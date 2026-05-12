@@ -107,9 +107,9 @@
 
 ---
 
-## Wave 4: E2E replacement + CI [Steps 3, 10] — NOT STARTED
+## Wave 4: E2E replacement + CI [Steps 3, 10] — COMPLETE
 
-- [ ] 3 [tdd] Replace MMLU e2e test with GSM8K e2e; audit `test_m6_e2e.py`
+- [x] 3 [tdd] Replace MMLU e2e test with GSM8K e2e; audit `test_m6_e2e.py`
   — `tests/fixtures/llm/m11_gsm8k_e2e_executor.yaml` (new),
   `tests/fixtures/llm/m11_mmlu_e2e_executor.yaml` (delete),
   `tests/integration/evaluation/test_aggregator_e2e.py`,
@@ -125,7 +125,7 @@
     evaluator_key="gsm8k_numeric")`. Audit `test_m6_e2e.py` for `"mmlu"`, `"qa"`,
     `"B"` references; switch task type to valid post-merge value. Depends On: 1, 2.
 
-- [ ] 10 [simple] Add `.github/workflows/ci.yml` with lint, unit, integration jobs
+- [x] 10 [simple] Add `.github/workflows/ci.yml` with lint, unit, integration jobs
   — `.github/workflows/ci.yml` (new)
   - Acceptance: YAML parses without error; on push, lint/unit/integration jobs all
     pass green; Python matrix `['3.11', '3.12']`; `astral-sh/setup-uv@v3` with
