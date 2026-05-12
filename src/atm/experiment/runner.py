@@ -285,7 +285,10 @@ def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
             "phase": Phase.PLANNING,
             "iteration": 0,
             "iter_total": 0,
-            "active_topology": cfg.topology.name,
+            # For adaptive meta-graph, leave active_topology unset so the
+            # TopologyRouter picks a real sub-topology (e.g. "linear") on the
+            # first tick instead of recursing into the meta-graph itself.
+            "active_topology": None if cfg.topology.name == "adaptive" else cfg.topology.name,
             "final_answer": "",
             "signals": {},
             "phase_started_at_iter": 0,
@@ -541,11 +544,16 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 checkpointer=checkpointer,
             )
 
+            # Adaptive meta-graph runs many super-steps per task tick (4 nodes
+            # per loop iteration × max_iterations of subgraph dispatch).
+            # Default LangGraph recursion_limit=25 is too low.
+            recursion_limit = max(100, (cfg.topology.max_iterations or 30) * 4 + 20)
             final_state = await compiled_graph.ainvoke(
                 initial_state,
                 config={
                     "callbacks": [callback],
                     "configurable": {"thread_id": str(run_id)},
+                    "recursion_limit": recursion_limit,
                 },
             )
 

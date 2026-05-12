@@ -1,0 +1,15 @@
+version: 1
+mode: scripted
+entries:
+  - {agent_id: executor, role: executor, step_idx: 0, content: "def fib(n): return n if n<=1 else fib(n-1)+fib(n-2)\nfib(10) == 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 30, total_tokens: 110}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 1, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 2, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 3, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 4, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 5, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 6, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 7, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 8, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 9, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 10, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
+  - {agent_id: executor, role: executor, step_idx: 11, content: "fib(10) = 55", tool_calls: [], finish_reason: stop, usage: {input_tokens: 80, output_tokens: 10, total_tokens: 90}, model: "fake:scripted"}
