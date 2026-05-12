@@ -3,10 +3,13 @@
 ## ПРОГРЕСС СЕССИИ (2026-05-12)
 
 ### ВЫПОЛНЕНО
-- **Шаги 1.1 + 1.2 (атомарный коммит `28cb8eb`)**: мигрирован `TaskSpec.type` Literal enum (`qa`→`reasoning`, `analysis`→`decision`); удалены `creative.py`, `analysis.py`, `mmlu.py`, их тесты, конфиги, фикстуры; убраны 3 guarded import из `__init__.py`; `atm.tasks.TASKS._registry == ['humaneval']` подтверждено.
+- Шаг 1.1: Миграция `TaskSpec.type` Literal enum (`programming|qa|creative|analysis` → `programming|reasoning|creative|decision`) в `src/atm/core/types.py`
+- Шаг 1.2: Удаление creative/analysis/mmlu модулей, конфигов, фикстур, тестов; очистка `src/atm/tasks/__init__.py` (атомарный коммит совместно с 1.1)
+- Шаг 1.3: Переименование enum-ключей `"qa"` → `"reasoning"`, `"analysis"` → `"decision"` в `tests/fixtures/oracle_table.json`
+- Шаг 2.1: GSM8K загрузчик + numeric-match оценщик + 7 тестов (7/7 зелёных); создан `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`; guarded import добавлен в `__init__.py`
 
 ### В РАБОТЕ
-- Шаг 1.3 (oracle_table.json + audit topology_router)
+- Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов
 
 ### БЛОКЕРЫ
 - Нет
@@ -29,12 +32,12 @@
 **`src/atm/core/types.py`**
 - Роль: Pydantic-модель `TaskSpec`, frozen; `type` — `Literal[...]`
 - Плановое изменение: строка 269, заменить `["programming", "qa", "creative", "analysis"]` на `["programming", "reasoning", "creative", "decision"]`
-- Статус: ВЫПОЛНЕНО (commit 28cb8eb)
+- Статус: НЕ НАЧАТО
 
 **`src/atm/tasks/__init__.py`**
 - Роль: защищённые `importlib.import_module` для регистрации загрузчиков
 - Плановое изменение: убрать 3 старых импорта (`mmlu`, `creative`, `analysis`), добавить 3 новых (`gsm8k`, `commongen`, `dabench`); финальный вид — 4 guarded import в алфавитном порядке
-- Статус: ЧАСТИЧНО ВЫПОЛНЕНО — 3 старых удалены (commit 28cb8eb); 3 новых будут добавлены в шагах 2.1–2.3
+- Статус: НЕ НАЧАТО
 
 **`src/atm/tasks/gsm8k.py`** (новый)
 - Роль: `GSM8KLoader(name="gsm8k")` + `GSM8KMatcher(name="gsm8k_numeric")`
@@ -54,12 +57,12 @@
 **`src/atm/tasks/{mmlu,creative,analysis}.py`**
 - Роль: старые загрузчики (удаляются)
 - Плановое изменение: `git rm`
-- Статус: ВЫПОЛНЕНО (commit 28cb8eb)
+- Статус: НЕ НАЧАТО
 
 **`conf/tasks/{creative,analysis}_prompts.yaml`**
 - Роль: YAML prompt-корпуса (удаляются)
 - Плановое изменение: `git rm`
-- Статус: ВЫПОЛНЕНО (commit 28cb8eb)
+- Статус: НЕ НАЧАТО
 
 **`tests/fixtures/oracle_table.json`**
 - Роль: фикстура для `topology_router.py:394-401`, ключи `by_task_type`
