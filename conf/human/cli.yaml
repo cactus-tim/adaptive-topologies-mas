@@ -1,0 +1,5 @@
+enabled: true
+gateway: cli
+role: reviewer
+timeout_s: 60
+timeout_policy: fail

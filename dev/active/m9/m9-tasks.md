@@ -2,13 +2,13 @@
 
 ---
 
-## >> CURRENT WAVE: Wave A <<
+## >> CURRENT WAVE: Wave B <<
 
 ---
 
 ## Wave A — Foundation (параллельно) NOT STARTED
 
-- [ ] 1.1 Gateway Protocol + per-role system prompts module
+- [x] 1.1 Gateway Protocol + per-role system prompts module
   - Type: tdd
   - Files: `src/atm/human/gateway.py`, `src/atm/human/prompts.py`, `src/atm/human/__init__.py` (initial), `tests/unit/human/__init__.py`, `tests/unit/human/test_gateway_protocol.py`, `tests/unit/human/test_prompts.py`
   - Depends On: ничего
@@ -17,7 +17,7 @@
   - Verification: `uv run pytest tests/unit/human/test_gateway_protocol.py tests/unit/human/test_prompts.py -q && uv run mypy src/atm/human/gateway.py src/atm/human/prompts.py`
   - Notes: НЕ дублировать `HumanContext`/`HumanResponse`/`HumanRole` — только реэкспорт из `atm.core.types`. Protocol сигнатура: `async def request(self, ctx: HumanContext, *, request_id: str) -> HumanResponse`
 
-- [ ] 1.2 Alembic migration — UNIQUE CONSTRAINT `(run_id, request_id)`
+- [x] 1.2 Alembic migration — UNIQUE CONSTRAINT `(run_id, request_id)`
   - Type: simple
   - Files: `alembic/versions/0002_human_interactions_idempotency.py`
   - Depends On: ничего
@@ -30,7 +30,7 @@
 
 ## Wave B — Core implementations (параллельно) NOT STARTED
 
-- [ ] 2.1 LLMSimulatedGateway
+- [x] 2.1 LLMSimulatedGateway
   - Type: tdd
   - Files: `src/atm/human/llm_simulated.py`, `tests/unit/human/test_llm_simulated_gateway.py`, `tests/fixtures/llm/m9_human_reviewer_approve.yaml`, `tests/fixtures/llm/m9_human_reviewer_reject.yaml`, `tests/fixtures/llm/m9_human_invalid_json.yaml`
   - Depends On: 1.1
@@ -39,7 +39,7 @@
   - Verification: `uv run pytest tests/unit/human/test_llm_simulated_gateway.py -q`
   - Notes: `messages, _meta = build_role_prompt(ctx.role, ctx)` → `await self._llm.ainvoke(messages)`. Кэш `_cache: dict[tuple[UUID, str], HumanResponse]` + `_lock: asyncio.Lock`. Regex для снятия ```code fence```. `source="llm_sim"` всегда
 
-- [ ] 2.2 CLIGateway
+- [x] 2.2 CLIGateway
   - Type: tdd
   - Files: `src/atm/human/cli_gateway.py`, `tests/unit/human/test_cli_gateway.py`
   - Depends On: 1.1
@@ -48,7 +48,7 @@
   - Verification: `uv run pytest tests/unit/human/test_cli_gateway.py -q`
   - Notes: `asyncio.to_thread(input, prompt_str)` — обязательно. Stdlib only (no rich). В тестах патчить `asyncio.to_thread`, не `builtins.input`. Неизвестный action → `allowed_actions[0]` + `comment=f"invalid_action_{input}"`
 
-- [ ] 2.3 Observability callback — handlers `human_request` / `human_response`
+- [x] 2.3 Observability callback — handlers `human_request` / `human_response`
   - Type: tdd
   - Files: `src/atm/observability/callbacks.py` (modify: +2 elif + 2 private methods), `tests/unit/observability/test_callbacks_human.py` (create)
   - Depends On: 1.2
@@ -57,7 +57,7 @@
   - Verification: `uv run pytest tests/unit/observability/ -q && uv run mypy src/atm/observability/callbacks.py`
   - Notes: вынести `CONSTRAINT_NAME = "uq_human_interactions_run_request"` в module-level константу. `_handle_human_request`: `pg_insert(...).on_conflict_do_nothing(constraint=CONSTRAINT_NAME)`. `_handle_human_response`: `UPDATE ... WHERE response_json IS NULL`. `uuid.uuid4()` явно в INSERT. Узел передаёт нативные UUID/datetime — не json-строки
 
-- [ ] 2.4 HumanCfg + YAML configs
+- [x] 2.4 HumanCfg + YAML configs
   - Type: simple
   - Files: `src/atm/experiment/config.py` (modify), `conf/human/llm_simulated.yaml`, `conf/human/cli.yaml`, `tests/unit/experiment/test_config_human.py`
   - Depends On: 1.1
@@ -66,7 +66,7 @@
   - Verification: `uv run pytest tests/unit/experiment/test_config_human.py -q`
   - Notes: `HumanCfg` поля: `enabled: bool = False`, `gateway: Literal["llm_simulated","cli"] = "llm_simulated"`, `role: HumanRole = HumanRole.REVIEWER`, `timeout_s: int | None = 900`, `timeout_policy: Literal["fail","llm_fallback","skip"] = "llm_fallback"`, `llm_sim_model_id: str | None = None`. `ExperimentConfig.human: HumanCfg | None = None` — default=None обязателен
 
-- [ ] 2.5 Timeout wrapper + fallback policy
+- [x] 2.5 Timeout wrapper + fallback policy
   - Type: tdd
   - Files: `src/atm/human/_timeout.py`, `tests/unit/human/test_timeout_policy.py`
   - Depends On: 1.1

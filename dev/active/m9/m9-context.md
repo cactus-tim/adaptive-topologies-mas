@@ -3,10 +3,14 @@
 ## SESSION PROGRESS (2026-05-12)
 
 ### COMPLETED
-- (ничего ещё)
+- Step 2.1 (LLMSimulatedGateway): создан `src/atm/human/llm_simulated.py` — LLM-driven HumanGateway с in-process idempotency cache, retry on invalid JSON, source='llm_sim'. 11 тестов зелёных, mypy clean. Созданы 3 YAML fixtures: approve, reject, invalid_json.
+- Step 2.2 (CLIGateway): создан `src/atm/human/cli_gateway.py` — stdin/stdout gateway с asyncio.to_thread, idempotency cache, fallback на first allowed_action при невалидном вводе. 14 тестов зелёных. Примечание: `source` установлен в `'human'` (не `'cli'`), так как HumanResponse.source Literal не включает 'cli'.
+- Step 2.5 (Timeout wrapper): создан `src/atm/human/_timeout.py` — `request_with_timeout` с тремя политиками (fail/llm_fallback/skip). `timeout_s=None` → прямой вызов без wait_for. `llm_fallback` без fallback_gateway → ValueError. Fallback всегда overrides source='fallback'. 10 тестов зелёных, mypy clean.
+- Step 2.3 (Observability callbacks): расширен `src/atm/observability/callbacks.py` — два elif в `on_custom_event` + два private метода `_handle_human_request` (pg_insert + on_conflict_do_nothing constraint=CONSTRAINT_NAME) и `_handle_human_response` (UPDATE WHERE response_json IS NULL). CONSTRAINT_NAME константа на уровне модуля. 8 тестов зелёных (57/57 всего), mypy clean.
+- Step 2.4 (HumanCfg + YAML configs): добавлен `HumanCfg` (frozen Pydantic v2) в `src/atm/experiment/config.py` и поле `human: HumanCfg | None = None` в `ExperimentConfig`. Созданы `conf/human/llm_simulated.yaml`, `conf/human/cli.yaml`. 17 тестов зелёных, mypy clean, существующие тесты (21/21) без изменений.
 
 ### IN PROGRESS
-- Не начато
+- Wave C: Step 3.1 Runner wiring (depends on 2.4 — now done)
 
 ### BLOCKERS
 - Нет
@@ -42,12 +46,12 @@
 **`src/atm/human/llm_simulated.py`**
 - Роль: `LLMSimulatedGateway(HumanGateway)` — основной LLM-based gateway с in-process idempotency cache
 - Плановое изменение: CREATE в Step 2 (Wave B)
-- Статус: НЕ НАЧАТО
+- Статус: ГОТОВО (Step 2.1)
 
 **`src/atm/human/cli_gateway.py`**
 - Роль: `CLIGateway(HumanGateway)` — отладочный stdin/stdout gateway, stdlib only
-- Плановое изменение: CREATE в Step 3 (Wave B)
-- Статус: НЕ НАЧАТО
+- Плановое изменение: CREATE в Step 2.2 (Wave B)
+- Статус: ГОТОВО (14/14 тестов, mypy clean)
 
 **`src/atm/human/_timeout.py`**
 - Роль: `request_with_timeout(...)` — pure-async обёртка с 3 политиками (fail/llm_fallback/skip)
@@ -72,7 +76,15 @@
 **`src/atm/experiment/config.py`**
 - Роль: `ExperimentConfig` — верхнеуровневый конфиг эксперимента
 - Плановое изменение: MODIFY в Step 6 (Wave B) — добавить `HumanCfg` модель и поле `human: HumanCfg | None = None`
-- Статус: НЕ НАЧАТО
+- Статус: ГОТОВО (Step 2.4) — `HumanCfg` добавлен, `ExperimentConfig.human: HumanCfg | None = None`
+
+**`conf/human/llm_simulated.yaml`**
+- Роль: YAML конфиг для LLMSimulatedGateway
+- Статус: ГОТОВО (Step 2.4)
+
+**`conf/human/cli.yaml`**
+- Роль: YAML конфиг для CLIGateway
+- Статус: ГОТОВО (Step 2.4)
 
 **`src/atm/experiment/runner.py` (lines 281–308)**
 - Роль: `Runner._build_initial_state` — формирует initial state с 14+ ключами в `shared`
@@ -98,16 +110,6 @@
 - Роль: `SharedState` TypedDict — определяет ключи общего состояния
 - Плановое изменение: CONDITIONAL MODIFY в Step 8 — добавить `run_id: UUID` если TypedDict total=True
 - Статус: ТРЕБУЕТ ПРОВЕРКИ (grep перед Step 8)
-
-**`conf/human/llm_simulated.yaml`**
-- Роль: YAML конфиг для LLMSimulatedGateway
-- Плановое изменение: CREATE в Step 6 (Wave B)
-- Статус: НЕ НАЧАТО
-
-**`conf/human/cli.yaml`**
-- Роль: YAML конфиг для CLIGateway
-- Плановое изменение: CREATE в Step 6 (Wave B)
-- Статус: НЕ НАЧАТО
 
 **`dev/codebase-map.md`**
 - Роль: карта кодовой базы проекта

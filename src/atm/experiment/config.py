@@ -2,7 +2,7 @@
 
 Public API:
   - BudgetCfg, ModelCfg, ScratchpadCfg, AgentSetCfg, TopologyCfg, TaskCfg,
-    ObservabilityCfg, ExperimentConfig
+    ObservabilityCfg, HumanCfg, ExperimentConfig
   - load_config(path, overrides) -> ExperimentConfig
 
 Pipeline (arch.md §12.2):
@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from omegaconf import DictConfig, OmegaConf
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from atm.core.types import HumanRole
 
 # ---------------------------------------------------------------------------
 # Sub-schemas
@@ -110,6 +112,30 @@ class ObservabilityCfg(BaseModel):
     callback_sync: bool = False
 
 
+class HumanCfg(BaseModel):
+    """HITL gateway configuration (arch.md M9).
+
+    Controls whether human-in-the-loop is active, which gateway to use,
+    which role the human plays, and how timeouts are handled.
+
+    When ``enabled=False`` (the default), the Chain topology behaves exactly
+    as before — no ``human_reviewer`` node is inserted.
+
+    ``model`` is an optional override for the LLM model used by
+    ``LLMSimulatedGateway``.  When ``None``, the gateway derives the model
+    from the top-level ``ModelCfg.default``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    gateway: Literal["llm_simulated", "cli"] = "llm_simulated"
+    role: HumanRole = HumanRole.REVIEWER
+    timeout_s: float = 900.0
+    timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
+    model: str | None = None
+
+
 class ExperimentConfig(BaseModel):
     """Top-level experiment configuration schema (arch.md §12.1).
 
@@ -124,6 +150,7 @@ class ExperimentConfig(BaseModel):
     topology: TopologyCfg
     task: TaskCfg
     observability: ObservabilityCfg
+    human: HumanCfg | None = None
 
     @model_validator(mode="after")
     def _check_topology(self) -> ExperimentConfig:
