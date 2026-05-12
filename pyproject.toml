@@ -44,6 +44,7 @@ packages = ["src/atm"]
 [dependency-groups]
 dev = [
     {include-group = "test"},
+    "aiosqlite>=0.22.1",
     "alembic>=1.13",
     "langgraph>=0.3,<1",
     "mypy>=1.14",

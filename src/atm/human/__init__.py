@@ -16,6 +16,7 @@ Public API
 - build_human_node_factory  — DRY factory for LangGraph HITL nodes (M9.1).
 - HumanRoleRouter           — Protocol for dynamic HumanRole selection (M9.2).
 - FixedRoleRouter           — Constant-role implementation (back-compat default).
+- RuleBasedRoleRouter       — Table-driven Phase → HumanRole implementation (M9.2).
 """
 
 from atm.human._node_factory import build_human_node_factory
@@ -24,7 +25,7 @@ from atm.human.cli_gateway import CLIGateway
 from atm.human.gateway import HumanContext, HumanGateway, HumanResponse, HumanRole
 from atm.human.llm_simulated import LLMSimulatedGateway
 from atm.human.prompts import ROLE_SYSTEM_PROMPTS, build_role_prompt
-from atm.human.role_router import FixedRoleRouter, HumanRoleRouter
+from atm.human.role_router import FixedRoleRouter, HumanRoleRouter, RuleBasedRoleRouter
 from atm.human.runner import MaxInteractionsExceededError, run_with_human
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "HumanRoleRouter",
     "LLMSimulatedGateway",
     "MaxInteractionsExceededError",
+    "RuleBasedRoleRouter",
     "build_human_node_factory",
     "build_role_prompt",
     "request_with_timeout",
