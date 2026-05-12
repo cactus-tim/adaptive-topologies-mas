@@ -51,9 +51,14 @@ bugs) and raises ``RuntimeError``.
 from __future__ import annotations
 
 import logging
+import time
+from datetime import UTC, datetime
 from typing import Any
 
+from langchain_core.callbacks.manager import adispatch_custom_event
+
 from atm.core.types import HumanContext, HumanResponse
+from atm.human._timeout import request_with_timeout
 from atm.human.gateway import HumanGateway
 
 logger = logging.getLogger(__name__)
@@ -93,6 +98,9 @@ async def run_with_human(
     gateway: HumanGateway | None = None,
     checkpointer: Any = None,
     max_interactions: int = 10,
+    timeout_s: float | None = None,
+    timeout_policy: str = "skip",
+    fallback_gateway: HumanGateway | None = None,
 ) -> Any:
     """Drive a compiled LangGraph through its full lifecycle, handling interrupts.
 
@@ -122,6 +130,19 @@ async def run_with_human(
     max_interactions:
         Maximum number of interrupt/resume cycles to allow before raising
         :class:`MaxInteractionsExceededError`.  Defaults to 10.
+    timeout_s:
+        Optional timeout in seconds for each gateway.request() call.  When
+        provided, ``request_with_timeout`` is used instead of a direct
+        ``gateway.request()`` call.  ``None`` means no timeout (default,
+        backward-compatible behavior).
+    timeout_policy:
+        Timeout policy string passed to ``request_with_timeout`` when
+        ``timeout_s`` is not ``None``.  One of ``"fail"``, ``"llm_fallback"``,
+        ``"skip"``.  Defaults to ``"skip"``.
+    fallback_gateway:
+        Optional fallback :class:`~atm.human.gateway.HumanGateway` used when
+        ``timeout_policy="llm_fallback"`` and the primary gateway times out.
+        Required if ``timeout_s`` is set and ``timeout_policy="llm_fallback"``.
 
     Returns
     -------
@@ -211,8 +232,70 @@ async def run_with_human(
                 request_id,
             )
 
-            response: HumanResponse = await gateway.request(ctx, request_id=request_id)
+            # F5: Dispatch human_request event before gateway call.
+            # adispatch_custom_event requires an active LangChain callback context; when
+            # run_with_human is called outside a node (no active context), the call
+            # will raise and we silently skip the event.  The interrupt-path caller is
+            # responsible for establishing the callback context if PG writes are required.
+            _run_id = ctx.run_id
+            try:
+                await adispatch_custom_event(
+                    "human_request",
+                    {
+                        "run_id": _run_id,
+                        "request_id": request_id,
+                        "role": str(
+                            ctx.role.value
+                            if hasattr(ctx.role, "value")
+                            else ctx.role
+                        ),
+                        "context_json": ctx.model_dump(mode="json"),
+                        "requested_at": datetime.now(UTC),
+                    },
+                )
+            except Exception:
+                logger.debug(
+                    "run_with_human: adispatch human_request skipped (no callback ctx)",
+                    exc_info=True,
+                )
+
+            # F6: Use request_with_timeout when timeout_s is provided; otherwise
+            # fall back to direct gateway.request() for backward compatibility.
+            _t0 = time.monotonic()
+            if timeout_s is not None:
+                response: HumanResponse = await request_with_timeout(
+                    gateway,
+                    ctx,
+                    request_id=request_id,
+                    timeout_s=timeout_s,
+                    policy=timeout_policy,  # type: ignore[arg-type]
+                    llm_fallback_gateway=fallback_gateway,
+                )
+            else:
+                response = await gateway.request(ctx, request_id=request_id)
+            _latency_s = time.monotonic() - _t0
+
             resume_payload = response.model_dump(mode="json")
+
+            # F5: Dispatch human_response event after gateway call.
+            try:
+                await adispatch_custom_event(
+                    "human_response",
+                    {
+                        "run_id": _run_id,
+                        "request_id": request_id,
+                        "answered_at": datetime.now(UTC),
+                        "response_json": resume_payload,
+                        "source": response.source,
+                        "timed_out": response.timed_out,
+                        "latency_s": _latency_s,
+                    },
+                )
+            except Exception:
+                logger.debug(
+                    "run_with_human: adispatch human_response skipped (no callback ctx)",
+                    exc_info=True,
+                )
 
             # Store in idempotency cache
             _resolved[cache_key] = resume_payload

@@ -11,6 +11,8 @@ Tests cover:
   7. Default path: NO human_request event emitted.
   8. request_id is deterministic: f"chain:{iter_total}:reviewer".
   9. Timeout path: skip policy returns abstain-like response, no crash.
+  10. Dispatch payloads match canonical shape (F1/F2 fix verification).
+  11. llm_fallback timeout_policy doesn't crash at build time (F3 fix verification).
 """
 
 from __future__ import annotations
@@ -501,3 +503,233 @@ class TestMissingRunId:
 
         with pytest.raises(RuntimeError, match="run_id"):
             asyncio.run(node_fn(state))
+
+
+# ---------------------------------------------------------------------------
+# Group 6 — Canonical payload shape (F1 / F2 fix verification)
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchPayloadShape:
+    """Verify human_request and human_response payloads match the canonical shape
+    expected by ExperimentCallbackHandler._handle_human_request/_handle_human_response.
+
+    Canonical shapes (as used in _human_request_data / _human_response_data fixtures
+    in tests/unit/observability/test_callbacks_human.py):
+      human_request:  run_id, request_id, role, context_json, requested_at
+      human_response: run_id, request_id, answered_at, response_json,
+                      source, timed_out, latency_s
+    """
+
+    def test_human_request_payload_has_canonical_keys(self) -> None:
+        """human_request payload must contain run_id, request_id, role, context_json,
+        requested_at — matching what _handle_human_request reads."""
+        from datetime import datetime
+
+        run_id = uuid.uuid4()
+        state = _make_state(run_id=run_id, iter_total=0)
+
+        fake_gateway = AsyncMock()
+        fake_gateway.request = AsyncMock(return_value=_make_approve_response())
+        human_cfg = _make_human_cfg(enabled=True, timeout_s=None)  # type: ignore[arg-type]
+
+        node_fn = _build_human_reviewer_node(human_cfg, fake_gateway)
+
+        captured_payloads: dict[str, Any] = {}
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            captured_payloads[name] = data
+
+        with patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch):
+            asyncio.run(node_fn(state))
+
+        assert "human_request" in captured_payloads, "human_request event not dispatched"
+        payload = captured_payloads["human_request"]
+
+        # Must have all canonical keys
+        assert "run_id" in payload, f"run_id missing from human_request payload: {payload!r}"
+        assert "request_id" in payload, f"request_id missing from human_request payload: {payload!r}"
+        assert "role" in payload, f"role missing from human_request payload: {payload!r}"
+        assert "context_json" in payload, f"context_json missing from human_request payload: {payload!r}"
+        assert "requested_at" in payload, f"requested_at missing from human_request payload: {payload!r}"
+
+        # Must NOT use the old "ctx" key
+        assert "ctx" not in payload, (
+            f"human_request payload must not use 'ctx' key (callback expects 'context_json'): "
+            f"{payload!r}"
+        )
+
+        # run_id must be the actual run_id
+        assert payload["run_id"] == run_id, (
+            f"run_id in payload {payload['run_id']!r} != state run_id {run_id!r}"
+        )
+
+        # role must be a string
+        assert isinstance(payload["role"], str), (
+            f"role must be a str, got {type(payload['role'])}: {payload['role']!r}"
+        )
+
+        # requested_at must be a datetime
+        assert isinstance(payload["requested_at"], datetime), (
+            f"requested_at must be a datetime, got {type(payload['requested_at'])}"
+        )
+
+    def test_human_response_payload_has_canonical_keys(self) -> None:
+        """human_response payload must contain run_id, request_id, answered_at,
+        response_json, source, timed_out, latency_s — matching what
+        _handle_human_response reads."""
+        from datetime import datetime
+
+        run_id = uuid.uuid4()
+        state = _make_state(run_id=run_id, iter_total=1)
+
+        fake_gateway = AsyncMock()
+        fake_gateway.request = AsyncMock(return_value=_make_approve_response())
+        human_cfg = _make_human_cfg(enabled=True, timeout_s=None)  # type: ignore[arg-type]
+
+        node_fn = _build_human_reviewer_node(human_cfg, fake_gateway)
+
+        captured_payloads: dict[str, Any] = {}
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            captured_payloads[name] = data
+
+        with patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch):
+            asyncio.run(node_fn(state))
+
+        assert "human_response" in captured_payloads, "human_response event not dispatched"
+        payload = captured_payloads["human_response"]
+
+        # Must have all canonical keys
+        for key in ("run_id", "request_id", "answered_at", "response_json",
+                    "source", "timed_out", "latency_s"):
+            assert key in payload, f"{key!r} missing from human_response payload: {payload!r}"
+
+        # Must NOT use the old "response" key
+        assert "response" not in payload, (
+            f"human_response payload must not use 'response' key (callback expects 'response_json'): "
+            f"{payload!r}"
+        )
+
+        # run_id must match
+        assert payload["run_id"] == run_id
+
+        # answered_at must be a datetime
+        assert isinstance(payload["answered_at"], datetime), (
+            f"answered_at must be a datetime, got {type(payload['answered_at'])}"
+        )
+
+        # latency_s must be a non-negative float
+        assert isinstance(payload["latency_s"], float), (
+            f"latency_s must be a float, got {type(payload['latency_s'])}"
+        )
+        assert payload["latency_s"] >= 0.0, f"latency_s must be >= 0.0, got {payload['latency_s']}"
+
+
+# ---------------------------------------------------------------------------
+# Group 7 — F3: llm_fallback timeout_policy does not crash at node invocation
+# ---------------------------------------------------------------------------
+
+
+class TestLlmFallbackPolicy:
+    """Verify that using timeout_policy='llm_fallback' (the default) does not raise
+    ValueError when the node is actually invoked, as long as timeout_s is set."""
+
+    def test_llm_fallback_policy_with_timeout_does_not_raise(self) -> None:
+        """human_cfg.timeout_policy='llm_fallback' with timeout_s set must NOT raise
+        ValueError at invocation time — the node builds a fallback LLMSimulatedGateway
+        internally and passes it to request_with_timeout."""
+        run_id = uuid.uuid4()
+        state = _make_state(run_id=run_id, iter_total=0)
+
+        # Use a fast-responding mock as the primary gateway so it doesn't time out
+        approve_response = _make_approve_response()
+        fake_gateway = AsyncMock()
+        fake_gateway.request = AsyncMock(return_value=approve_response)
+
+        # Default cfg has timeout_policy='llm_fallback' — this USED to crash
+        human_cfg = _make_human_cfg(
+            enabled=True,
+            timeout_s=30.0,
+            timeout_policy="llm_fallback",
+        )
+
+        node_fn = _build_human_reviewer_node(human_cfg, fake_gateway)
+
+        events: list[str] = []
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            events.append(name)
+
+        # Patch request_with_timeout so it calls the primary gateway and returns immediately
+        async def fake_request_with_timeout(
+            gw: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
+        ) -> HumanResponse:
+            # Verify fallback_gateway is now properly provided (F3 fix)
+            assert policy != "llm_fallback" or llm_fallback_gateway is not None, (
+                "F3 regression: llm_fallback policy passed with llm_fallback_gateway=None"
+            )
+            return await gw.request(ctx, request_id=request_id)
+
+        with (
+            patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch),
+            patch("atm.topology.chain.request_with_timeout", side_effect=fake_request_with_timeout),
+        ):
+            # Must NOT raise ValueError
+            delta = asyncio.run(node_fn(state))
+
+        assert delta["shared"]["human_approved"] is True
+        assert "human_request" in events
+        assert "human_response" in events
+
+    def test_llm_fallback_primary_timeout_exercises_fallback(self) -> None:
+        """When the primary gateway times out and policy='llm_fallback', the fallback
+        gateway is called and returns a response with source='fallback'."""
+        import asyncio as _asyncio
+
+        run_id = uuid.uuid4()
+        state = _make_state(run_id=run_id, iter_total=0)
+
+        # Primary gateway that actually times out
+        async def _slow_request(ctx: Any, *, request_id: str) -> HumanResponse:
+            await _asyncio.sleep(10)
+            return _make_approve_response()
+
+        primary_gateway = AsyncMock()
+        primary_gateway.request = _slow_request
+
+        # The fallback should return quickly
+        fallback_response = HumanResponse(
+            action="approve", comment="fallback", source="fallback", timed_out=False
+        )
+
+        human_cfg = _make_human_cfg(
+            enabled=True,
+            timeout_s=0.05,  # very short — primary will time out
+            timeout_policy="llm_fallback",
+        )
+
+        node_fn = _build_human_reviewer_node(human_cfg, primary_gateway)
+
+        async def fake_dispatch(name: str, data: Any) -> None:
+            pass
+
+        mock_fallback_gw = AsyncMock()
+        mock_fallback_gw.request = AsyncMock(return_value=fallback_response)
+
+        mock_llm_sim_instance = mock_fallback_gw
+
+        with (
+            patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch),
+            patch("atm.topology.chain.LLMSimulatedGateway", return_value=mock_llm_sim_instance),
+        ):
+            delta = asyncio.run(node_fn(state))
+
+        # The fallback response was "approve", so human_approved should be True
+        assert delta["shared"]["human_approved"] is True

@@ -24,7 +24,9 @@ Registration is done via @TopologyRegistry.register("chain") side-effect.
 from __future__ import annotations
 
 import logging
+import time
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -182,8 +184,15 @@ def _build_human_reviewer_node(
             await adispatch_custom_event(
                 "human_request",
                 {
+                    "run_id": run_id,
                     "request_id": request_id,
-                    "ctx": ctx.model_dump(mode="json"),
+                    "role": str(
+                        human_cfg.role.value
+                        if hasattr(human_cfg.role, "value")
+                        else human_cfg.role
+                    ),
+                    "context_json": ctx.model_dump(mode="json"),
+                    "requested_at": datetime.now(UTC),
                 },
             )
         except Exception:
@@ -193,25 +202,43 @@ def _build_human_reviewer_node(
         timeout_s_val: float | None = getattr(human_cfg, "timeout_s", None)
         policy: str = getattr(human_cfg, "timeout_policy", "skip")
 
+        # Measure latency for human_response payload (F2)
+        _t0 = time.monotonic()
+
         if request_with_timeout is not None and timeout_s_val is not None:
+            # F3: build a fallback gateway for llm_fallback policy
+            _fallback_gateway: Any = None
+            if policy == "llm_fallback" and LLMSimulatedGateway is not None:
+                # Reuse the same LLM as the primary gateway; if the primary is already
+                # LLMSimulatedGateway, construct a fresh instance so the fallback is a
+                # separate call (the primary timed out, so a fresh instance is needed).
+                _fb_llm: Any = getattr(gateway, "_llm", None)
+                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
             response = await request_with_timeout(
                 gateway,
                 ctx,
                 request_id=request_id,
                 timeout_s=timeout_s_val,
                 policy=policy,  # type: ignore[arg-type]
-                llm_fallback_gateway=None,
+                llm_fallback_gateway=_fallback_gateway,
             )
         else:
             response = await gateway.request(ctx, request_id=request_id)
+
+        latency_s = time.monotonic() - _t0
 
         # --- Step 6: Dispatch human_response AFTER gateway returns ---
         try:
             await adispatch_custom_event(
                 "human_response",
                 {
+                    "run_id": run_id,
                     "request_id": request_id,
-                    "response": response.model_dump(mode="json"),
+                    "answered_at": datetime.now(UTC),
+                    "response_json": response.model_dump(mode="json"),
+                    "source": response.source,
+                    "timed_out": response.timed_out,
+                    "latency_s": latency_s,
                 },
             )
         except Exception:

@@ -15,8 +15,18 @@
 
 - Step 6.1 (Module wiring + public exports + codebase-map update): `src/atm/human/__init__.py` finalized with full `__all__` (11 symbols); `dev/codebase-map.md` updated with complete M9 `human/` section and last-updated date 2026-05-12. All 74 unit tests green, mypy clean.
 
+- Step 7 (Code Review Fixes F1-F6): исправлены 6 критических/major находок code review:
+  - F1: payload `human_request` в chain.py теперь содержит `run_id, request_id, role, context_json, requested_at`
+  - F2: payload `human_response` содержит `run_id, request_id, answered_at, response_json, source, timed_out, latency_s` + измерение latency_s через `time.monotonic()`
+  - F3: при `timeout_policy='llm_fallback'` строится fallback `LLMSimulatedGateway` из `gateway._llm`
+  - F4: runner.py строит `human_gateway_llm` через `build_llm(...)` и передаёт в `topology.build(...)`
+  - F5: `run_with_human` диспатчит `human_request`/`human_response` события вокруг вызова gateway (с graceful fallback при отсутствии callback-контекста)
+  - F6: `run_with_human` принимает `timeout_s, timeout_policy, fallback_gateway` и использует `request_with_timeout` при `timeout_s is not None`
+  - Тесты: обновлены payload-тесты в test_chain_human.py, добавлены F3/F4/F5/F6 тесты (+10 тестов); integration test rewritten на correct behavior
+  - 1089 unit тестов зелёных, mypy clean, ruff clean
+
 ### IN PROGRESS
-- All steps complete (Wave F done; integration tests 6.2–6.4 are PG-required, out of scope for this step)
+- All steps complete (Wave F + fixes done; integration tests 6.2–6.4 are PG-required, out of scope for this step)
 
 ### BLOCKERS
 - Нет

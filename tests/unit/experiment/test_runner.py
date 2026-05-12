@@ -798,3 +798,175 @@ async def test_run_one_instantiates_topology_class() -> None:
     assert "build_called" in instantiation_log, (
         "topology_instance.build() must be called after instantiation."
     )
+
+
+# ---------------------------------------------------------------------------
+# Test: F4 — human_gateway_llm is built and passed to topology.build when needed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_one_passes_human_gateway_llm_when_human_enabled() -> None:
+    """F4 fix: when cfg.human.enabled=True and gateway='llm_simulated', run_one must
+    build a separate LLMWrapper for the HITL gateway and pass it as
+    human_gateway_llm=... kwarg to topology_instance.build().
+
+    Without this fix, LLMSimulatedGateway is constructed with llm=None and crashes
+    on the first ainvoke with AttributeError.
+    """
+    from atm.experiment.config import HumanCfg
+
+    cfg = _make_cfg(
+        human=HumanCfg(enabled=True, gateway="llm_simulated", timeout_policy="skip")
+    )
+    final_state = _make_final_state(final_answer="The answer is 55")
+
+    build_kwargs_log: list[dict[str, Any]] = []
+
+    class _FakeTopoF4:
+        def __init__(self) -> None:
+            pass
+
+        def build(self, agents: Any, cfg: Any, **kw: Any) -> AsyncMock:
+            build_kwargs_log.append(dict(kw))
+            mock = AsyncMock()
+            mock.ainvoke = AsyncMock(return_value=final_state)
+            return mock
+
+    with (
+        patch("atm.experiment.runner.create_engine") as mock_ce,
+        patch("atm.experiment.runner.create_session_factory") as mock_csf,
+        patch("atm.experiment.runner.Base.metadata.create_all"),
+        patch("atm.experiment.runner._ensure_experiment", new_callable=AsyncMock) as mock_ee,
+        patch("atm.experiment.runner._insert_run", new_callable=AsyncMock) as mock_ir,
+        patch("atm.experiment.runner._update_run_success", new_callable=AsyncMock),
+        patch("atm.experiment.runner.ParquetWriter") as mock_pw_cls,
+        patch("atm.experiment.runner.ExperimentCallbackHandler"),
+        patch("atm.experiment.runner._build_agents", return_value={}),
+        patch("atm.experiment.runner.TopologyRegistry") as mock_reg,
+        patch("atm.experiment.runner.checkpointer_scope") as mock_cp_scope,
+        patch("atm.experiment.runner._load_pricing", return_value=MagicMock()),
+        patch("atm.experiment.runner.build_llm") as mock_build_llm,
+    ):
+        exp_id = uuid.uuid4()
+        run_id = uuid.uuid4()
+        mock_pw = _make_mock_parquet_writer()
+        mock_ee.return_value = exp_id
+        mock_ir.return_value = run_id
+
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_ce.return_value = mock_engine
+        mock_csf.return_value = MagicMock()
+        mock_pw_cls.return_value = mock_pw
+        mock_reg.get.return_value = _FakeTopoF4
+
+        # build_llm is called both for regular LLM wrappers AND for human_gateway_llm.
+        # We use a fake LLMWrapper for each call.
+        from atm.llm.budget import BudgetTracker
+        from atm.llm.fake import FakeLLM
+        from atm.llm.pricing import Pricing
+        from atm.llm.wrapper import LLMWrapper
+
+        def _make_fake_wrapper(*args: Any, **kwargs: Any) -> LLMWrapper:
+            return LLMWrapper(
+                model_id="fake:echo",
+                pricing=Pricing(version=1, models={}),
+                budget=BudgetTracker(per_call_usd=1.0, per_run_usd=10.0, per_experiment_usd=100.0),
+                llm=FakeLLM(mode="echo"),
+            )
+
+        mock_build_llm.side_effect = _make_fake_wrapper
+
+        mock_cp = AsyncMock()
+
+        async def _cp_aenter(self: Any) -> Any:
+            return mock_cp
+
+        async def _cp_aexit(self: Any, *args: Any) -> bool:
+            return False
+
+        mock_cp_scope.return_value.__aenter__ = _cp_aenter
+        mock_cp_scope.return_value.__aexit__ = _cp_aexit
+
+        await run_one(cfg)
+
+    # build() must have been called with human_gateway_llm kwarg
+    assert len(build_kwargs_log) == 1, f"Expected exactly 1 build() call, got {len(build_kwargs_log)}"
+    build_kwargs = build_kwargs_log[0]
+
+    assert "human_gateway_llm" in build_kwargs, (
+        "F4 regression: human_gateway_llm not passed to topology.build(). "
+        f"Actual kwargs: {list(build_kwargs.keys())}"
+    )
+    assert build_kwargs["human_gateway_llm"] is not None, (
+        "F4 regression: human_gateway_llm passed as None to topology.build()."
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_one_does_not_pass_human_gateway_llm_when_human_disabled() -> None:
+    """When cfg.human is None (default), human_gateway_llm must be None (no extra
+    build_llm call for HITL)."""
+    cfg = _make_cfg()  # human=None by default
+    final_state = _make_final_state(final_answer="The answer is 55")
+
+    build_kwargs_log: list[dict[str, Any]] = []
+
+    class _FakeTopoNoHuman:
+        def __init__(self) -> None:
+            pass
+
+        def build(self, agents: Any, cfg: Any, **kw: Any) -> AsyncMock:
+            build_kwargs_log.append(dict(kw))
+            mock = AsyncMock()
+            mock.ainvoke = AsyncMock(return_value=final_state)
+            return mock
+
+    with (
+        patch("atm.experiment.runner.create_engine") as mock_ce,
+        patch("atm.experiment.runner.create_session_factory") as mock_csf,
+        patch("atm.experiment.runner.Base.metadata.create_all"),
+        patch("atm.experiment.runner._ensure_experiment", new_callable=AsyncMock) as mock_ee,
+        patch("atm.experiment.runner._insert_run", new_callable=AsyncMock) as mock_ir,
+        patch("atm.experiment.runner._update_run_success", new_callable=AsyncMock),
+        patch("atm.experiment.runner.ParquetWriter") as mock_pw_cls,
+        patch("atm.experiment.runner.ExperimentCallbackHandler"),
+        patch("atm.experiment.runner._build_agents", return_value={}),
+        patch("atm.experiment.runner.TopologyRegistry") as mock_reg,
+        patch("atm.experiment.runner.checkpointer_scope") as mock_cp_scope,
+        patch("atm.experiment.runner._load_pricing", return_value=MagicMock()),
+    ):
+        exp_id = uuid.uuid4()
+        run_id = uuid.uuid4()
+        mock_pw = _make_mock_parquet_writer()
+        mock_ee.return_value = exp_id
+        mock_ir.return_value = run_id
+
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_ce.return_value = mock_engine
+        mock_csf.return_value = MagicMock()
+        mock_pw_cls.return_value = mock_pw
+        mock_reg.get.return_value = _FakeTopoNoHuman
+
+        mock_cp = AsyncMock()
+
+        async def _cp_aenter(self: Any) -> Any:
+            return mock_cp
+
+        async def _cp_aexit(self: Any, *args: Any) -> bool:
+            return False
+
+        mock_cp_scope.return_value.__aenter__ = _cp_aenter
+        mock_cp_scope.return_value.__aexit__ = _cp_aexit
+
+        await run_one(cfg)
+
+    assert len(build_kwargs_log) == 1
+    build_kwargs = build_kwargs_log[0]
+    # human_gateway_llm should be None when human is not configured
+    assert build_kwargs.get("human_gateway_llm") is None, (
+        "When cfg.human is None, human_gateway_llm must be None (not built). "
+        f"Got: {build_kwargs.get('human_gateway_llm')!r}"
+    )

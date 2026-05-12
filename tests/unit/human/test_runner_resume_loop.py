@@ -9,6 +9,8 @@ Test scenarios:
                                      request_id; gateway is called only once.
 6. >1 interrupts simultaneously    — raises RuntimeError.
 7. Interrupt but no gateway        — raises ValueError.
+8. timeout_s parameter (F6)        — when timeout_s is provided, request_with_timeout is used.
+9. F5 events dispatched            — human_request/human_response events are emitted around call.
 """
 
 from __future__ import annotations
@@ -405,3 +407,187 @@ async def test_interrupt_without_gateway_raises_value_error() -> None:
             thread_id="thread-no-gw",
             gateway=None,
         )
+
+
+# ---------------------------------------------------------------------------
+# 8. timeout_s parameter (F6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_timeout_s_param_uses_request_with_timeout() -> None:
+    """F6: When timeout_s is provided, run_with_human uses request_with_timeout
+    instead of direct gateway.request().
+
+    Verifies that the timeout wrapper is invoked with the correct arguments.
+    """
+    from unittest.mock import patch
+
+    run_id = uuid.uuid4()
+    payload = {"request_id": "req-timeout", "ctx": _ctx_dict(run_id)}
+    final = {"done": True}
+    graph = _FakeSingleInterruptGraph(payload, final)
+    gw = _make_gateway("approve")
+
+    timeout_calls: list[dict[str, Any]] = []
+
+    async def fake_request_with_timeout(
+        gateway: Any,
+        ctx: Any,
+        *,
+        request_id: str,
+        timeout_s: Any,
+        policy: Any,
+        llm_fallback_gateway: Any = None,
+    ) -> HumanResponse:
+        timeout_calls.append({
+            "request_id": request_id,
+            "timeout_s": timeout_s,
+            "policy": policy,
+            "fallback_gateway": llm_fallback_gateway,
+        })
+        return HumanResponse(action="approve", source="llm_sim", timed_out=False)
+
+    with patch("atm.human.runner.request_with_timeout", side_effect=fake_request_with_timeout):
+        result = await run_with_human(
+            graph,
+            {},
+            thread_id="thread-timeout",
+            gateway=gw,
+            timeout_s=30.0,
+            timeout_policy="skip",
+        )
+
+    assert result == final
+    assert len(timeout_calls) == 1, f"Expected 1 request_with_timeout call, got {len(timeout_calls)}"
+    call = timeout_calls[0]
+    assert call["timeout_s"] == 30.0
+    assert call["policy"] == "skip"
+    assert call["request_id"] == "req-timeout"
+
+
+@pytest.mark.asyncio
+async def test_timeout_s_none_uses_direct_gateway_call() -> None:
+    """F6 backward compat: When timeout_s is None (default), gateway.request() is
+    called directly — not via request_with_timeout."""
+    from unittest.mock import patch
+
+    run_id = uuid.uuid4()
+    payload = {"request_id": "req-direct", "ctx": _ctx_dict(run_id)}
+    final = {"ok": True}
+    graph = _FakeSingleInterruptGraph(payload, final)
+    gw = _make_gateway("approve")
+
+    timeout_calls: list[Any] = []
+
+    async def fake_request_with_timeout(*args: Any, **kwargs: Any) -> HumanResponse:
+        timeout_calls.append(True)
+        return HumanResponse(action="approve", source="llm_sim", timed_out=False)
+
+    with patch("atm.human.runner.request_with_timeout", side_effect=fake_request_with_timeout):
+        await run_with_human(
+            graph,
+            {},
+            thread_id="thread-direct",
+            gateway=gw,
+            timeout_s=None,  # explicit None → direct call
+        )
+
+    # request_with_timeout must NOT have been called
+    assert len(timeout_calls) == 0, (
+        "request_with_timeout must not be called when timeout_s=None (backward compat)"
+    )
+    # But the gateway's request() must have been called directly
+    gw.request.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_timeout_fallback_gateway_forwarded_to_request_with_timeout() -> None:
+    """F6: fallback_gateway is forwarded to request_with_timeout as llm_fallback_gateway."""
+    from unittest.mock import patch
+
+    run_id = uuid.uuid4()
+    payload = {"request_id": "req-fb", "ctx": _ctx_dict(run_id)}
+    final = {"done": True}
+    graph = _FakeSingleInterruptGraph(payload, final)
+    gw = _make_gateway("approve")
+    fallback_gw = _make_gateway("abstain")
+
+    timeout_calls: list[dict[str, Any]] = []
+
+    async def fake_request_with_timeout(
+        gateway: Any,
+        ctx: Any,
+        *,
+        request_id: str,
+        timeout_s: Any,
+        policy: Any,
+        llm_fallback_gateway: Any = None,
+    ) -> HumanResponse:
+        timeout_calls.append({"fallback_gateway": llm_fallback_gateway})
+        return HumanResponse(action="approve", source="llm_sim", timed_out=False)
+
+    with patch("atm.human.runner.request_with_timeout", side_effect=fake_request_with_timeout):
+        await run_with_human(
+            graph,
+            {},
+            thread_id="thread-fb",
+            gateway=gw,
+            timeout_s=10.0,
+            timeout_policy="llm_fallback",
+            fallback_gateway=fallback_gw,
+        )
+
+    assert len(timeout_calls) == 1
+    assert timeout_calls[0]["fallback_gateway"] is fallback_gw, (
+        "fallback_gateway was not forwarded to request_with_timeout"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. F5: human_request / human_response events dispatched around gateway call
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_f5_dispatch_events_around_gateway_call() -> None:
+    """F5: run_with_human dispatches human_request BEFORE and human_response AFTER
+    the gateway call when an interrupt is resolved.
+
+    Since adispatch_custom_event requires a LangChain callback context, the helper
+    silently swallows exceptions from dispatch when no context is available.
+    This test patches adispatch_custom_event to verify it is ATTEMPTED even when
+    no real callback context is present.
+    """
+    from unittest.mock import patch
+
+    run_id = uuid.uuid4()
+    payload = {"request_id": "req-evt", "ctx": _ctx_dict(run_id)}
+    final = {"done": True}
+    graph = _FakeSingleInterruptGraph(payload, final)
+    gw = _make_gateway("approve")
+
+    event_log: list[str] = []
+
+    async def fake_dispatch(name: str, data: Any) -> None:
+        event_log.append(name)
+
+    with patch(
+        "atm.human.runner.adispatch_custom_event",
+        side_effect=fake_dispatch,
+    ):
+        result = await run_with_human(
+            graph,
+            {},
+            thread_id="thread-evt",
+            gateway=gw,
+        )
+
+    assert result == final
+    # Both events should have been attempted
+    assert "human_request" in event_log, f"human_request not dispatched. Events: {event_log}"
+    assert "human_response" in event_log, f"human_response not dispatched. Events: {event_log}"
+    # human_request must come before human_response
+    assert event_log.index("human_request") < event_log.index("human_response"), (
+        "human_request must be dispatched before human_response"
+    )
