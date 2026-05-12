@@ -29,12 +29,12 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 
-from atm.core.types import HumanContext, HumanRole, Message, MessageKind
+from atm.core.types import HumanContext, Message, MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
 
 if TYPE_CHECKING:
     from atm.experiment.config import HumanCfg
-    from atm.human.gateway import HumanGateway, HumanResponse
+    from atm.human.gateway import HumanGateway
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +106,8 @@ except ImportError:  # pragma: no cover
 
 
 def _build_human_reviewer_node(
-    human_cfg: "HumanCfg",
-    gateway: "HumanGateway",
+    human_cfg: HumanCfg,
+    gateway: HumanGateway,
 ) -> Any:
     """Build and return an async node function for the human_reviewer step.
 
@@ -437,7 +437,7 @@ class ChainTopology:
         graph.add_edge("critic", "critic_postprocess")
 
         # --- HITL: optionally insert human_reviewer between critic_postprocess and routing ---
-        human_cfg: "HumanCfg | None" = kwargs.get("human_cfg")
+        human_cfg: HumanCfg | None = kwargs.get("human_cfg")
 
         # Conditional edge: postprocess (or human_reviewer) → (END | executor)
         def _route(state: dict[str, Any]) -> str:

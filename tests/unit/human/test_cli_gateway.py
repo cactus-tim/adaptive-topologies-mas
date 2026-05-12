@@ -6,7 +6,6 @@ All tests patch ``asyncio.to_thread`` so no real stdin/input is used.
 from __future__ import annotations
 
 import uuid
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -14,7 +13,6 @@ import pytest
 from atm.core.types import HumanContext, HumanResponse, HumanRole, Message, MessageKind
 from atm.human.cli_gateway import CLIGateway
 from atm.human.gateway import HumanGateway
-
 
 # ---------------------------------------------------------------------------
 # Helpers

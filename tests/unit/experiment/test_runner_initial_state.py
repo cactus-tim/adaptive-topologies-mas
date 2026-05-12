@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -25,7 +25,6 @@ from atm.experiment.config import (
     TopologyCfg,
 )
 from atm.experiment.runner import _build_initial_state
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -132,9 +131,7 @@ def test_build_initial_state_contains_run_id() -> None:
     assert "run_id" in shared, (
         f"Expected 'run_id' in state['shared'], got keys: {list(shared.keys())}"
     )
-    assert shared["run_id"] == run_id, (
-        f"Expected run_id={run_id}, got {shared['run_id']}"
-    )
+    assert shared["run_id"] == run_id, f"Expected run_id={run_id}, got {shared['run_id']}"
 
 
 # ---------------------------------------------------------------------------
@@ -180,10 +177,20 @@ async def test_run_one_human_cfg_none_passes_none_to_build() -> None:
         exp_id = uuid.uuid4()
         run_id = uuid.uuid4()
         _patch_run_one(
-            mock_ce, mock_csf, exp_id, run_id, mock_ee, mock_ir,
-            mock_pw, mock_pw_cls, mock_reg, mock_cp_scope, topo_instance,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            topo_instance,
         )
         from atm.experiment.runner import run_one
+
         result = await run_one(cfg)
 
     assert result.status == "completed"
@@ -240,10 +247,20 @@ async def test_run_one_human_cfg_enabled_propagates_to_build() -> None:
         exp_id = uuid.uuid4()
         run_id = uuid.uuid4()
         _patch_run_one(
-            mock_ce, mock_csf, exp_id, run_id, mock_ee, mock_ir,
-            mock_pw, mock_pw_cls, mock_reg, mock_cp_scope, topo_instance,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw,
+            mock_pw_cls,
+            mock_reg,
+            mock_cp_scope,
+            topo_instance,
         )
         from atm.experiment.runner import run_one
+
         result = await run_one(cfg)
 
     assert result.status == "completed"

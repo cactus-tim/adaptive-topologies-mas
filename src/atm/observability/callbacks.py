@@ -284,7 +284,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             "started_at": time.monotonic(),
             "tool_name": serialized.get("name", "") if serialized else "",
             "agent_id": (metadata or {}).get("agent_id", ""),
-            "args_json": _dumps(inputs) if inputs is not None else (input_str if isinstance(input_str, str) else ""),
+            "args_json": _dumps(inputs)
+            if inputs is not None
+            else (input_str if isinstance(input_str, str) else ""),
             "at": datetime.now(UTC),
         }
 
@@ -299,7 +301,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Write tool call row to Parquet with ok=True."""
         try:
             start = self._tool_starts.pop(run_id, None)
-            latency_ms = (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            latency_ms = (
+                (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            )
 
             row = {
                 "run_id": str(self._run_id),
@@ -327,7 +331,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Write tool call row to Parquet with ok=False."""
         try:
             start = self._tool_starts.pop(run_id, None)
-            latency_ms = (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            latency_ms = (
+                (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            )
 
             row = {
                 "run_id": str(self._run_id),
@@ -502,9 +508,7 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             async with session_scope(self._session_factory) as session:
                 await session.execute(stmt)
         except Exception:
-            self._log.error(
-                "on_custom_event[human_request]: db insert failed", exc_info=True
-            )
+            self._log.error("on_custom_event[human_request]: db insert failed", exc_info=True)
 
     async def _handle_human_response(self, data: Any) -> None:
         """UPDATE a HumanInteraction row with the human/gateway response.
@@ -554,6 +558,4 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             async with session_scope(self._session_factory) as session:
                 await session.execute(stmt)
         except Exception:
-            self._log.error(
-                "on_custom_event[human_response]: db update failed", exc_info=True
-            )
+            self._log.error("on_custom_event[human_response]: db update failed", exc_info=True)

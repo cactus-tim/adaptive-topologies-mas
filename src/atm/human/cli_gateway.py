@@ -125,7 +125,7 @@ class CLIGateway:
         lines.append(f"  Allowed actions: {actions_str}")
         lines.append("")
         lines.append("  Enter: <action> [optional comment]")
-        lines.append("  Or JSON: {\"action\": \"...\", \"comment\": \"...\", \"payload\": {...}}")
+        lines.append('  Or JSON: {"action": "...", "comment": "...", "payload": {...}}')
         lines.append(_SEPARATOR)
 
         print("\n".join(lines))

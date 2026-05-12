@@ -130,9 +130,7 @@ async def _handle_timeout(
 
     if policy == "fail":
         # Re-raise as the built-in TimeoutError (Python 3.11+ standard).
-        raise TimeoutError(
-            f"gateway.request timed out for request_id={request_id!r}"
-        )
+        raise TimeoutError(f"gateway.request timed out for request_id={request_id!r}")
 
     if policy == "llm_fallback":
         # llm_fallback_gateway is guaranteed non-None here (validated at entry).

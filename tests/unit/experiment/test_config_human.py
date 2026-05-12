@@ -22,12 +22,14 @@ from omegaconf import OmegaConf
 from pydantic import ValidationError
 
 from atm.core.types import HumanRole
-from atm.experiment.config import HumanCfg, ExperimentConfig, load_config
+from atm.experiment.config import HumanCfg, load_config
 
 # Absolute path to project root (two levels up from this file's directory)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 CONF_HUMAN = PROJECT_ROOT / "conf" / "human"
-FIXTURE_MINIMAL = Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "valid_minimal.yaml"
+FIXTURE_MINIMAL = (
+    Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "valid_minimal.yaml"
+)
 
 
 # ---------------------------------------------------------------------------

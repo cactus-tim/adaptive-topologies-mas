@@ -26,8 +26,8 @@ from typing import Protocol, runtime_checkable
 from atm.core.types import HumanContext, HumanResponse, HumanRole
 
 __all__ = [
-    "HumanGateway",
     "HumanContext",
+    "HumanGateway",
     "HumanResponse",
     "HumanRole",
 ]

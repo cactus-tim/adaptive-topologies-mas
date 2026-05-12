@@ -297,10 +297,7 @@ async def test_max_interactions_exceeded_raises_error() -> None:
     """Exceeding max_interactions raises MaxInteractionsExceededError."""
     run_id = uuid.uuid4()
     # Graph interrupts infinitely (different request_ids to bypass idempotency cache)
-    payloads = [
-        {"request_id": f"req-{i}", "ctx": _ctx_dict(run_id)}
-        for i in range(20)
-    ]
+    payloads = [{"request_id": f"req-{i}", "ctx": _ctx_dict(run_id)} for i in range(20)]
     final = {"done": True}
     # _FakeMultiInterruptGraph will produce `len(payloads)` interrupts,
     # but max_interactions=3 should stop us before we reach final state.

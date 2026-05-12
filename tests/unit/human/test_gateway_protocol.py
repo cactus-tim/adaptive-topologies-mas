@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-import uuid
-from typing import runtime_checkable
-
-import pytest
-
-from atm.core.types import HumanContext, HumanResponse, HumanRole, Message, MessageKind
-
+from atm.core.types import HumanContext, HumanResponse, HumanRole
 
 # ---------------------------------------------------------------------------
 # 1. Re-export tests — HumanContext / HumanResponse / HumanRole accessible via
@@ -17,21 +11,21 @@ from atm.core.types import HumanContext, HumanResponse, HumanRole, Message, Mess
 
 
 def test_human_context_importable_from_gateway() -> None:
-    from atm.human.gateway import HumanContext as HC  # noqa: F401
+    from atm.human.gateway import HumanContext as ImportedHumanContext
 
-    assert HC is HumanContext
+    assert ImportedHumanContext is HumanContext
 
 
 def test_human_response_importable_from_gateway() -> None:
-    from atm.human.gateway import HumanResponse as HR  # noqa: F401
+    from atm.human.gateway import HumanResponse as ImportedHumanResponse
 
-    assert HR is HumanResponse
+    assert ImportedHumanResponse is HumanResponse
 
 
 def test_human_role_importable_from_gateway() -> None:
-    from atm.human.gateway import HumanRole as HRL  # noqa: F401
+    from atm.human.gateway import HumanRole as ImportedHumanRole
 
-    assert HRL is HumanRole
+    assert ImportedHumanRole is HumanRole
 
 
 # ---------------------------------------------------------------------------
@@ -43,19 +37,22 @@ def test_human_gateway_protocol_is_runtime_checkable() -> None:
     """HumanGateway must be decorated with @runtime_checkable."""
     from atm.human.gateway import HumanGateway
 
-    assert hasattr(HumanGateway, "__protocol_attrs__") or hasattr(
-        HumanGateway, "_is_protocol"
-    ), "HumanGateway must be a typing.Protocol"
+    assert hasattr(HumanGateway, "__protocol_attrs__") or hasattr(HumanGateway, "_is_protocol"), (
+        "HumanGateway must be a typing.Protocol"
+    )
 
 
 def test_concrete_implementation_satisfies_protocol() -> None:
     """A class with the correct async 'request' signature is accepted by the Protocol."""
-    from atm.human.gateway import HumanContext as HC
-    from atm.human.gateway import HumanGateway, HumanResponse as HR
+    from atm.human.gateway import HumanContext as ImportedHumanContext
+    from atm.human.gateway import HumanGateway
+    from atm.human.gateway import HumanResponse as ImportedHumanResponse
 
     class _FakeGateway:
-        async def request(self, ctx: HC, *, request_id: str) -> HR:
-            return HR(action="approve")
+        async def request(
+            self, ctx: ImportedHumanContext, *, request_id: str
+        ) -> ImportedHumanResponse:
+            return ImportedHumanResponse(action="approve")
 
     assert isinstance(_FakeGateway(), HumanGateway)
 

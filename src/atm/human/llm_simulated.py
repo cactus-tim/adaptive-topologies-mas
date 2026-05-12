@@ -31,7 +31,7 @@ from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from atm.core.types import HumanContext, HumanResponse, HumanRole
+from atm.core.types import HumanContext, HumanResponse
 from atm.human.prompts import build_role_prompt
 from atm.llm.wrapper import LLMWrapper
 

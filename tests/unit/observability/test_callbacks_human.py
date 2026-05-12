@@ -14,14 +14,12 @@ Tests cover:
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -148,9 +146,7 @@ async def test_human_request_inserts_with_correct_constraint() -> None:
     stmt = executed_stmts[0]
     # The compiled SQL should contain ON CONFLICT DO NOTHING
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
-    assert "ON CONFLICT" in compiled.upper(), (
-        f"Expected ON CONFLICT clause in SQL, got: {compiled}"
-    )
+    assert "ON CONFLICT" in compiled.upper(), f"Expected ON CONFLICT clause in SQL, got: {compiled}"
 
     # Verify the constraint constant value matches the migration
     assert CONSTRAINT_NAME == "uq_human_interactions_run_request"
@@ -195,9 +191,7 @@ async def test_human_request_duplicate_does_not_double_insert() -> None:
     await handler.on_custom_event(name="human_request", data=data, run_id=uuid4())
 
     # The handler dispatched two INSERTs; the DB constraint prevents double rows.
-    assert execute_count == 2, (
-        f"Expected 2 execute calls (one per event), got {execute_count}"
-    )
+    assert execute_count == 2, f"Expected 2 execute calls (one per event), got {execute_count}"
 
 
 # ---------------------------------------------------------------------------
@@ -243,9 +237,7 @@ async def test_human_response_updates_with_is_null_filter() -> None:
     )
 
     # Must have IS NULL filter for response_json
-    assert "IS NULL" in compiled_upper, (
-        f"Expected IS NULL filter in UPDATE, got: {compiled}"
-    )
+    assert "IS NULL" in compiled_upper, f"Expected IS NULL filter in UPDATE, got: {compiled}"
 
 
 # ---------------------------------------------------------------------------
@@ -285,9 +277,7 @@ async def test_human_response_idempotent_via_is_null_filter() -> None:
 
     for stmt in executed_stmts:
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).upper()
-        assert "IS NULL" in compiled, (
-            "IS NULL guard missing from one of the UPDATE statements"
-        )
+        assert "IS NULL" in compiled, "IS NULL guard missing from one of the UPDATE statements"
 
 
 # ---------------------------------------------------------------------------

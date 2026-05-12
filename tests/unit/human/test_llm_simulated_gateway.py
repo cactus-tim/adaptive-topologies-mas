@@ -258,12 +258,12 @@ async def test_idempotency_different_request_id_makes_new_call() -> None:
 @pytest.mark.asyncio
 async def test_idempotency_cache_key_is_run_id_plus_request_id() -> None:
     """Different run_ids with same request_id are distinct cache entries."""
-    from atm.human.llm_simulated import LLMSimulatedGateway
-
     # We need 2 entries in the fixture since each run_id-keyed ctx will hit a new step.
     # Use scripted fixture with 2 entries — one per call (different run_ids, same request_id).
-    import io
+
     import yaml as _yaml
+
+    from atm.human.llm_simulated import LLMSimulatedGateway
 
     fixture_data = {
         "version": 1,
@@ -290,12 +290,10 @@ async def test_idempotency_cache_key_is_run_id_plus_request_id() -> None:
         ],
     }
 
-    import tempfile
     import os
+    import tempfile
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as f:
         _yaml.dump(fixture_data, f)
         tmp_path = f.name
 

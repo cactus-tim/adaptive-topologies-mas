@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from atm.core.types import HumanContext, HumanRole
 
-__all__ = ["build_role_prompt", "ROLE_SYSTEM_PROMPTS"]
+__all__ = ["ROLE_SYSTEM_PROMPTS", "build_role_prompt"]
 
 # ---------------------------------------------------------------------------
 # Per-role system prompts

@@ -8,7 +8,6 @@ import pytest
 
 from atm.core.types import HumanContext, HumanRole, Message, MessageKind
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -104,8 +103,7 @@ def test_user_prompt_lists_allowed_actions(role: HumanRole) -> None:
     _, user_prompt = build_role_prompt(role, ctx)
     for action in ctx.allowed_actions:
         assert action in user_prompt, (
-            f"User prompt must list allowed action '{action}'; "
-            f"user_prompt={user_prompt[:200]!r}"
+            f"User prompt must list allowed action '{action}'; user_prompt={user_prompt[:200]!r}"
         )
 
 
@@ -124,6 +122,4 @@ def test_different_roles_have_different_system_prompts() -> None:
         prompts[role.value] = sys_p
 
     unique_prompts = set(prompts.values())
-    assert len(unique_prompts) == len(ALL_ROLES), (
-        "Each role must have a distinct system prompt"
-    )
+    assert len(unique_prompts) == len(ALL_ROLES), "Each role must have a distinct system prompt"

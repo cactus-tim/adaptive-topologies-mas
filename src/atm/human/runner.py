@@ -58,7 +58,7 @@ from atm.human.gateway import HumanGateway
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["run_with_human", "MaxInteractionsExceededError"]
+__all__ = ["MaxInteractionsExceededError", "run_with_human"]
 
 
 # ---------------------------------------------------------------------------

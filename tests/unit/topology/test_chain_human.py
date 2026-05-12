@@ -17,17 +17,16 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from copy import deepcopy
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import atm.topology.chain  # noqa: F401 — triggers @TopologyRegistry.register
-from atm.core.types import HumanContext, HumanResponse, HumanRole, Message, MessageKind
+from atm.core.types import HumanResponse, HumanRole, Message, MessageKind
 from atm.experiment.config import HumanCfg
-from atm.topology.chain import ChainTopology, _build_human_reviewer_node
 from atm.topology.base import TopologyConfig, TopologyRegistry
+from atm.topology.chain import ChainTopology, _build_human_reviewer_node
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -173,8 +172,6 @@ class TestChainDefaultPath:
         async def fake_dispatch(name: str, data: Any) -> None:
             dispatched.append(name)
 
-        state = _make_state()
-
         # build_human_reviewer_node with human_cfg=None should not be called
         # But let's verify by calling the node directly with a mock that never triggers
         # Since there's no human_reviewer node in the default path, dispatched stays empty.
@@ -188,9 +185,11 @@ class TestChainDefaultPath:
         mock_graph = MagicMock()
         mock_graph.compile.return_value = mock_compiled
 
-        with patch("atm.topology.chain.StateGraph", return_value=mock_graph):
-            with patch("atm.topology.chain._build_human_reviewer_node") as mock_builder:
-                ChainTopology().build(agents, cfg)
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain._build_human_reviewer_node") as mock_builder,
+        ):
+            ChainTopology().build(agents, cfg)
 
         mock_builder.assert_not_called()
 
@@ -215,10 +214,12 @@ class TestChainHITLNodeInsertion:
         mock_graph = MagicMock()
         mock_graph.compile.return_value = mock_compiled
 
-        with patch("atm.topology.chain.StateGraph", return_value=mock_graph):
-            with patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls:
-                mock_gw_cls.return_value = MagicMock()
-                ChainTopology().build(agents, cfg, human_cfg=human_cfg)
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
+        ):
+            mock_gw_cls.return_value = MagicMock()
+            ChainTopology().build(agents, cfg, human_cfg=human_cfg)
 
         node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
         assert "human_reviewer" in node_names
@@ -235,10 +236,12 @@ class TestChainHITLNodeInsertion:
         mock_graph = MagicMock()
         mock_graph.compile.return_value = mock_compiled
 
-        with patch("atm.topology.chain.StateGraph", return_value=mock_graph):
-            with patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls:
-                mock_gw_cls.return_value = MagicMock()
-                ChainTopology().build(agents, cfg, human_cfg=human_cfg)
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain.LLMSimulatedGateway") as mock_gw_cls,
+        ):
+            mock_gw_cls.return_value = MagicMock()
+            ChainTopology().build(agents, cfg, human_cfg=human_cfg)
 
         edge_calls = [call.args for call in mock_graph.add_edge.call_args_list]
         assert ("critic_postprocess", "human_reviewer") in edge_calls
@@ -326,9 +329,7 @@ class TestHumanReviewerNodeReject:
         state = _make_state(run_id=run_id, iter_total=1)
 
         fake_gateway = AsyncMock()
-        fake_gateway.request = AsyncMock(
-            return_value=_make_reject_response("Needs more tests")
-        )
+        fake_gateway.request = AsyncMock(return_value=_make_reject_response("Needs more tests"))
         human_cfg = _make_human_cfg(enabled=True, timeout_s=None)  # type: ignore[arg-type]
 
         node_fn = _build_human_reviewer_node(human_cfg, fake_gateway)
@@ -355,13 +356,12 @@ class TestHumanReviewerNodeReject:
                 break
 
         # Check shared for rejection hint
-        if not found_rejection:
-            if shared_delta.get("human_rejected") or shared_delta.get("needs_rerun"):
-                found_rejection = True
+        if not found_rejection and (
+            shared_delta.get("human_rejected") or shared_delta.get("needs_rerun")
+        ):
+            found_rejection = True
 
-        assert found_rejection, (
-            f"Expected rejection comment in delta. Got delta={delta!r}"
-        )
+        assert found_rejection, f"Expected rejection comment in delta. Got delta={delta!r}"
 
 
 class TestHumanReviewerNodeAbstain:
@@ -465,11 +465,11 @@ class TestDispatchOrder:
         mock_graph = MagicMock()
         mock_graph.compile.return_value = mock_compiled
 
-        with patch("atm.topology.chain.StateGraph", return_value=mock_graph):
-            with patch(
-                "atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch
-            ):
-                ChainTopology().build(agents, cfg)
+        with (
+            patch("atm.topology.chain.StateGraph", return_value=mock_graph),
+            patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch),
+        ):
+            ChainTopology().build(agents, cfg)
 
         assert "human_request" not in event_names
         assert "human_response" not in event_names

@@ -14,13 +14,11 @@ from __future__ import annotations
 import asyncio
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
 from atm.core.types import HumanContext, HumanResponse, HumanRole, Message, MessageKind
 from atm.human._timeout import request_with_timeout
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -82,9 +80,7 @@ async def test_fast_gateway_fail_policy_returns_response() -> None:
     resp = _make_response(action="approve", source="human")
     gw = FastGateway(resp)
 
-    result = await request_with_timeout(
-        gw, ctx, request_id="req-001", timeout_s=5.0, policy="fail"
-    )
+    result = await request_with_timeout(gw, ctx, request_id="req-001", timeout_s=5.0, policy="fail")
 
     assert result.action == "approve"
     assert result.timed_out is False
@@ -96,9 +92,7 @@ async def test_fast_gateway_skip_policy_returns_response() -> None:
     resp = _make_response(action="reject", source="human")
     gw = FastGateway(resp)
 
-    result = await request_with_timeout(
-        gw, ctx, request_id="req-002", timeout_s=5.0, policy="skip"
-    )
+    result = await request_with_timeout(gw, ctx, request_id="req-002", timeout_s=5.0, policy="skip")
 
     assert result.action == "reject"
     assert result.timed_out is False
@@ -137,9 +131,7 @@ async def test_fail_policy_slow_gateway_raises_timeout() -> None:
     gw = SlowGateway(delay_s=10.0, response=resp)
 
     with pytest.raises((TimeoutError, asyncio.TimeoutError)):
-        await request_with_timeout(
-            gw, ctx, request_id="req-fail", timeout_s=0.05, policy="fail"
-        )
+        await request_with_timeout(gw, ctx, request_id="req-fail", timeout_s=0.05, policy="fail")
 
 
 @pytest.mark.asyncio
