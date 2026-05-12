@@ -1,4 +1,4 @@
-"""Tests for HumanRoleRouter Protocol and FixedRoleRouter / RuleBasedRoleRouter implementations.
+"""Tests for HumanRoleRouter Protocol and FixedRoleRouter / RuleBasedRoleRouter / LLMRoleRouter.
 
 Coverage (step 1.1 — fixed subset):
   - Protocol shape: HumanRoleRouter is runtime_checkable and has async decide().
@@ -16,22 +16,36 @@ Coverage (step 2.1 — rule subset):
   - from_yaml() with unknown phase raises ValueError.
   - from_yaml() with unknown role raises ValueError.
   - isinstance(rule_router, HumanRoleRouter) is True.
+
+Coverage (step 3.1 — LLM subset):
+  - Valid LLM response → returns the expected HumanRole.
+  - Malformed JSON from LLM → fallback called, returns rule-based role.
+  - Unknown role string in JSON → fallback called, returns rule-based role.
+  - LLM ainvoke raises exception → fallback called, returns rule-based role.
+  - isinstance(llm_router, HumanRoleRouter) is True.
 """
 
 from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
-from atm.core.types import HumanRole, Phase
+from atm.core.types import HumanRole, LLMResponse, Phase, TokenUsage
 from atm.human.role_router import (
     DEFAULT_ROLE_TABLE,
     FixedRoleRouter,
     HumanRoleRouter,
+    LLMRoleRouter,
     RuleBasedRoleRouter,
 )
+
+# Absolute path to LLM fixture files used in TestLLMRoleRouter.
+_FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
+_FIXTURE_VALID = _FIXTURES_DIR / "m9_2_role_router_valid.yaml"
+_FIXTURE_INVALID = _FIXTURES_DIR / "m9_2_role_router_invalid.yaml"
 
 # Absolute path to the default role_table YAML shipped with the project.
 _CONF_ROLE_TABLE = Path(__file__).parent.parent.parent.parent / "conf" / "human" / "role_table.yaml"
@@ -278,3 +292,230 @@ class TestRuleBasedRoleRouterFromYaml:
         bad_yaml.write_text("planning: superadmin\n")
         with pytest.raises(ValueError, match="Unknown role"):
             RuleBasedRoleRouter.from_yaml(bad_yaml)
+
+
+# ---------------------------------------------------------------------------
+# LLMRoleRouter helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_llm_mock(text: str) -> AsyncMock:
+    """Create an AsyncMock that returns an LLMResponse with the given text content."""
+    mock = AsyncMock()
+    usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+    mock.ainvoke.return_value = LLMResponse(
+        model="fake:test",
+        text=text,
+        usage=usage,
+        cost_usd=0.001,
+        latency_ms=50,
+        finish_reason="stop",
+    )
+    return mock
+
+
+def _make_rule_fallback() -> RuleBasedRoleRouter:
+    """Return a RuleBasedRoleRouter with DEFAULT_ROLE_TABLE for fallback use."""
+    return RuleBasedRoleRouter()
+
+
+# ---------------------------------------------------------------------------
+# LLMRoleRouter — behavioural tests
+# ---------------------------------------------------------------------------
+
+
+class TestLLMRoleRouter:
+    """Verify LLMRoleRouter routes correctly and falls back on any error."""
+
+    # -----------------------------------------------------------------------
+    # Test (a): valid response → returns expected role
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_valid_response_returns_role(self) -> None:
+        """LLM returns valid JSON with a known role → decide() returns that role."""
+        llm = _make_fake_llm_mock('{"role": "judge", "reason": "needs judgment"}')
+        router = LLMRoleRouter(llm=llm, fallback=_make_rule_fallback())
+
+        result = await router.decide(Phase.VERIFICATION, {})
+
+        assert result == HumanRole.JUDGE
+        llm.ainvoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_valid_response_coordinator(self) -> None:
+        """LLM returns coordinator role → decide() returns HumanRole.COORDINATOR."""
+        llm = _make_fake_llm_mock('{"role": "coordinator", "reason": "planning phase"}')
+        router = LLMRoleRouter(llm=llm, fallback=_make_rule_fallback())
+
+        result = await router.decide(Phase.PLANNING, {"iter_total": 1})
+
+        assert result == HumanRole.COORDINATOR
+
+    @pytest.mark.asyncio
+    async def test_valid_response_with_state_digest(self) -> None:
+        """LLM is called with agent_id='role_router'; state digest is included in prompt."""
+        llm = _make_fake_llm_mock('{"role": "peer", "reason": "execution"}')
+        router = LLMRoleRouter(llm=llm, fallback=_make_rule_fallback())
+
+        state = {"iter_total": 3, "signals": {"ready_for_verification": False}}
+        result = await router.decide(Phase.EXECUTION, state)
+
+        assert result == HumanRole.PEER
+        # Verify agent_id='role_router' was passed
+        call_kwargs = llm.ainvoke.call_args
+        assert call_kwargs.kwargs.get("agent_id") == "role_router"
+
+    # -----------------------------------------------------------------------
+    # Test (b): malformed JSON → fallback called
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_triggers_fallback(self) -> None:
+        """LLM returns non-JSON text → fallback decide() is called; returned role matches fallback."""
+        llm = _make_fake_llm_mock("This is definitely not JSON! {broken")
+        fallback = _make_rule_fallback()
+        router = LLMRoleRouter(llm=llm, fallback=fallback)
+
+        result = await router.decide(Phase.PLANNING, {})
+
+        # Fallback RuleBasedRoleRouter maps PLANNING → COORDINATOR
+        assert result == HumanRole.COORDINATOR
+        llm.ainvoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_response_triggers_fallback(self) -> None:
+        """LLM returns empty text → fallback is used."""
+        llm = _make_fake_llm_mock("")
+        router = LLMRoleRouter(llm=llm, fallback=_make_rule_fallback())
+
+        result = await router.decide(Phase.EXECUTION, {})
+
+        # Fallback: EXECUTION → PEER
+        assert result == HumanRole.PEER
+
+    # -----------------------------------------------------------------------
+    # Test (c): JSON with unknown role string → fallback called
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_unknown_role_triggers_fallback(self) -> None:
+        """LLM returns JSON with an unknown role string → Pydantic fails → fallback."""
+        llm = _make_fake_llm_mock('{"role": "superadmin", "reason": "unknown role"}')
+        fallback = _make_rule_fallback()
+        router = LLMRoleRouter(llm=llm, fallback=fallback)
+
+        result = await router.decide(Phase.VERIFICATION, {})
+
+        # Fallback: VERIFICATION → REVIEWER
+        assert result == HumanRole.REVIEWER
+        llm.ainvoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_json_missing_role_field_triggers_fallback(self) -> None:
+        """LLM returns JSON without 'role' field → Pydantic fails → fallback."""
+        llm = _make_fake_llm_mock('{"reason": "no role key here"}')
+        fallback = _make_rule_fallback()
+        router = LLMRoleRouter(llm=llm, fallback=fallback)
+
+        result = await router.decide(Phase.DONE, {})
+
+        # Fallback: DONE → REVIEWER
+        assert result == HumanRole.REVIEWER
+
+    # -----------------------------------------------------------------------
+    # Test (d): llm.ainvoke raises → fallback called
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_llm_raises_triggers_fallback(self) -> None:
+        """LLM ainvoke raises an exception → fallback decide() is called."""
+        llm = AsyncMock()
+        llm.ainvoke.side_effect = RuntimeError("LLM service unavailable")
+        fallback = _make_rule_fallback()
+        router = LLMRoleRouter(llm=llm, fallback=fallback)
+
+        result = await router.decide(Phase.EXECUTION, {})
+
+        # Fallback: EXECUTION → PEER
+        assert result == HumanRole.PEER
+        llm.ainvoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_llm_raises_connection_error_triggers_fallback(self) -> None:
+        """LLM ainvoke raises ConnectionError → fallback is used."""
+        llm = AsyncMock()
+        llm.ainvoke.side_effect = ConnectionError("network timeout")
+        router = LLMRoleRouter(llm=llm, fallback=_make_rule_fallback())
+
+        result = await router.decide(Phase.PLANNING, {})
+
+        assert result == HumanRole.COORDINATOR
+
+    # -----------------------------------------------------------------------
+    # Test (e): isinstance check against HumanRoleRouter
+    # -----------------------------------------------------------------------
+
+    def test_llm_router_satisfies_protocol(self) -> None:
+        """LLMRoleRouter instance must pass isinstance check against HumanRoleRouter."""
+        router = LLMRoleRouter(llm=AsyncMock(), fallback=_make_rule_fallback())
+        assert isinstance(router, HumanRoleRouter)
+
+    def test_llm_router_decide_is_coroutine(self) -> None:
+        """decide() must be an async method."""
+        router = LLMRoleRouter(llm=AsyncMock(), fallback=_make_rule_fallback())
+        assert inspect.iscoroutinefunction(router.decide)
+
+    # -----------------------------------------------------------------------
+    # FakeLLM scripted fixture tests
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_valid_fixture_step0_returns_judge(self) -> None:
+        """Using the valid FakeLLM fixture: step 0 → judge role."""
+        from atm.llm.fake import FakeLLM
+
+        fake = FakeLLM(mode="scripted", fixture=_FIXTURE_VALID)
+        router = LLMRoleRouter(llm=fake, fallback=_make_rule_fallback())
+
+        result = await router.decide(Phase.VERIFICATION, {})
+
+        assert result == HumanRole.JUDGE
+
+    @pytest.mark.asyncio
+    async def test_valid_fixture_step1_returns_coordinator(self) -> None:
+        """Using the valid FakeLLM fixture: step 1 → coordinator role."""
+        from atm.llm.fake import FakeLLM
+
+        fake = FakeLLM(mode="scripted", fixture=_FIXTURE_VALID)
+        router = LLMRoleRouter(llm=fake, fallback=_make_rule_fallback())
+
+        # Exhaust step 0
+        await router.decide(Phase.VERIFICATION, {})
+        # Step 1
+        result = await router.decide(Phase.PLANNING, {})
+
+        assert result == HumanRole.COORDINATOR
+
+    @pytest.mark.asyncio
+    async def test_invalid_fixture_triggers_fallback(self) -> None:
+        """Using the invalid FakeLLM fixture (malformed JSON): fallback returns correct role."""
+        from atm.llm.fake import FakeLLM
+
+        fake = FakeLLM(mode="scripted", fixture=_FIXTURE_INVALID)
+        router = LLMRoleRouter(llm=fake, fallback=_make_rule_fallback())
+
+        result = await router.decide(Phase.PLANNING, {})
+
+        # Fallback for PLANNING → COORDINATOR
+        assert result == HumanRole.COORDINATOR
+
+    # -----------------------------------------------------------------------
+    # Export test
+    # -----------------------------------------------------------------------
+
+    def test_llm_role_router_exported(self) -> None:
+        """LLMRoleRouter must be exported from atm.human package."""
+        import atm.human as human_pkg
+
+        assert hasattr(human_pkg, "LLMRoleRouter")
