@@ -95,6 +95,7 @@ markers = [
     "docker: marks tests requiring a live Docker daemon (deselect with -m 'not docker')",
     "integration: marks tests as integration tests (require external services)",
     "network: marks tests requiring external network access (deselect with -m 'not network')",
+    "requires_postgres: marks tests that require a live PostgreSQL instance (gate: ATM_ENABLE_PG_TESTS=1)",
 ]
 
 [tool.mypy]
