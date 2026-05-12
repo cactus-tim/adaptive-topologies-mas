@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-05-12*
+*Auto-generated. Last updated: 2026-05-12 (M11 finalisation)*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -166,6 +166,22 @@ LangGraph callback handler + serializers.
 
 - `versions/0001_initial_business_schema.py` — creates 6 business tables (not checkpoint tables; those are owned by `AsyncPostgresSaver.setup()`). Chained off `bc5f66dd0897` placeholder. Downgrade in reverse FK order.
 
+### Evaluation Framework (`evaluation/`) — M11 complete
+
+Post-hoc quality scoring, LLM-as-judge protocols, pure metric functions, and NASA-TLX human-load model. Wired into `experiment/runner.py` via `aggregate_run`; writes `runs.quality_score` to PostgreSQL.
+
+- **5 modules:**
+  - `tlx.py` — `NasaTLX` (frozen Pydantic, 6 scales 0–100) + `aggregate_tlx(list[NasaTLX]) → float`; `raw_score` property inverts `performance` scale so higher always means higher cognitive load.
+  - `ground_truth.py` — `score_ground_truth(spec, answer, *, sandbox, judge_llm) → EvalResult`; thin facade over M10 EVALUATORS; flat `if/elif` dispatch by `spec.evaluator_key` (fully type-checkable); raises `ValueError` on missing required deps, `KeyError` on unknown key.
+  - `judges.py` — three post-hoc LLM judges: `RubricJudge` (single call via `_invoke_judge`), `SelfConsistentJudge` (N calls with shuffled rubric; per-call seed = `hash((run_seed, i)) & 0xFFFFFFFF`), `PairwiseJudge` (AB + BA swap test for position-bias mitigation per arXiv 2406.07791; `_to_answer_relative` helper prevents silent slot→answer translation bugs). `PairwiseResult` frozen Pydantic with `winner`, `swap_consistent`, `reason_ab`, `reason_ba`.
+  - `metrics.py` — pure stateless functions: `aggregate_quality`, `humaneval_pass_at_k` (unbiased Chen et al. 2021 estimator), `cost_per_quality`, `time_per_quality` (eps=1e-6 guard), `aggregate_human_load` (delegates to `aggregate_tlx`).
+  - `aggregator.py` — `compute_quality(spec, answer, *, sandbox, judge_llm, run_seed) → (float|None, dict)` (never raises; returns `(None, {"error": ...})` on failure); `persist_quality(session, run_id, score)` (idempotent SQL UPDATE); `aggregate_run(session, run_id, spec, answer, ...)` (orchestrates both).
+- **Config:** `EvaluationCfg` (Pydantic, added to `ExperimentConfig`): `judge_model: str = "openai:gpt-4o"`, `judge_self_consistency_n: int = Field(3, ge=1, le=10)`; fully backward-compatible (default_factory).
+- **Runner wiring:** `experiment/runner.py` calls `resolve_spec(cfg.task)` → `compute_quality(...)` at step 11 (after topology graph completes); `resolve_spec` returns `None` for M6 inline-prompt tasks (quality_score=0.0 short-circuit, no evaluator call). M6 stub `_evaluator.py` deleted.
+- **Exports (from `atm.evaluation`):** `NasaTLX`, `PairwiseJudge`, `PairwiseResult`, `RubricJudge`, `SelfConsistentJudge`, `aggregate_human_load`, `aggregate_quality`, `aggregate_run`, `aggregate_tlx`, `compute_quality`, `cost_per_quality`, `humaneval_pass_at_k`, `persist_quality`, `score_ground_truth`, `time_per_quality`.
+- **Integration tests location:** `tests/integration/evaluation/` — `test_aggregator.py` (4 PG tests: persist idempotency, unknown run-id noop, compute+persist round-trip), `test_aggregator_e2e.py` (1 e2e contract test: `run_one → runs.quality_score == 1.0` for scripted MMLU answer "B").
+- **Status:** M11 complete.
+
 ### Tasks & Evaluation (`tasks/`) — M10 complete
 
 Benchmark task infrastructure: registry of loaders and evaluators, four loader modules, four evaluator types, Parquet cache for HuggingFace datasets, YAML prompts for creative/analysis tasks.
@@ -299,7 +315,7 @@ Benchmark task infrastructure: registry of loaders and evaluators, four loader m
 ## Test Setup
 - **Framework:** pytest + pytest-asyncio (asyncio_mode="auto").
 - **Structure:** `tests/unit/{core,llm,tools,agents,topology}/`, `tests/integration/{llm,tools,topology}/`, `tests/fixtures/{llm,agents,tools/corpus}/`.
-- **Total tests:** 1019 unit tests pass (M0-M10), including 56 new M10 tests in `tests/unit/tasks/`.
+- **Total tests:** 1065 unit tests pass (M0-M11), including 56 M10 tests in `tests/unit/tasks/` and ~46 new M11 tests in `tests/unit/evaluation/` + `tests/unit/tasks/test_resolve_spec.py` + `tests/unit/experiment/`.
 - **M4 test markers:** `@pytest.mark.docker` and `@pytest.mark.network` gated via ATM_ENABLE_DOCKER_TESTS and ATM_ENABLE_NETWORK_TESTS env vars; 29 such tests auto-skipped otherwise.
 - **M5 test markers:** None (all agent tests run by default).
 - **M7 test markers:** None (all topology tests run by default).

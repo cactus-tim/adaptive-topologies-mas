@@ -13,6 +13,7 @@
 - Step 2.1: metrics.py (pure functions: quality / efficiency / time / human / RQ2) + 12 unit tests — DONE (merged from feat/m11)
 - Step 2.2: aggregator.py + resolve_spec + EvaluationCfg + unit + integration tests — DONE (merged from feat/m11)
 - Step 3.1: Wire aggregator into runner.py + delete _evaluator.py + test wiring + M6 smoke audit
+- Step 4.1: Finalise `src/atm/evaluation/__init__.py` with `__all__` of 15 public symbols (alphabetical); created `tests/integration/evaluation/test_aggregator_e2e.py` (1 e2e test, @pytest.mark.integration); updated `dev/codebase-map.md` with M11 section; all checks green (1065 unit tests, mypy strict clean, ruff clean, integration test collected)
   - Replaced `from atm.experiment._evaluator import evaluate` with `compute_quality` + `resolve_spec` + `SubprocessSandbox`
   - Added judge LLMWrapper built from `cfg.evaluation.judge_model` (fake:echo in tests)
   - Three callsites updated (success / BudgetExceeded / Exception) with try/except + inline-prompt short-circuit
@@ -23,7 +24,7 @@
   - All 1065 unit tests green; mypy --strict clean; ruff clean
 
 ### IN PROGRESS
-- Step 4.1 (finalise __init__.py + e2e test + codebase-map) — next
+- All steps complete — M11 fully implemented
 
 ### BLOCKERS
 - Нет

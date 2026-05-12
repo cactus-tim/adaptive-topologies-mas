@@ -54,9 +54,9 @@
   - Acceptance: `uv run pytest tests/unit/experiment -q` — all green; `uv run mypy --strict src/atm/experiment/runner.py` — clean; `grep -rn "from atm.experiment._evaluator" src/ tests/` — пусто; `grep -rn "_evaluator" src/` — пусто
   - Notes: inline-prompt path (`spec is None`) → `quality_score=0.0` + debug log; judge wrapper из `cfg.evaluation.judge_model`; один `SubprocessSandbox()` per run (дёшево, no-op constructor); все 3 callsite (success/BudgetExceeded/Exception) обёрнуты в try/except → None на сбой
 
-## Phase 4: Finalisation — NOT STARTED
+## Phase 4: Finalisation — COMPLETE
 
-- [ ] 4.1 Финализировать `__init__.py` + e2e integration test + обновить codebase-map
+- [x] 4.1 Финализировать `__init__.py` + e2e integration test + обновить codebase-map
   - Type: simple
   - Depends On: 1.1, 1.2, 1.3, 2.1, 2.2, 3.1
   - Can-Parallel-With: none
@@ -69,7 +69,7 @@
 ## Stats
 
 - Total: 7 tasks · ~8h
-- Done: 4 / 7
+- Done: 7 / 7
 
 ## How to Update
 
