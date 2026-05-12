@@ -38,7 +38,7 @@
 
 ---
 
-## Волна 2: GSM8K → CommonGen → DABench (TDD, строго последовательно) — В РАБОТЕ
+## Волна 2: GSM8K → CommonGen → DABench (TDD, строго последовательно) — В РАБОТЕ (2.3 осталось)
 
 > Шаги 2.1, 2.2, 2.3 нельзя параллелить: все три редактируют `src/atm/tasks/__init__.py`. Следуй порядку.
 
@@ -54,7 +54,7 @@
     - 7 тестов: #1 loader-via-dataset, #2 cache-hit, #3 exact-match, #4 comma-formatted (1,234 == 1234), #5 float-tolerance (72.0 == 72), #6 wrong-answer, #7 no-number-in-answer
     - `__init__.py`: добавить `importlib.import_module("atm.tasks.gsm8k")` (guarded)
 
-- [ ] 2.2 Добавить CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов — `src/atm/tasks/commongen.py`, `tests/unit/tasks/test_commongen.py`, `tests/fixtures/tasks/commongen_sample.json`, `__init__.py`
+- [x] 2.2 Добавить CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов — `src/atm/tasks/commongen.py`, `tests/unit/tasks/test_commongen.py`, `tests/fixtures/tasks/commongen_sample.json`, `__init__.py`
   - Тип: tdd
   - Зависит от: 1.1, 1.2, 2.1 (сериализация `__init__.py`)
   - Параллельно с: ничем
