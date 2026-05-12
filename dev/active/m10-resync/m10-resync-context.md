@@ -7,9 +7,10 @@
 - Шаг 1.2: Удаление creative/analysis/mmlu модулей, конфигов, фикстур, тестов; очистка `src/atm/tasks/__init__.py` (атомарный коммит совместно с 1.1)
 - Шаг 1.3: Переименование enum-ключей `"qa"` → `"reasoning"`, `"analysis"` → `"decision"` в `tests/fixtures/oracle_table.json`
 - Шаг 2.1: GSM8K загрузчик + numeric-match оценщик + 7 тестов (7/7 зелёных); создан `src/atm/tasks/gsm8k.py`, `tests/unit/tasks/test_gsm8k.py`, `tests/fixtures/tasks/gsm8k_sample.json`; guarded import добавлен в `__init__.py`
+- Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов (9/9 зелёных); создан `src/atm/tasks/commongen.py`, `tests/unit/tasks/test_commongen.py`, `tests/fixtures/tasks/commongen_sample.json`; guarded import `commongen` добавлен в `__init__.py`; mypy --strict + ruff clean
 
 ### В РАБОТЕ
-- Шаг 2.2: CommonGen загрузчик + in-house ROUGE-L + concept-coverage оценщик + 9 тестов
+- Шаг 2.3: DABench загрузчик + dabench_numeric_exact оценщик + curated fallback + 11 тестов
 
 ### БЛОКЕРЫ
 - Нет
@@ -47,7 +48,7 @@
 **`src/atm/tasks/commongen.py`** (новый)
 - Роль: `CommonGenLoader(name="commongen")` + `CommonGenEvaluator(name="commongen_rouge_coverage")` + in-house `_rouge_l`
 - Плановое изменение: создать; dataset `allenai/common_gen`, split `validation` (у `test` пустые `target`)
-- Статус: НЕ НАЧАТО
+- Статус: ВЫПОЛНЕНО
 
 **`src/atm/tasks/dabench.py`** (новый)
 - Роль: `DABenchLoader(name="dabench")` + `DABenchEvaluator(name="dabench_numeric_exact")`
