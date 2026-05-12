@@ -26,9 +26,9 @@
   - Acceptance: `uv run pytest tests/unit/evaluation/test_judges.py -q` — 10 green; mypy strict clean
   - Notes: `PairwiseResult(winner, swap_consistent, reason_ab, reason_ba)`; `_to_answer_relative(slot_winner, swapped)`; self-consistency seed = `hash((run_seed, i)) & 0xFFFFFFFF`; score scale 0..10 (M10 convention); agent_ids: `rubric_judge`, `self_consistency_judge`, `pairwise_judge_ab`, `pairwise_judge_ba`
 
-## Phase 2: Metrics + Aggregator — NOT STARTED
+## Phase 2: Metrics + Aggregator — COMPLETE
 
-- [ ] 2.1 Реализовать `metrics.py` (pure functions) + 12 unit-тестов
+- [x] 2.1 Реализовать `metrics.py` (pure functions) + 12 unit-тестов
   - Type: tdd
   - Depends On: 1.1 (импорт NasaTLX)
   - Can-Parallel-With: 2.2
@@ -36,7 +36,7 @@
   - Acceptance: `uv run pytest tests/unit/evaluation/test_metrics.py -q` — 12 green; mypy strict + ruff clean
   - Notes: `humaneval_pass_at_k` — unbiased estimator Chen et al. 2021 via `math.prod`; тест n=20,c=2,k=10 → 0.6316; `cost_per_quality(quality=0)` использует `eps=1e-6`; все empty-list inputs → 0.0
 
-- [ ] 2.2 Реализовать `aggregator.py` + `resolve_spec` + `EvaluationCfg` + unit + integration тесты
+- [x] 2.2 Реализовать `aggregator.py` + `resolve_spec` + `EvaluationCfg` + unit + integration тесты
   - Type: tdd
   - Depends On: 1.2 (использует score_ground_truth)
   - Can-Parallel-With: 2.1

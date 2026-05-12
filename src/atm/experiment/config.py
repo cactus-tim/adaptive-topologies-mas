@@ -110,6 +110,25 @@ class ObservabilityCfg(BaseModel):
     callback_sync: bool = False
 
 
+class EvaluationCfg(BaseModel):
+    """Post-hoc evaluation configuration (M11).
+
+    Controls the LLM judge used by the aggregator and self-consistency N.
+    Defaults are backward-compatible — existing YAML configs that do not
+    include an ``evaluation:`` section will use these values automatically.
+
+    Fields:
+        judge_model:             Model ID for LLM judge calls
+                                 (format: ``provider:model``).
+        judge_self_consistency_n: Number of independent judge calls when
+                                 using SelfConsistentJudge (1 = disabled).
+                                 Range: 1..10.
+    """
+
+    judge_model: str = "openai:gpt-4o"
+    judge_self_consistency_n: int = Field(default=3, ge=1, le=10)
+
+
 class ExperimentConfig(BaseModel):
     """Top-level experiment configuration schema (arch.md §12.1).
 
@@ -124,6 +143,7 @@ class ExperimentConfig(BaseModel):
     topology: TopologyCfg
     task: TaskCfg
     observability: ObservabilityCfg
+    evaluation: EvaluationCfg = Field(default_factory=lambda: EvaluationCfg())
 
     @model_validator(mode="after")
     def _check_topology(self) -> ExperimentConfig:
