@@ -1,0 +1,41 @@
+version: 1
+mode: scripted
+# FakeLLM fixture for LLMSimulatedGateway used in HierarchicalTopology HITL tests.
+# Provides scripted 'approve' responses for the human reviewer simulation.
+# Each entry covers one reviewer call (top scope = 1 call; sub_team scope = 2 calls).
+entries:
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "approve", "payload": {}, "comment": "LGTM top review"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 15
+      total_tokens: 135
+    model: "fake:scripted"
+
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 1
+    content: '{"action": "approve", "payload": {}, "comment": "LGTM sub_team team_a"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 16
+      total_tokens: 136
+    model: "fake:scripted"
+
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 2
+    content: '{"action": "approve", "payload": {}, "comment": "LGTM sub_team team_b"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 16
+      total_tokens: 136
+    model: "fake:scripted"

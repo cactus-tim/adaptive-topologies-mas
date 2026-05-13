@@ -1,0 +1,18 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM for StarTopology HITL integration test — LLMSimulatedGateway.
+# Used by: tests/integration/human/test_hitl_star.py
+# The LLM simulated gateway uses this fixture to respond as the human reviewer.
+# Action "approve" → run continues to completion.
+entries:
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "approve", "payload": {}, "comment": "Looks good, approved."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 15
+      total_tokens: 135
+    model: "fake:scripted"

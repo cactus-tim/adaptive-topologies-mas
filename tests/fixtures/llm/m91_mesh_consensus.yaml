@@ -1,0 +1,50 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for Mesh HITL integration test — 2-round consensus scenario.
+#
+# Scenario (deterministic, non-flaky):
+#   Round 1: 3 LLM peers (planner, researcher, executor) each vote "X".
+#             threshold=4, max_votes after round 1 = 3 < 4 → no consensus.
+#             consensus_pending=True.
+#   Round 2: human_peer fires (activation_round=2) and votes "X" via the
+#             LLM-simulated gateway → total "X" votes = 4 ≥ threshold → consensus.
+#
+# Entry ordering: step_idx increments per-agent across rounds.
+# The human gateway fixture (entry 4) is used by LLMSimulatedGateway.
+entries:
+  # --- Round 1: LLM agents vote "X" ---
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "I vote for X. vote_for:X"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
+
+  - agent_id: researcher
+    role: researcher
+    step_idx: 0
+    content: "Research confirms X is correct. vote_for:X"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
+
+  - agent_id: executor
+    role: executor
+    step_idx: 0
+    content: "Execution result is X. vote_for:X"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"

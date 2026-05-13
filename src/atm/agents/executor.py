@@ -85,9 +85,7 @@ class Executor(Agent):
         # Only examine code_run tool results; resolve call ids from tool_calls
         tool_calls: list[Any] = list(self_delta.get("tool_calls") or [])
         code_run_call_ids: set[str] = {
-            str(tc.id)
-            for tc in tool_calls
-            if getattr(tc, "tool_name", "") == "code_run"
+            str(tc.id) for tc in tool_calls if getattr(tc, "tool_name", "") == "code_run"
         }
 
         shared: dict[str, Any] = dict(state.get("shared") or {})
@@ -124,9 +122,7 @@ class Executor(Agent):
                 "value": current_fail_streak,
             }
             # Append to delta scratchpad (agent delta has a list here)
-            existing_scratchpad: list[dict[str, Any]] = list(
-                self_delta.get("scratchpad") or []
-            )
+            existing_scratchpad: list[dict[str, Any]] = list(self_delta.get("scratchpad") or [])
             existing_scratchpad.append(marker)
             self_delta = dict(self_delta)
             self_delta["scratchpad"] = existing_scratchpad

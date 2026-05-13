@@ -4,6 +4,10 @@ Architecture (arch.md §6):
   Graph:  START → planner → executor → critic → critic_postprocess
           → conditional edge (→ END | → executor)
 
+With HITL enabled (human_cfg.enabled=True):
+  Graph:  START → planner → executor → critic → critic_postprocess
+          → human_reviewer → conditional edge (→ END | → executor)
+
 Chain does NOT use phases like Star. In M6, shared.phase is pinned to
 "execution" for the entire run.
 
@@ -20,11 +24,19 @@ Registration is done via @TopologyRegistry.register("chain") side-effect.
 from __future__ import annotations
 
 import logging
+import time
 from copy import deepcopy
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-from atm.core.types import MessageKind
+from langchain_core.callbacks.manager import adispatch_custom_event
+
+from atm.core.types import HumanContext, Message, MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
+
+if TYPE_CHECKING:
+    from atm.experiment.config import HumanCfg
+    from atm.human.gateway import HumanGateway
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +81,193 @@ _StateGraphCls = _import_state_graph()
 
 # Module-level alias for test patching: patch("atm.topology.chain.StateGraph")
 StateGraph: type | None = _StateGraphCls
+
+# ---------------------------------------------------------------------------
+# LLMSimulatedGateway — lazy import for test patching
+# ---------------------------------------------------------------------------
+# Imported at module level so tests can patch "atm.topology.chain.LLMSimulatedGateway".
+try:
+    from atm.human.llm_simulated import LLMSimulatedGateway
+except ImportError:  # pragma: no cover
+    LLMSimulatedGateway = None  # type: ignore[assignment,misc]
+
+try:
+    from atm.human.cli_gateway import CLIGateway
+except ImportError:  # pragma: no cover
+    CLIGateway = None  # type: ignore[assignment,misc]
+
+try:
+    from atm.human._timeout import request_with_timeout
+except ImportError:  # pragma: no cover
+    request_with_timeout = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# _build_human_reviewer_node — HITL node factory
+# ---------------------------------------------------------------------------
+
+
+def _build_human_reviewer_node(
+    human_cfg: HumanCfg,
+    gateway: HumanGateway,
+) -> Any:
+    """Build and return an async node function for the human_reviewer step.
+
+    The node:
+      1. Reads run_id from state["shared"] (raises RuntimeError if missing).
+      2. Builds a HumanContext from state.
+      3. Computes request_id = f"chain:{iter_total}:reviewer".
+      4. Dispatches 'human_request' custom event (BEFORE gateway call).
+      5. Calls gateway.request (via request_with_timeout).
+      6. Dispatches 'human_response' custom event.
+      7. Updates state based on action:
+           approve  → shared["human_approved"] = True
+           reject   → append synthesized Message + shared["needs_rerun"] = True
+           abstain/timeout → no-op
+
+    Args:
+        human_cfg: HumanCfg with gateway config, role, timeout settings.
+        gateway:   Pre-constructed HumanGateway instance to call.
+
+    Returns:
+        An async function compatible with LangGraph node signature.
+    """
+
+    async def human_reviewer(state: dict[str, Any]) -> dict[str, Any]:
+        shared: dict[str, Any] = dict(deepcopy(state.get("shared", {})))
+
+        # --- Step 1: Extract run_id (required) ---
+        run_id = shared.get("run_id")
+        if run_id is None:
+            raise RuntimeError(
+                "human_reviewer node requires state['shared']['run_id'] to be set. "
+                "Ensure Runner._build_initial_state populates run_id (M9 Step 3.1)."
+            )
+
+        iter_total: int = int(shared.get("iter_total", 0))
+
+        # --- Step 2: Build HumanContext ---
+        # Derive the question from the critic's latest DECISION message
+        agents: dict[str, Any] = state.get("agents", {})
+        critic_outbox: list[Any] = list((agents.get("critic") or {}).get("outbox", []))
+        question: str = "Please review the latest output and decide to approve, reject, or abstain."
+        for msg in reversed(critic_outbox):
+            if getattr(msg, "kind", None) == MessageKind.DECISION:
+                question = getattr(msg, "content", question) or question
+                break
+
+        # recent_messages: top-level messages list
+        recent_msgs_raw: list[Any] = state.get("messages", [])
+        # Convert to tuple of Message objects (filter valid)
+        recent_messages: tuple[Message, ...] = tuple(
+            m for m in recent_msgs_raw if isinstance(m, Message)
+        )
+
+        import uuid as _uuid
+
+        if not isinstance(run_id, _uuid.UUID):
+            run_id = _uuid.UUID(str(run_id))
+
+        ctx = HumanContext(
+            run_id=run_id,
+            role=human_cfg.role,
+            question=question,
+            recent_messages=recent_messages,
+            allowed_actions=("approve", "reject", "abstain"),
+        )
+
+        # --- Step 3: Compute deterministic request_id ---
+        request_id: str = f"chain:{iter_total}:reviewer"
+
+        # --- Step 4: Dispatch human_request BEFORE gateway call ---
+        try:
+            await adispatch_custom_event(
+                "human_request",
+                {
+                    "run_id": run_id,
+                    "request_id": request_id,
+                    "role": str(
+                        human_cfg.role.value if hasattr(human_cfg.role, "value") else human_cfg.role
+                    ),
+                    "context_json": ctx.model_dump(mode="json"),
+                    "requested_at": datetime.now(UTC),
+                },
+            )
+        except Exception:
+            logger.debug("adispatch human_request skipped (no callback ctx)", exc_info=True)
+
+        # --- Step 5: Call gateway (with timeout wrapper if timeout_s is set) ---
+        timeout_s_val: float | None = getattr(human_cfg, "timeout_s", None)
+        policy: str = getattr(human_cfg, "timeout_policy", "skip")
+
+        # Measure latency for human_response payload (F2)
+        _t0 = time.monotonic()
+
+        if request_with_timeout is not None and timeout_s_val is not None:
+            # F3: build a fallback gateway for llm_fallback policy
+            _fallback_gateway: Any = None
+            if policy == "llm_fallback" and LLMSimulatedGateway is not None:
+                # Reuse the same LLM as the primary gateway; if the primary is already
+                # LLMSimulatedGateway, construct a fresh instance so the fallback is a
+                # separate call (the primary timed out, so a fresh instance is needed).
+                _fb_llm: Any = getattr(gateway, "_llm", None)
+                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+            response = await request_with_timeout(
+                gateway,
+                ctx,
+                request_id=request_id,
+                timeout_s=timeout_s_val,
+                policy=policy,  # type: ignore[arg-type]
+                llm_fallback_gateway=_fallback_gateway,
+            )
+        else:
+            response = await gateway.request(ctx, request_id=request_id)
+
+        latency_s = time.monotonic() - _t0
+
+        # --- Step 6: Dispatch human_response AFTER gateway returns ---
+        try:
+            await adispatch_custom_event(
+                "human_response",
+                {
+                    "run_id": run_id,
+                    "request_id": request_id,
+                    "answered_at": datetime.now(UTC),
+                    "response_json": response.model_dump(mode="json"),
+                    "source": response.source,
+                    "timed_out": response.timed_out,
+                    "latency_s": latency_s,
+                },
+            )
+        except Exception:
+            logger.debug("adispatch human_response skipped (no callback ctx)", exc_info=True)
+
+        # --- Step 7: Update state based on action ---
+        action: str = response.action
+        delta: dict[str, Any] = {}
+
+        if action == "approve":
+            shared["human_approved"] = True
+            delta["shared"] = shared
+
+        elif action == "reject":
+            # Synthesize a rejection message with the comment
+            comment: str = response.comment or "Human reviewer rejected this iteration."
+            rejection_msg = Message(
+                sender="human_reviewer",
+                kind=MessageKind.CRITIQUE,
+                content=f"[Human Reviewer Rejection] {comment}",
+                payload={"human_rejected": True, "comment": comment},
+            )
+            shared["needs_rerun"] = True
+            delta["shared"] = shared
+            delta["messages"] = [rejection_msg]
+
+        # abstain / timeout → no-op (return empty delta)
+
+        return delta
+
+    return human_reviewer
 
 
 # ---------------------------------------------------------------------------
@@ -262,18 +461,58 @@ class ChainTopology:
         graph.add_edge("executor", "critic")
         graph.add_edge("critic", "critic_postprocess")
 
-        # --- Conditional edge: postprocess → (END | executor) ---
+        # --- HITL: optionally insert human_reviewer between critic_postprocess and routing ---
+        human_cfg: HumanCfg | None = kwargs.get("human_cfg")
+
+        # Conditional edge: postprocess (or human_reviewer) → (END | executor)
         def _route(state: dict[str, Any]) -> str:
             return _route_from_critic(state, cfg)
 
-        graph.add_conditional_edges(
-            "critic_postprocess",
-            _route,
-            {
-                "executor": "executor",
-                CHAIN_END: CHAIN_END,
-            },
-        )
+        if human_cfg is not None and human_cfg.enabled:
+            # Build gateway based on human_cfg.gateway setting.
+            # The LLM wrapper for LLMSimulatedGateway may be passed via kwargs
+            # (e.g. by Runner); if absent, it is left as None and the class is
+            # expected to be patched in tests.
+            gateway_llm: Any = kwargs.get("human_gateway_llm")
+            if human_cfg.gateway == "cli":
+                gateway_instance: Any = CLIGateway() if CLIGateway is not None else None
+            else:
+                # default: llm_simulated
+                gateway_instance = (
+                    LLMSimulatedGateway(llm=gateway_llm)
+                    if LLMSimulatedGateway is not None
+                    else None
+                )
+
+            if gateway_instance is None:  # pragma: no cover
+                raise ImportError(
+                    f"Gateway class for '{human_cfg.gateway}' could not be imported. "
+                    "Ensure atm.human is installed."
+                )
+
+            node_fn = _build_human_reviewer_node(human_cfg, gateway_instance)
+            graph.add_node("human_reviewer", node_fn)
+
+            # critic_postprocess → human_reviewer → conditional
+            graph.add_edge("critic_postprocess", "human_reviewer")
+            graph.add_conditional_edges(
+                "human_reviewer",
+                _route,
+                {
+                    "executor": "executor",
+                    CHAIN_END: CHAIN_END,
+                },
+            )
+        else:
+            # Default path: critic_postprocess → conditional
+            graph.add_conditional_edges(
+                "critic_postprocess",
+                _route,
+                {
+                    "executor": "executor",
+                    CHAIN_END: CHAIN_END,
+                },
+            )
 
         # --- Entry point ---
         graph.set_entry_point("planner")

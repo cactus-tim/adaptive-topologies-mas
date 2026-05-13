@@ -1,0 +1,39 @@
+version: 1
+mode: scripted
+# FakeLLM fixture for adaptive HITL advisory scenario (M9.1 Step 2.16).
+# LLMSimulatedGateway calls the LLM with a human-simulator prompt.
+# Returns an "advise" action — advisory mode only, routing unchanged.
+entries:
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "advise", "payload": {"hint": "mesh topology preferred"}, "comment": "mesh topology preferred"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 1
+    content: '{"action": "advise", "payload": {"hint": "mesh topology preferred"}, "comment": "mesh topology preferred"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 2
+    content: '{"action": "advise", "payload": {}, "comment": "looks good"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 110
+      output_tokens: 10
+      total_tokens: 120
+    model: "fake:scripted"

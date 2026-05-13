@@ -682,9 +682,15 @@ async def test_on_tool_end_latency_computed() -> None:
     assert written_row["latency_ms"] < 1000, "latency_ms should be < 1000 for a trivial tool call"
     assert written_row["ok"] is True
     assert written_row["error"] == ""
-    assert written_row["tool_name"] == "search", f"Expected 'search', got {written_row['tool_name']!r}"
-    assert written_row["agent_id"] == "agent-1", f"Expected 'agent-1', got {written_row['agent_id']!r}"
-    assert json.loads(written_row["result_json"]) == "result", "result_json should be valid JSON encoding the output string"
+    assert written_row["tool_name"] == "search", (
+        f"Expected 'search', got {written_row['tool_name']!r}"
+    )
+    assert written_row["agent_id"] == "agent-1", (
+        f"Expected 'agent-1', got {written_row['agent_id']!r}"
+    )
+    assert json.loads(written_row["result_json"]) == "result", (
+        "result_json should be valid JSON encoding the output string"
+    )
 
 
 # ---------------------------------------------------------------------------

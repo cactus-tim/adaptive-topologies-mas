@@ -1,0 +1,17 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM for StarTopology HITL integration test — Executor agent.
+# Used by: tests/integration/human/test_hitl_star.py
+# Single step: executor outputs a draft answer.
+entries:
+  - agent_id: executor
+    role: executor
+    step_idx: 0
+    content: "Result: task completed successfully."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 10
+      total_tokens: 70
+    model: "fake:scripted"
