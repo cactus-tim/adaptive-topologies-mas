@@ -74,20 +74,19 @@ class DockerSandbox:
         }
         self.image_digest: str | None = None
 
+        # Constructor still raises if docker daemon is unreachable —
+        # tests that need a working sandbox skip via fixture; we only soften
+        # the digest-capture path so missing/local-only images don't crash.
+        self._client: docker.DockerClient = docker.from_env()
         try:
-            self._client: docker.DockerClient = docker.from_env()
-            try:
-                python_image = self._image_map["python"]
-                img = self._client.images.get(python_image)
-                self.image_digest = img.id
-            except (docker.errors.DockerException, docker.errors.ImageNotFound, OSError, KeyError):
-                self.image_digest = None
-        except (docker.errors.DockerException, OSError):
-            # Docker daemon unavailable — create a no-op client placeholder
-            self._client = None  # type: ignore[assignment]
+            python_image = self._image_map["python"]
+            img = self._client.images.get(python_image)
+            self.image_digest = img.id
+        except (docker.errors.DockerException, docker.errors.ImageNotFound, OSError, KeyError):
+            self.image_digest = None
 
         should_pull = prefetch or os.environ.get("ATM_AUTO_PULL_IMAGES") == "1"
-        if should_pull and self._client is not None:
+        if should_pull:
             for image in self._image_map.values():
                 self._client.images.pull(image)
 

@@ -206,7 +206,7 @@ def _extract_model_version(response_metadata: dict[str, Any]) -> str | None:
     for key in ("system_fingerprint", "model_name", "model"):
         value = response_metadata.get(key)
         if value and isinstance(value, str) and value.strip():
-            return value
+            return str(value)
     return None
 
 

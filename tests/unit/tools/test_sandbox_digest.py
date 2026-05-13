@@ -112,8 +112,20 @@ def test_docker_sandbox_custom_image_map_digest(sandbox_config: SandboxConfig) -
 def test_sandbox_digest_returns_none_when_docker_unavailable(
     sandbox_config: SandboxConfig,
 ) -> None:
-    """When docker.from_env() raises DockerException, image_digest must be None."""
-    with patch("docker.from_env", side_effect=DockerException("no daemon")):
+    """When client.images.get() raises DockerException, image_digest is None.
+
+    Note: docker.from_env() failures (no daemon at all) are intentionally NOT
+    swallowed by the constructor — those propagate so that integration tests
+    skip via fixture rather than silently degrading. This test exercises the
+    digest-capture-only failure path (daemon up, image lookup fails).
+    """
+    fake_client = MagicMock()
+    fake_client.images.get.side_effect = DockerException("daemon error")
+
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
+    ):
         sandbox = DockerSandbox(
             config=sandbox_config,
             seccomp_json_str=_SECCOMP,
@@ -124,8 +136,14 @@ def test_sandbox_digest_returns_none_when_docker_unavailable(
 
 
 def test_sandbox_digest_returns_none_when_os_error(sandbox_config: SandboxConfig) -> None:
-    """When docker.from_env() raises OSError, image_digest must be None."""
-    with patch("docker.from_env", side_effect=OSError("socket error")):
+    """When client.images.get() raises OSError, image_digest is None."""
+    fake_client = MagicMock()
+    fake_client.images.get.side_effect = OSError("socket error")
+
+    with (
+        patch("docker.from_env", return_value=fake_client),
+        patch.dict("os.environ", {"ATM_AUTO_PULL_IMAGES": "0"}, clear=False),
+    ):
         sandbox = DockerSandbox(
             config=sandbox_config,
             seccomp_json_str=_SECCOMP,

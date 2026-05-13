@@ -64,7 +64,7 @@ with contextlib.suppress(ImportError):
 # ---------------------------------------------------------------------------
 
 
-def resolve_spec(task_cfg: "object") -> TaskSpec | None:
+def resolve_spec(task_cfg: object) -> TaskSpec | None:
     """Resolve a TaskCfg to a sampled TaskSpec, or None for inline-prompt fallback.
 
     Resolution rules:

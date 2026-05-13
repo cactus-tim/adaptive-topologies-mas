@@ -210,13 +210,15 @@ async def test_humaneval_raises_when_sandbox_none() -> None:
         entry_point="double",
     )
 
-    with patch.dict(
-        "atm.evaluation.ground_truth._DEPS",
-        {"humaneval_pytest": ("sandbox",)},
-        clear=True,
+    with (
+        patch.dict(
+            "atm.evaluation.ground_truth._DEPS",
+            {"humaneval_pytest": ("sandbox",)},
+            clear=True,
+        ),
+        pytest.raises(ValueError, match="sandbox"),
     ):
-        with pytest.raises(ValueError, match="sandbox"):
-            await score_ground_truth(spec, "def double(x): return x * 2", sandbox=None)
+        await score_ground_truth(spec, "def double(x): return x * 2", sandbox=None)
 
 
 # ---------------------------------------------------------------------------

@@ -159,9 +159,17 @@ async def test_inline_prompt_short_circuits_to_zero() -> None:
         patch("atm.experiment.runner.compute_quality", new_callable=AsyncMock) as mock_cq,
     ):
         _common_patches(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw_cls, mock_pw,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw_cls,
+            mock_pw,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         result = await run_one(cfg)
 
@@ -225,9 +233,17 @@ async def test_registered_task_calls_compute_quality() -> None:
         ) as mock_cq,
     ):
         _common_patches(
-            mock_ce, mock_csf, exp_id, run_id,
-            mock_ee, mock_ir, mock_pw_cls, mock_pw,
-            mock_reg, mock_cp_scope, mock_graph,
+            mock_ce,
+            mock_csf,
+            exp_id,
+            run_id,
+            mock_ee,
+            mock_ir,
+            mock_pw_cls,
+            mock_pw,
+            mock_reg,
+            mock_cp_scope,
+            mock_graph,
         )
         result = await run_one(cfg)
 

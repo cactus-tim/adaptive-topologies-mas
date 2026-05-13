@@ -77,9 +77,7 @@ async def test_rubric_judge_score_ok() -> None:
         fixture=str(_SELF_CONSISTENCY),
     )
     judge = RubricJudge()
-    score, reasoning, error = await judge.score(
-        _SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm
-    )
+    score, reasoning, error = await judge.score(_SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm)
     # Fixture step 0 returns score=8 → normalised 0.8
     assert error is None
     assert math.isclose(score, 0.8, rel_tol=1e-6)
@@ -91,9 +89,7 @@ async def test_rubric_judge_error_on_bad_response() -> None:
     """RubricJudge returns non-None error when LLM returns unparseable text."""
     llm = FakeLLM(mode="echo")
     judge = RubricJudge()
-    score, _reasoning, error = await judge.score(
-        _SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm
-    )
+    score, _reasoning, error = await judge.score(_SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm)
     assert error is not None
     assert score == 0.0
 
@@ -108,9 +104,7 @@ async def test_pairwise_judge_swap_consistent_a_wins() -> None:
     """Swap-consistent case: AB→A, BA→B (answer_a wins both) → winner=a."""
     llm = FakeLLM(mode="scripted", fixture=str(_PAIRWISE_AB))
     judge = PairwiseJudge()
-    result = await judge.compare(
-        _SPEC_INPUT, _RUBRIC, _ANSWER_A, _ANSWER_B, judge_llm=llm
-    )
+    result = await judge.compare(_SPEC_INPUT, _RUBRIC, _ANSWER_A, _ANSWER_B, judge_llm=llm)
     assert isinstance(result, PairwiseResult)
     assert result.swap_consistent is True
     assert result.winner == "a"
@@ -126,9 +120,7 @@ async def test_pairwise_judge_swap_disagree_gives_tie() -> None:
     """
     llm = FakeLLM(mode="scripted", fixture=str(_PAIRWISE_DISAGREE))
     judge = PairwiseJudge()
-    result = await judge.compare(
-        _SPEC_INPUT, _RUBRIC, _ANSWER_A, _ANSWER_B, judge_llm=llm
-    )
+    result = await judge.compare(_SPEC_INPUT, _RUBRIC, _ANSWER_A, _ANSWER_B, judge_llm=llm)
     assert result.swap_consistent is False
     assert result.winner == "tie"
 
@@ -159,7 +151,5 @@ async def test_self_consistent_judge_mean_score() -> None:
     """
     llm = FakeLLM(mode="scripted", fixture=str(_SELF_CONSISTENCY))
     judge = SelfConsistentJudge()
-    mean_score = await judge.score(
-        _SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm, run_seed=42, n=3
-    )
+    mean_score = await judge.score(_SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm, run_seed=42, n=3)
     assert math.isclose(mean_score, 0.7, rel_tol=1e-6)

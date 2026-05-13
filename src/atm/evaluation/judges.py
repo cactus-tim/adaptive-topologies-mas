@@ -295,9 +295,7 @@ def _build_rubric_prompt(spec_input: str, rubric: str, answer: str) -> str:
     )
 
 
-def _build_pairwise_prompt(
-    spec_input: str, rubric: str, slot_a: str, slot_b: str
-) -> str:
+def _build_pairwise_prompt(spec_input: str, rubric: str, slot_a: str, slot_b: str) -> str:
     """Build a pairwise comparison prompt."""
     return (
         f"You are an expert evaluator. Compare two answers and pick the better one.\n\n"

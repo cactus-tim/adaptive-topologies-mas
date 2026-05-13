@@ -73,9 +73,7 @@ async def score_ground_truth(
             available = ", ".join(EVALUATORS.names())
         except Exception:
             available = "<unavailable>"
-        raise KeyError(
-            f"score_ground_truth: unknown evaluator_key={key!r}. Known: [{available}]."
-        )
+        raise KeyError(f"score_ground_truth: unknown evaluator_key={key!r}. Known: [{available}].")
 
     deps_required = _DEPS[key]
     kwargs: dict[str, Any] = {}
@@ -84,11 +82,10 @@ async def score_ground_truth(
     for dep in deps_required:
         val = available_kwargs.get(dep)
         if val is None:
-            raise ValueError(
-                f"score_ground_truth: {dep!r} is required for evaluator_key={key!r}"
-            )
+            raise ValueError(f"score_ground_truth: {dep!r} is required for evaluator_key={key!r}")
         kwargs[dep] = val
 
     evaluator_cls = EVALUATORS.get(key)
     evaluator = evaluator_cls(**kwargs)
-    return await evaluator.evaluate(spec, answer)
+    result: EvalResult = await evaluator.evaluate(spec, answer)
+    return result

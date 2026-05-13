@@ -20,7 +20,6 @@ from atm.llm.budget import BudgetTracker
 from atm.llm.pricing import ModelPricing, Pricing
 from atm.llm.wrapper import LLMWrapper, _extract_model_version
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -54,7 +53,9 @@ def _make_budget() -> BudgetTracker:
     )
 
 
-def _make_wrapper(model_id: str = "anthropic:claude-3-5-sonnet", llm: object | None = None) -> LLMWrapper:
+def _make_wrapper(
+    model_id: str = "anthropic:claude-3-5-sonnet", llm: object | None = None
+) -> LLMWrapper:
     return LLMWrapper(
         model_id=model_id,
         pricing=_make_pricing(),

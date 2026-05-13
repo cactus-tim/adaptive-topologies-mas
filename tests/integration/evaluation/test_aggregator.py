@@ -95,9 +95,7 @@ async def test_persist_quality_writes_column(
 
     # Verify the column was updated
     async with session_scope(factory) as session:
-        result = await session.execute(
-            select(Run).where(Run.id == run_id)
-        )
+        result = await session.execute(select(Run).where(Run.id == run_id))
         run_row = result.scalar_one()
         assert run_row.quality_score == pytest.approx(0.75)
 
