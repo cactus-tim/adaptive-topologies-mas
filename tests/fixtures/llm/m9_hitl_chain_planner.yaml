@@ -1,0 +1,16 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM for ChainTopology HITL integration tests — Planner agent.
+# Used by: test_m9_hitl.py
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "Plan: compute fib(5). Steps: define fib, call fib(5)."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 50
+      output_tokens: 15
+      total_tokens: 65
+    model: "fake:scripted"

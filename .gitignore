@@ -31,3 +31,4 @@ Thumbs.db
 # Claude Code transient state
 .claude/worktrees/
 .claire/
+.claude/

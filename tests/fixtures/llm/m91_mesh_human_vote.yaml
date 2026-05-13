@@ -1,0 +1,20 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for the human_peer LLMSimulatedGateway call in the
+# Mesh HITL integration test.
+#
+# The LLMSimulatedGateway sends the human context to FakeLLM and interprets
+# the response as a HumanResponse JSON. The human votes "X" to tip the
+# consensus (3 LLM votes + 1 human vote = 4 >= threshold 4).
+entries:
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "X", "payload": {"vote_for": "X"}, "comment": "X"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 50
+      output_tokens: 12
+      total_tokens: 62
+    model: "fake:scripted"
