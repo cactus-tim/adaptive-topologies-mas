@@ -266,7 +266,7 @@ class TaskSpec(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str  # "humaneval/HumanEval/0"
-    type: Literal["programming", "qa", "creative", "analysis"]
+    type: Literal["programming", "reasoning", "creative", "decision"]
     input: str
     expected: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

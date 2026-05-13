@@ -167,8 +167,9 @@ class Run(Base):
         nullable=True,
     )
     cognitive_load_proxy: Mapped[float | None] = mapped_column(
-        sa.Float(),
+        sa.Double(),
         nullable=True,
+        doc="NASA-TLX proxy from human_interactions (M9.2 RQ4 metric).",
     )
     wall_time_s: Mapped[float | None] = mapped_column(
         sa.Double(),

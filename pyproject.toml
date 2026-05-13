@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
     "asyncpg>=0.29",
+    "datasets>=2.20,<4",
     "ddgs>=9.13,<10",
     "docker>=7.1,<8",
     "httpx>=0.27",
@@ -53,6 +54,7 @@ dev = [
     "types-pyyaml>=6.0.12.20260408",
 ]
 test = [
+    "aiosqlite>=0.22.1",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
 ]

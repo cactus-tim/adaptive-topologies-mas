@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import docker  # type: ignore[import-untyped]
+import docker.errors  # type: ignore[import-untyped]
 import requests.exceptions  # type: ignore[import-untyped]
 
 from atm.tools.sandbox.base import ExecResult, SandboxConfig
@@ -71,7 +72,18 @@ class DockerSandbox:
             **_DEFAULT_IMAGE_MAP,
             **(image_map or {}),
         }
+        self.image_digest: str | None = None
+
+        # Constructor still raises if docker daemon is unreachable —
+        # tests that need a working sandbox skip via fixture; we only soften
+        # the digest-capture path so missing/local-only images don't crash.
         self._client: docker.DockerClient = docker.from_env()
+        try:
+            python_image = self._image_map["python"]
+            img = self._client.images.get(python_image)
+            self.image_digest = img.id
+        except (docker.errors.DockerException, docker.errors.ImageNotFound, OSError, KeyError):
+            self.image_digest = None
 
         should_pull = prefetch or os.environ.get("ATM_AUTO_PULL_IMAGES") == "1"
         if should_pull:
