@@ -1,0 +1,34 @@
+version: 1
+mode: scripted
+# Pairwise judge fixture — swap-disagree scenario.
+#
+# Scenario: judge always picks whichever answer is in slot A (position bias).
+#   AB call  (pairwise_judge_ab):  judge picks slot A → slot A = answer_a → answer_a wins
+#   BA call  (pairwise_judge_ba):  judge picks slot A → slot A = answer_b → answer_b wins
+#
+# In answer-relative terms: AB says A wins, BA says B wins → disagree → swap_consistent=False
+# Per spec: winner=tie when not swap_consistent.
+entries:
+  - agent_id: pairwise_judge_ab
+    role: pairwise_judge_ab
+    step_idx: 0
+    content: '{"winner": "A", "reasoning": "Slot A answer is better."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 15
+      total_tokens: 135
+    model: "fake:scripted"
+
+  - agent_id: pairwise_judge_ba
+    role: pairwise_judge_ba
+    step_idx: 0
+    content: '{"winner": "A", "reasoning": "Slot A answer is better."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 15
+      total_tokens: 135
+    model: "fake:scripted"

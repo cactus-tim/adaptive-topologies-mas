@@ -510,10 +510,11 @@ class Topology(Protocol):
     - guards срабатывают на ожидаемых сценариях (guard_override)
   - [x] `conf/experiments/adaptive_smoke.yaml` — конфиг smoke-теста
 
-  **M8.7 — Oracle labels pipeline (0.5 дня, условно после E1 pilot)**
+  **M8.7 — Oracle labels pipeline (0.5 дня) — ОБЯЗАТЕЛЬНО до M12**
   - [ ] `analysis/oracle.py`: `build_leave_one_out_oracle(exp_id) → OracleTable` — читает runs из E1, агрегирует по task_type без target task
   - [ ] `conf/oracle/type_level_manual.yaml`: 4 task_type × 3 phase = 12 клеток ручной разметки (заготовка с TODO на заполнение)
   - [ ] Unit-тест: `OracleTopologyRouter` с known table → stable decisions
+  - **Note (audit G9):** ранее помечено как «условно после E1» — оракл-таблица нужна для E3, который запускается из M12, поэтому **выполнить до M12**; ручную type_level разметку заполнить параллельно с E1.
 
 - **Exit criteria M8:**
   - `atm run --config conf/experiments/adaptive_smoke.yaml` — прогоняет 1 задачу через Adaptive, делает ≥1 реальный topology switch внутри execution-фазы, все transitions в PG и parquet
@@ -543,32 +544,102 @@ class Topology(Protocol):
     - idempotency-тест: resume после interrupt не даёт дубль-записи в `human_interactions`
 - **Exit:** Chain + human-as-Reviewer работает через LLM-симулятора; timeout+fallback отрабатывает; одна запись в `human_interactions` на один логический interrupt
 
+### M9.1 — HITL integration в остальные топологии (3–4 дня)
+
+> M9 поставил HITL-инфраструктуру и интеграцию **только в Chain** — это reference-implementation проверяющий контракт end-to-end. Расширение в остальные 5 топологий вынесено отдельно, потому что каждая требует собственного дизайн-решения о точке вставки human-узла, конфликте с Coordinator/Judge и правилах активации.
+
+- **Цель:** подключить `human_reviewer` к Star/Mesh/Debate/Hierarchical/Adaptive с per-topology дизайн-решениями. Инфраструктура (Protocol, gateways, callback writer, timeout/fallback, idempotency, `human_gateway_llm` в Runner) уже готова в M9 — задача только в graph-wiring и unit/integration тестах.
+- **Зависимости:** M9 (инфраструктура), M7 (статические топологии), M8 (Adaptive meta-graph)
+- **Задачи:**
+  - [ ] **Star + HITL** (0.5 дня): human_reviewer после Coordinator-decision, перед next-step dispatch. Policy: human-override > coordinator. Конфиг: `human_role=Coordinator` или `Reviewer`.
+  - [ ] **Mesh + HITL** (0.5 дня): human как Peer-bus-participant; активируется на N-м round'е или по signal `consensus_pending`. Round-robin honor.
+  - [ ] **Debate + HITL** (0.5 дня): human как Judge (заменяет/дополняет Critic-judge). Конфиг выбора: `judge=critic|human|both`.
+  - [ ] **Hierarchical + HITL** (0.5–1 день): human на уровне Top-Coordinator (default) или per-sub-team (config-driven). Subgraph-HITL-test (важно — checkpointer + subgraph interrupt — flag в M9 рисках).
+  - [ ] **Adaptive + HITL** (1 день): human как **side-input** для TopologyRouter (advisory) и/или для TransitionGate (override). Default: advisory; override — через флаг `human_can_override_router=true`.
+    - **Priority specification (audit G4):** при наличии human_override решение принимается в порядке `human_override → guard → router`. Если все три согласны — `decided_by='router'`. Если guard блокирует router и human согласен с router — `decided_by='guard_override'`. Если human override включён и router/guard расходятся с human — `decided_by='human_override'`. Это значение пишется в `TopologyTransition.decided_by` для RQ2-анализа.
+    - **Subgraph-interrupt тест:** interrupt() инициируется внутри активного subgraph-узла (НЕ из parent meta-graph). Resume через checkpointer корректно возвращается в тот же subgraph; ровно ОДНА запись в `human_interactions` после resume.
+  - [ ] Расширить `human/__init__.py` re-export'ы (если потребуются helper'ы для конкретных топологий).
+  - [ ] **Per-topology integration тесты** (1 файл/топология; маркер `@pytest.mark.requires_postgres`).
+- **Exit:**
+  - Все 5 топологий имеют HITL-вариант с тестами end-to-end (FakeLLM gateway, PG required).
+  - Default-режим (без `human_cfg`) для каждой топологии — байт-в-байт идентичен поведению до M9.1.
+  - `runs.human_role` корректно заполняется для каждой топологии.
+  - **Adaptive+HITL (audit G4):** subgraph-level interrupt-resume test проходит — ровно 1 строка в `human_interactions`, корректная атрибуция `TopologyTransition.decided_by` в одном из трёх режимов (router / guard_override / human_override).
+
+### M9.2 — Adaptive Role Router для RQ4 (2 дня)
+
+> **Audit G3.** experiment_plan.md §5 (E4) требует 3 стратегии динамической смены HumanRole по фазе: `role_fixed_best`, `role_by_phase_rule`, `role_by_phase_llm`. Без этого компонента RQ4 — центральный вопрос диплома — **неотвечаем**. Инфраструктура M9 даёт только фиксированную роль.
+
+- **Цель:** Router выбирает активную `HumanRole` по фазе/контексту; ablation `fixed | rule | llm` для E4.
+- **Зависимости:** M9 (HumanGateway), M8 (PhaseManager FSM)
+- **Задачи:**
+  - [ ] `human/role_router.py`: `HumanRoleRouter` Protocol — `async def decide(phase: Phase, state: SharedState) -> HumanRole`.
+  - [ ] `FixedRoleRouter(role: HumanRole)` — back-compat для M9/M9.1 (всегда возвращает фиксированную роль).
+  - [ ] `RuleBasedRoleRouter` — таблица `phase → HumanRole`. Дефолт: `planning→Coordinator, execution→Peer, verification→Reviewer`. Конфиг через `conf/human/role_table.yaml`.
+  - [ ] `LLMRoleRouter` — LLM получает state+phase, возвращает роль (Pydantic-валидация выхода). Аналогично `LLMPhaseRouter` (M8.2) — с fallback на rule.
+  - [ ] Расширить `HumanCfg`: добавить `role_router: Literal["fixed", "rule", "llm"] = "fixed"`; `role_table: dict | None` (для rule); `role_router_model: str | None`.
+  - [ ] Обновить топологии M9.1, чтобы перед запросом human узел спрашивал у router'а активную роль (если `role_router != "fixed"`).
+  - [ ] `evaluation/metrics.py::human_sim_cognitive_load_proxy(run_id) → float` — формула из experiment_plan.md §5: `α·count(interrupts) + β·mean(context_len) + γ·mean(latency_s)`. Веса α/β/γ — в `conf/evaluation/cognitive_load.yaml`.
+  - [ ] Unit-тесты: каждый router → детерминированный выбор на фиксированном state; LLMRoleRouter с FakeLLM-fixture даёт стабильное решение; cognitive_load_proxy на известном run'е даёт ожидаемое число.
+- **Exit:**
+  - Все три стратегии работают end-to-end в Chain (минимум — расширение опционально для остальных топологий).
+  - `runs.human_role` отражает финальную роль; для динамических router'ов — последнюю активную в фазе.
+  - `human_sim_cognitive_load_proxy` рассчитывается и записывается в `runs` (новая колонка `cognitive_load_proxy DOUBLE PRECISION`).
+
 ### M10 — Tasks & datasets (2 дня) ∥ с M9
 
-- **Цель:** набор задач для эксперимента (4 типа)
+- **Цель:** набор задач для эксперимента (4 типа) — синхронизировано с experiment_plan.md §0.
 - **Зависимости:** M5
+- **Audit G1 — task-mix синхронизация:** experiment_plan.md §0 определяет набор {**HumanEval** (programming), **GSM8K** (reasoning), **CommonGen** (creative), **InfiAgent-DABench** (decision)}. MMLU-Pro в эксперименте не используется. `TaskSpec.type` должен поддерживать значения `programming | reasoning | creative | decision` (расширить enum из arch.md §3.1, где `"qa"` → переименовать в `"reasoning"`).
 - **Задачи:**
-  - [ ] `tasks/base.py`: `TaskSpec(id, type, input, expected?, evaluator)`
-  - [ ] `tasks/humaneval.py`: HuggingFace `openai_humaneval`, evaluator = прогон pytest в sandbox
-  - [ ] `tasks/mmlu.py`: MMLU-Pro подмножество, evaluator = exact match
-  - [ ] `tasks/creative.py`: open-ended (5-10 ручных промптов), evaluator = LLM-judge по rubric
-  - [ ] `tasks/analysis.py`: набор задач типа "найди паттерн в данных", evaluator = LLM-judge + structural check
-  - [ ] Парsekt-кеш датасетов
-  - [ ] Тесты: каждая task загружается, evaluator на известных примерах даёт ожидаемые результаты
-- **Exit:** `TaskRegistry.get("humaneval").sample(10)` возвращает 10 задач, evaluator работает
+  - [ ] `tasks/base.py`: `TaskSpec(id, type, input, expected?, evaluator_key)`; `type: Literal["programming", "reasoning", "creative", "decision"]`.
+  - [ ] `tasks/humaneval.py`: HuggingFace `openai_humaneval`, evaluator = прогон pytest в sandbox (`type="programming"`).
+  - [ ] `tasks/gsm8k.py`: HuggingFace `gsm8k`, evaluator = numeric exact match (`type="reasoning"`). **Заменяет старый план `tasks/mmlu.py`**.
+  - [ ] `tasks/commongen.py`: HuggingFace `common_gen`, evaluator = ROUGE-L + concept coverage check (`type="creative"`). **Заменяет старый план `tasks/creative.py` с ручными промптами**.
+  - [ ] `tasks/dabench.py`: InfiAgent-DABench (data-analysis decision tasks), evaluator = LLM-judge + structural check на корректность выбора метода (`type="decision"`). **Заменяет старый план `tasks/analysis.py`**.
+  - [ ] (Опционально) `tasks/mmlu.py` — оставить как дополнительный датасет для ablation, но НЕ в основном E1.
+  - [ ] Parquet-кеш датасетов (`data/datasets/<name>.parquet`).
+  - [ ] Тесты: каждая task загружается, evaluator на известных примерах даёт ожидаемые результаты.
+- **Exit:** `TaskRegistry.get("humaneval").sample(10)`, `TaskRegistry.get("gsm8k").sample(10)`, `TaskRegistry.get("commongen").sample(10)`, `TaskRegistry.get("dabench").sample(10)` — все возвращают задачи, evaluator на pinned-примере даёт correct verdict.
 
-### M11 — Evaluation framework (2 дня)
+### M11 — Evaluation framework + audit catch-ups (3 дня)
 
-- **Цель:** полноценный расчёт метрик для RQ1–RQ4
+> Расширен катч-ап задачами из audit (G2/G6/G7/G8/G10), которые должны были быть в M0/M3/M4 но не попали туда. M11 — последний удобный milestone до E1, чтобы их закрыть.
+
+- **Цель:** полноценный расчёт метрик для RQ1–RQ4 + закрытие audit-долгов до запуска грид-экспериментов.
 - **Зависимости:** M10
-- **Задачи:**
-  - [ ] `evaluation/metrics.py`: функции per-metric (quality, efficiency, time, human)
-  - [ ] `evaluation/judges.py`: LLM-judge с rubric, pairwise-сравнения, self-consistency
-  - [ ] `evaluation/ground_truth.py`: test-runners для programming, matcher для MMLU
-  - [ ] `evaluation/tlx.py`: NASA-TLX опросник (6 шкал), агрегация в `raw_tlx_score`
-  - [ ] Aggregator: post-run обновляет `runs.quality_score`
-  - [ ] Тесты на известных примерах (правильный код → quality=1.0)
-- **Exit:** после run'а заполнены все метрики в `runs`
+- **Задачи (M11 core — evaluation):**
+  - [ ] `evaluation/metrics.py`: функции per-metric (quality, efficiency, time, human; `human_sim_cognitive_load_proxy` см. M9.2).
+  - [ ] `evaluation/judges.py`: LLM-judge с rubric, pairwise-сравнения, self-consistency.
+  - [ ] `evaluation/ground_truth.py`: test-runners для programming (HumanEval pytest), numeric matcher (GSM8K), ROUGE+coverage (CommonGen), DABench structural check.
+  - [ ] `evaluation/tlx.py`: NASA-TLX опросник (6 шкал), агрегация в `raw_tlx_score`.
+  - [ ] Aggregator: post-run обновляет `runs.quality_score` и через `EvaluatorRegistry` (см. ниже G8) находит правильный evaluator по `TaskSpec.evaluator_key`.
+  - [ ] Тесты на известных примерах (правильный код → quality=1.0).
+
+- **Audit catch-up задачи (CRITICAL/IMPORTANT — закрыть до M12/E1):**
+  - [ ] **G8 — `EvaluatorRegistry`** (`evaluation/registry.py`): аналогично `TaskRegistry`. Регистрирует `HumanEvalRunner`, `GSM8KMatcher`, `CommonGenJudge`, `DABenchEvaluator`. `EvaluatorRegistry.get(key) → Evaluator`. Обновить M10 task-файлы, чтобы при импорте каждый регистрировал свой evaluator (или сделать центральный bootstrap в M11). Без этого `TaskSpec.evaluator_key` не матчится и aggregator падает в hardcoded if/elif.
+  - [ ] **G6 — `raw_tlx_score` колонка**: Alembic migration `0003_human_interactions_raw_tlx.py` → добавить `raw_tlx_score DOUBLE PRECISION NULL` в `human_interactions`. `evaluation/tlx.py` aggregator после `NasaTLX.raw_score` → `UPDATE human_interactions SET raw_tlx_score=... WHERE id=...`. Это нужно для M13 box-plot'ов и PG-фильтра E5.
+  - [ ] **G2 — Reproducibility bundle**: добавить в `experiment/runner.py` (расширение текущего runner'а M6):
+    - `seed_all(seed)` хелпер (зерно для random, numpy, torch если есть);
+    - `experiments.git_sha`: `subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()` при старте `atm grid`/`atm run`;
+    - `runs.model_version_snapshot`: первый ответ LLMWrapper → парсить `model_version` (или `system_fingerprint` у OpenAI) → записать;
+    - `runs.sandbox_image_digest`: при `DockerSandbox.start()` → `docker inspect <image> -f '{{.Id}}'` → записать;
+    - `structlog` init с `filter_secrets` процессором (arch.md §14.5); подключить в M0-bootstrap (импортный side-effect через `atm/__init__.py`).
+  - [ ] **G7 — `conf/tools_policy.yaml`**: создать файл по спеке arch.md §5.3 (global + per_role tools); рефактор `ToolRegistry.tools_for(role)` чтобы читать из этого конфига, а не из хардкода. Расширить структуру §4 PLAN.md (минор G12 заодно).
+  - [ ] **G10 — CI/CD pipeline**: `.github/workflows/ci.yml` с тремя jobs:
+    - `lint`: `uv run ruff check && uv run mypy src`
+    - `unit`: `uv run pytest tests/unit/ -m "not requires_postgres and not live"`
+    - `integration`: `uv run pytest tests/integration/ -m requires_postgres` с postgres service в job (alembic upgrade head в setup).
+    - Документировать в `README.md` или `dev/ci.md` как гонять каждый тип локально + флаг `--run-live` для `@pytest.mark.live`.
+
+- **Exit:**
+  - Все метрики в `runs` после run'а заполнены (`quality_score`, `cognitive_load_proxy`, `wall_time_s`, `budget_spent_usd`).
+  - `EvaluatorRegistry.get(task.evaluator_key)` возвращает корректный evaluator для всех 4 task-типов из M10.
+  - `human_interactions.raw_tlx_score` — заполнен в тестовом run'е с симулированным TLX.
+  - `atm run --seed 42` — два прогона с тем же seed дают идентичные `messages` (FakeLLM + deterministic seed) и идентичный `quality_score`.
+  - `experiments.git_sha`, `runs.model_version_snapshot`, `runs.sandbox_image_digest` — все заполняются в smoke-run'е.
+  - `conf/tools_policy.yaml` существует; `ToolRegistry` читает оттуда.
+  - GitHub Actions: PR triggers all 3 jobs, все зелёные на main.
 
 ### M12 — Experiment runner + grid + budget dry-run (2 дня)
 
@@ -584,22 +655,38 @@ class Topology(Protocol):
   - [ ] Внутри run'а — asyncio для parallel agents (Debate, Mesh broadcast)
   - [ ] Dry-run: пройти по grid, для каждой задачи оценить средние токены (из preceding runs или heuristic), выдать ожидаемую стоимость
   - [ ] CLI commands: `atm run`, `atm grid`, `atm estimate`, `atm status`
-  - [ ] Integration-тест: mini-grid (2 топологии × 2 задачи × 1 seed), без реальных LLM (FakeLLM)
-- **Exit:** `atm grid --config exp1.yaml` запускает параллельно 4 runs, все пишутся в PG
+  - [ ] **G5 — `atm resume` + `atm replay` + reconcile**:
+    - `atm resume --run-id <uuid> [--force]` — продолжает run из последнего checkpoint'а LangGraph PG checkpointer. Критично для HITL-экспериментов E2/E5 (живой человек ответил, но процесс упал).
+    - `atm replay <run_id> [--mode deterministic|semantic]` — детерминированный реплей: FakeLLM в режиме `replay` читает из `llm_calls.parquet` исходного run'а; новый run пишется как `replay_of=<original_run_id>`. Использует `runs.model_version_snapshot` для верификации pin'а.
+    - Reconcile в `atm grid`: при старте проверять `SELECT id FROM runs WHERE status='running' AND exp_id=...`; если процесс не жив (pid недоступен) → сбросить в `status='failed'` или allow `--force-resume`.
+  - [ ] Integration-тест: mini-grid (2 топологии × 2 задачи × 1 seed), без реальных LLM (FakeLLM).
+  - [ ] Integration-тест G5: запустить run, прервать на середине через SIGKILL → `atm resume --run-id ...` доводит до конца, итоговое quality_score не меняется при FakeLLM-режиме.
+- **Exit:**
+  - `atm grid --config exp1.yaml` запускает параллельно 4 runs, все пишутся в PG.
+  - `atm resume --run-id <uuid>` доводит killed-run до END.
+  - `atm replay <run_id> --mode deterministic` даёт битово идентичный финальный state.
+  - Reconcile при перезапуске grid'а не оставляет zombie `status='running'` строк.
 
-### M13 — Analysis tooling (1 день)
+### M13 — Analysis tooling (1.5 дня)
 
-- **Цель:** jupyter-шаблоны для анализа и графиков для диплома
-- **Зависимости:** M12
+- **Цель:** jupyter-шаблоны для анализа и графиков для диплома; RQ2-специфичный анализ adaptive поведения.
+- **Зависимости:** M12, M8.7 (oracle pipeline — обязательно)
 - **Задачи:**
-  - [ ] `analysis/loaders.py`: `load_experiment(exp_id)`, `load_llm_calls()`, `load_runs()` → pandas
+  - [ ] `analysis/loaders.py`: `load_experiment(exp_id)`, `load_llm_calls()`, `load_runs()` → pandas.
+  - [ ] **G11 — `load_topology_transitions(exp_id) → pd.DataFrame`** — RQ2-loader для adaptive runs. Поля: `run_id, at_iter, from_topology, to_topology, decided_by, signals_snapshot, router_cost_usd`. Без него аналитический ноутбук E3 пишется на лету.
   - [ ] `analysis/plots.py`:
-    - quality vs cost (Pareto)
-    - heatmap topology × task_type
-    - phase-transition timelines для Adaptive
-    - human cognitive load boxplots
-  - [ ] Шаблонный notebook `notebooks/analysis_template.ipynb`
-- **Exit:** после grid-а можно в одну ячейку сгенерировать сравнительный график
+    - quality vs cost (Pareto) с confidence bands для adaptive vs static.
+    - heatmap topology × task_type (RQ1).
+    - phase-transition timelines для Adaptive.
+    - **G11 — topology-transition timeline × quality correlation** (RQ2-специфичный plot).
+    - **G11 — derived-метрики plots**: `guard_override_rate`, `router_cost_share`, `time_per_topology`, `oracle_gap_loo` (формулы — experiment_plan.md §4).
+    - human cognitive load boxplots (использует `human_interactions.raw_tlx_score` из M11 G6 + `runs.cognitive_load_proxy` из M9.2).
+  - [ ] **G9 — `analysis/oracle.py` loader + plot**: `load_oracle_table()` + plot «leave-one-out oracle quality vs adaptive router quality» для RQ2 (показывает gap между «идеальным» оракулом и реальным router'ом).
+  - [ ] Шаблонный notebook `notebooks/analysis_template.ipynb` с секциями RQ1/RQ2/RQ3/RQ4.
+- **Exit:**
+  - После grid'а одной ячейкой генерируется сравнительный Pareto-график.
+  - RQ2-метрики (guard_override_rate, router_cost_share, oracle_gap_loo) считаются из `topology_transitions` без ручного SQL.
+  - `load_topology_transitions(exp_id)` возвращает корректный DataFrame для E3-runs.
 
 ### M14+ (этап 2 диплома) — отдельно, после техники
 
@@ -619,10 +706,15 @@ M0 → M1 → M2 ─┬─ M3 ─┐
                                     M11 (после M10)
 ```
 
-- Критичный путь: M0→M1→M2→M5→M6→M7→M8→M12→M13
-- Параллелимо: M3/M4 после M1; M9 после M6; M10 после M5
-- M8.7 (Oracle pipeline) зависит от результатов E1-pilot — может выполняться параллельно с M9/M10 после первых confirmed E1-runs
-- Оценка по человеко-дням: ~30 дней на одного исполнителя (M8 расширен до 5–6 дней после перехода на L2), можно ужать до ~22 с распараллеливанием
+- Критичный путь: M0→M1→M2→M5→M6→M7→M8→M8.7→M11→M12→M13 (M8.7 включён в крит-путь после audit G9)
+- Параллелимо: M3/M4 после M1; M9 после M6; M10 после M5; M9.1 после M9 (∥ M10/M11); M9.2 после M9 (∥ M10)
+- ~~M8.7 (Oracle pipeline) зависит от результатов E1-pilot~~ — **обязательно до M12** (audit G9); E3 без oracle-таблицы невозможен.
+- M9.1 (HITL для 5 остальных топологий) — необязательно для критичного пути, но без него RQ-эксперименты с human-as-Reviewer ограничены Chain'ом. Рекомендуется выполнить до M12.
+- M9.2 (AdaptiveRoleRouter) — **необходимо** для RQ4 (E4); без него центральный вопрос диплома неотвечаем.
+- M11 расширен с 2 до 3 дней — включает audit catch-ups (EvaluatorRegistry, raw_tlx_score migration, reproducibility bundle, tools_policy.yaml, CI/CD).
+- M12 включает `atm resume`/`atm replay`/reconcile (audit G5) — критично для HITL-экспериментов после краша.
+- M13 расширен с 1 до 1.5 дней — включает topology_transitions loaders/plots для RQ2 (audit G9+G11).
+- Оценка по человеко-дням: **~40 дней** на одного исполнителя (M8 — 5–6 дней L2; M9.1 — 3–4 дня; M9.2 — 2 дня; M11 — 3 дня; M12 — 3 дня с G5; M13 — 1.5 дня), можно ужать до ~28–30 с распараллеливанием.
 
 ## 10. Риски и их митигации
 
@@ -638,7 +730,7 @@ M0 → M1 → M2 ─┬─ M3 ─┐
 
 ## 11. Open points (решим по ходу)
 
-- **Task mix в benchmark-датасете** — конкретные задачи analysis/creative. Собираем после M10 в отдельной итерации.
+- ~~**Task mix в benchmark-датасете**~~ — **[Resolved 2026-05-12 audit G1: HumanEval + GSM8K + CommonGen + InfiAgent-DABench согласно experiment_plan.md §0; зафиксировано в M10]**
 - **Протокол human studies** (сколько участников, какие задачи, IRB) — отдельно на этапе 2 диплома.
 - **Adaptive router: rule-based vs LLM-based** — сравнить в ablation, выбрать по результатам.
 - ~~Hierarchical — 2 vs 3 уровня~~ — **[Resolved: ровно 2 уровня, arch.md §7.6, §18/#5]**
@@ -646,6 +738,28 @@ M0 → M1 → M2 ─┬─ M3 ─┐
 - **Parquet row-group tuning** — профилирование на M13.
 - **Streamlit vs Gradio** для human UI — посмотрим на M14.
 - **Ray** для масштабного грида — включим если станет узким местом на M12.
+- **Adaptive role router strategy** — `fixed | rule | llm` — ablation в E4 (см. M9.2).
+
+## 11bis. Audit log (2026-05-12)
+
+Аудит PLAN.md выявил 16 пробелов (4 CRITICAL + 7 IMPORTANT + 5 MINOR). Закрыты в этом обновлении:
+
+| ID | Severity | Где исправлено |
+|----|----------|----------------|
+| G1 | CRITICAL | M10 — task-mix синхронизирован с experiment_plan.md §0 |
+| G2 | CRITICAL | M11 catch-up — seed_all, git_sha, model_version_snapshot, sandbox_image_digest, structlog filter_secrets |
+| G3 | CRITICAL | **Новый M9.2** — AdaptiveRoleRouter (3 стратегии для RQ4) |
+| G4 | CRITICAL | M9.1 расширен — priority spec `human_override → guard → router`, subgraph-interrupt тест в Exit |
+| G5 | IMPORTANT | M12 — `atm resume` + `atm replay` + reconcile |
+| G6 | IMPORTANT | M11 catch-up — `raw_tlx_score` колонка + Alembic migration 0003 + aggregator UPDATE |
+| G7 | IMPORTANT | M11 catch-up — `conf/tools_policy.yaml` + рефактор ToolRegistry |
+| G8 | IMPORTANT | M11 catch-up — `EvaluatorRegistry` |
+| G9 | IMPORTANT | M8.7 — `условно` снято, обязательно до M12; M13 — oracle plot loader |
+| G10 | IMPORTANT | M11 catch-up — GitHub Actions CI с lint/unit/integration jobs |
+| G11 | IMPORTANT | M13 — `load_topology_transitions` + RQ2-specific plots |
+| G12–G16 | MINOR | Отложены, в текущем апдейте не правились |
+
+Полный отчёт: `dev/audit-plan-gaps.md`.
 
 ## 12. Что дальше по этому плану
 

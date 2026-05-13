@@ -9,11 +9,14 @@ ToolRegistry  -- registers, retrieves, and dispatches tool invocations
 
 from __future__ import annotations
 
+import os
 import time
 import traceback
+from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 from uuid import UUID
 
+import yaml
 from pydantic import BaseModel, ConfigDict
 
 from atm.core.errors import ToolError
@@ -74,8 +77,10 @@ class ToolRegistry:
     Thread safety: not guaranteed — construct once before any async use.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, policy_path: str | Path | None = None) -> None:
         self._tools: dict[str, Tool] = {}
+        self._policy_path: Path | None = Path(policy_path) if policy_path is not None else None
+        self._policy: dict[str, Any] | None = None
 
     def register(self, tool: Tool) -> None:
         """Register a tool instance.
@@ -158,3 +163,33 @@ class ToolRegistry:
                 error=tb,
                 latency_ms=elapsed_ms,
             )
+
+    def tools_for(self, role: str) -> list[str]:
+        """Return the list of tool names available to ``role`` per tools_policy.yaml.
+
+        Path resolution:
+          1. ctor ``policy_path`` argument (if set)
+          2. ``ATM_TOOLS_POLICY_PATH`` env var
+          3. ``cwd / "conf/tools_policy.yaml"``
+
+        Returns global + per_role[role]. Unknown role → just global. Missing tool
+        names are NOT validated here; ToolError is raised lazily by ``get(name)``.
+        """
+        if self._policy is None:
+            self._policy = self._load_policy()
+        role_tools = self._policy.get("per_role", {}).get(role, [])
+        return list(self._policy.get("global", [])) + list(role_tools)
+
+    def _load_policy(self) -> dict[str, Any]:
+        """Load and return the tools policy from YAML, or return empty defaults."""
+        if self._policy_path is not None:
+            path = self._policy_path
+        elif env_path := os.environ.get("ATM_TOOLS_POLICY_PATH"):
+            path = Path(env_path)
+        else:
+            path = Path.cwd() / "conf" / "tools_policy.yaml"
+        if not path.exists():
+            return {"global": [], "per_role": {}}
+        with open(path) as f:
+            data: dict[str, Any] = yaml.safe_load(f) or {}
+        return data

@@ -2,12 +2,17 @@
 
 Tests use heavily mocked dependencies to avoid any database or filesystem I/O.
 All 6+ required tests are implemented:
-  a. success path: status=completed, quality_score=1.0 (final_answer contains "55")
+  a. success path: status=completed, quality_score=0.0 (inline-prompt fib_test path)
   b. BudgetExceededError path: status=budget_exceeded, parquet closed before update
   c. generic Exception path: status=failed, still flushes parquet
   d. flush-before-update order (mock call order assertions)
   e. initial_state has all 14 shared keys
   f. git_sha fallback when subprocess raises
+
+M11 note: The M6 "55-substring" evaluate() stub has been replaced by the
+aggregator (compute_quality). Inline-prompt tasks (task.name not in TASKS
+registry) short-circuit to quality_score=0.0 without calling the aggregator.
+The "fib_test" fixture task is not registered, so quality_score == 0.0.
 """
 
 from __future__ import annotations
@@ -20,10 +25,10 @@ from uuid import UUID
 import pytest
 
 from atm.core.errors import BudgetExceededError
-from atm.experiment._evaluator import evaluate
 from atm.experiment.config import (
     AgentSetCfg,
     BudgetCfg,
+    EvaluationCfg,
     ExperimentConfig,
     ModelCfg,
     ObservabilityCfg,
@@ -43,7 +48,13 @@ from atm.experiment.runner import (
 
 
 def _make_cfg(**overrides: Any) -> ExperimentConfig:
-    """Build a minimal ExperimentConfig for testing."""
+    """Build a minimal ExperimentConfig for testing.
+
+    M11: evaluation.judge_model is set to "fake:echo" so that the judge
+    LLMWrapper construction in run_one() does not try to reach a real LLM API.
+    The "fib_test" task is an unregistered inline-prompt task, so resolve_spec
+    returns None and quality_score short-circuits to 0.0.
+    """
     defaults: dict[str, Any] = {
         "name": "test_exp",
         "seed": 42,
@@ -59,6 +70,7 @@ def _make_cfg(**overrides: Any) -> ExperimentConfig:
             pg_dsn="postgresql+asyncpg://localhost/atm_test",
             parquet_dir="/tmp/atm_test_parquet",
         ),
+        "evaluation": EvaluationCfg(judge_model="fake:echo"),
     }
     defaults.update(overrides)
     return ExperimentConfig(**defaults)
@@ -91,35 +103,6 @@ def _make_final_state(final_answer: str = "fib(10) = 55") -> dict[str, Any]:
         "budget_events": [],
         "topology_transitions": [],
     }
-
-
-# ---------------------------------------------------------------------------
-# Test: evaluate() function
-# ---------------------------------------------------------------------------
-
-
-def test_evaluate_contains_55_returns_1() -> None:
-    """evaluate() returns 1.0 when '55' is in final_answer."""
-    cfg = _make_cfg()
-    assert evaluate(cfg.task, "fib(10) = 55") == 1.0
-
-
-def test_evaluate_without_55_returns_0() -> None:
-    """evaluate() returns 0.0 when '55' is NOT in final_answer."""
-    cfg = _make_cfg()
-    assert evaluate(cfg.task, "fib(10) = 34") == 0.0
-
-
-def test_evaluate_empty_string_returns_0() -> None:
-    """evaluate() returns 0.0 for empty string."""
-    cfg = _make_cfg()
-    assert evaluate(cfg.task, "") == 0.0
-
-
-def test_evaluate_none_fallback_returns_0() -> None:
-    """evaluate() returns 0.0 for None (treated as empty string)."""
-    cfg = _make_cfg()
-    assert evaluate(cfg.task, None) == 0.0  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +340,8 @@ async def test_run_one_success_path() -> None:
     assert result.status == "completed"
     assert result.run_id == run_id
     assert result.exp_id == exp_id
-    assert result.metrics["quality_score"] == 1.0
+    # M11: "fib_test" is not a registered task → inline-prompt path → quality_score=0.0
+    assert result.metrics["quality_score"] == 0.0
     assert result.final_answer == "The answer is 55"
     mock_urs.assert_called_once()
 
