@@ -221,21 +221,29 @@ async def _update_run_success(
     quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
+    human_role: str | None = None,
+    cognitive_load_proxy: float | None = None,
 ) -> None:
-    """Update run row to completed status."""
+    """Update run row to completed status.
+
+    M9.2 fields: ``human_role`` overrides the static cfg.human.role when a
+    dynamic role was selected by the RoleRouter during the run.
+    ``cognitive_load_proxy`` is the NASA-TLX proxy aggregated post-run from
+    ``human_interactions``. Both default to None for back-compat with non-HITL runs.
+    """
+    values: dict[str, Any] = {
+        "status": "completed",
+        "finish_reason": FinishReason.SUCCESS.value,
+        "quality_score": quality_score,
+        "budget_spent_usd": Decimal(str(budget_spent_usd)),
+        "iterations": iterations,
+        "finished_at": datetime.now(UTC),
+        "cognitive_load_proxy": cognitive_load_proxy,
+    }
+    if human_role is not None:
+        values["human_role"] = human_role
     async with session_scope(session_factory) as session:
-        await session.execute(
-            sa.update(Run)
-            .where(Run.id == run_id)
-            .values(
-                status="completed",
-                finish_reason=FinishReason.SUCCESS.value,
-                quality_score=quality_score,
-                budget_spent_usd=Decimal(str(budget_spent_usd)),
-                iterations=iterations,
-                finished_at=datetime.now(UTC),
-            )
-        )
+        await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
 
 async def _update_run_failed(
@@ -247,22 +255,24 @@ async def _update_run_failed(
     budget_spent_usd: float,
     iterations: int,
     error_text: str | None = None,
+    human_role: str | None = None,
+    cognitive_load_proxy: float | None = None,
 ) -> None:
-    """Update run row to failed/budget_exceeded status."""
+    """Update run row to failed/budget_exceeded status (M9.2-aware)."""
+    values: dict[str, Any] = {
+        "status": status,
+        "finish_reason": finish_reason,
+        "quality_score": quality_score,
+        "budget_spent_usd": Decimal(str(budget_spent_usd)),
+        "iterations": iterations,
+        "finished_at": datetime.now(UTC),
+        "error": error_text,
+        "cognitive_load_proxy": cognitive_load_proxy,
+    }
+    if human_role is not None:
+        values["human_role"] = human_role
     async with session_scope(session_factory) as session:
-        await session.execute(
-            sa.update(Run)
-            .where(Run.id == run_id)
-            .values(
-                status=status,
-                finish_reason=finish_reason,
-                quality_score=quality_score,
-                budget_spent_usd=Decimal(str(budget_spent_usd)),
-                iterations=iterations,
-                finished_at=datetime.now(UTC),
-                error=error_text,
-            )
-        )
+        await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
 
 def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
