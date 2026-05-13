@@ -350,6 +350,7 @@ def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
     """
     return {
         "shared": {
+            "run_id": run_id,
             "task_id": cfg.task.name,
             "task_input": cfg.task.input,
             "phase": Phase.PLANNING,
@@ -654,14 +655,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
 
         role_router = _build_role_router(cfg.human, llm_factory=_role_router_llm_factory)
 
-        human_kwargs: dict[str, Any] = {}
-        if cfg.human is not None and cfg.human.enabled:
-            human_kwargs = {
-                "human_cfg": cfg.human,
-                "human_gateway_llm": human_gateway_llm,
-                "role_router": role_router,
-            }
-
         async with checkpointer_scope(pg_dsn) as checkpointer:
             # BUG-4 fix: TopologyRegistry.get() returns the CLASS, not an instance.
             # Instantiate the class before calling build() so that self is bound.
@@ -671,7 +664,9 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 agents,
                 topology_cfg,
                 checkpointer=checkpointer,
-                **human_kwargs,
+                human_cfg=cfg.human,
+                human_gateway_llm=human_gateway_llm,
+                role_router=role_router,
             )
 
             # Adaptive meta-graph runs many super-steps per task tick (4 nodes

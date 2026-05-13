@@ -1,11 +1,15 @@
 """AdaptiveTopology — L2 meta-graph with runtime topology switching.
 
 Architecture (arch.md §7.7, §8bis):
-  Meta-graph structure:
+  Meta-graph structure (base):
     START → phase_router → topology_router → dispatch_topology →
     [star|chain|mesh|debate|hierarchical subgraph] → transition_gate →
     conditional: phase==done OR budget_exceeded → END
                  else → phase_router (loop)
+
+  With HITL enabled (human_cfg.enabled=True), human_advisor is inserted
+  between topology_router and dispatch_topology:
+    ... → topology_router → human_advisor → dispatch_topology → ...
 
 Key design decisions:
   1. Subgraph dispatch uses a single ``dispatch_topology`` node with if/elif
@@ -34,6 +38,21 @@ Key design decisions:
   6. Superset agent roster: AdaptiveTopology.build() accepts all 7 roles.
      Each subgraph uses only its subset — inactive agents are not invoked.
 
+  7. HITL (M9.1): human_advisor operates in two modes controlled by
+     ``HumanCfg.extra["human_can_override_router"]``:
+       - Advisory (default): human hint written to
+         ``shared.signals["human_advisor_hint"]``. Does NOT mutate
+         _topo_dec_slot[0]. TopologyRouter MAY consider it on next tick.
+       - Override (human_can_override_router=True): human may replace
+         _topo_dec_slot[0] with a new TopologyDecision(decided_by=
+         "human_override", ...).  SwitchGuards still apply — if guards
+         block, the override is rejected and ``considered_alternatives``
+         records the human's intent.
+
+     # known-limitation: subgraph-level interrupt-resume (CLIGateway inside
+     # subgraph with real interrupt/resume) is deferred to M9.2.
+     # See arch/PLAN.md §M9.1 exit criterion lines 560-561.
+
 Public API:
   AdaptiveTopology          — topology class (registered under "adaptive")
   build_adaptive_graph()    — convenience factory returning CompiledStateGraph
@@ -43,7 +62,9 @@ Public API:
 from __future__ import annotations
 
 import logging
+import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -51,18 +72,56 @@ from langgraph.graph import END, START, StateGraph
 
 from atm.core.state import GraphState, SharedState
 from atm.core.types import (
+    HumanContext,
     Phase,
     PhaseDecision,
     PhaseTransition,
     TopologyDecision,
     TopologyTransition,
 )
-from atm.phases.guards import GuardedRouter, SwitchGuards
+from atm.phases.guards import (
+    GuardedRouter,
+    SwitchGuards,
+    _violates_cooldown,
+    _violates_max_per_phase,
+    _violates_max_per_run,
+    _violates_min_dwell,
+)
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
 from atm.phases.topology_router import RuleBasedTopologyRouter
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
 _log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level lazy imports for HITL (M9.1) — patchable in tests.
+# These mirror the pattern established in atm.human._node_factory.
+# ---------------------------------------------------------------------------
+
+_LLMSimulatedGateway: Any
+_CLIGateway: Any
+_request_with_timeout: Any
+_HumanRoleRouter: Any
+
+try:
+    from atm.human.llm_simulated import LLMSimulatedGateway as _LLMSimulatedGateway
+except ImportError:  # pragma: no cover
+    _LLMSimulatedGateway = None
+
+try:
+    from atm.human.cli_gateway import CLIGateway as _CLIGateway
+except ImportError:  # pragma: no cover
+    _CLIGateway = None
+
+try:
+    from atm.human._timeout import request_with_timeout as _request_with_timeout
+except ImportError:  # pragma: no cover
+    _request_with_timeout = None
+
+try:
+    from atm.human.role_router import HumanRoleRouter as _HumanRoleRouter
+except ImportError:  # pragma: no cover
+    _HumanRoleRouter = None
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -301,11 +360,29 @@ class AdaptiveTopology:
         self,
         agents: dict[str, Any],
         cfg: TopologyConfig,
+        *,
+        human_cfg: Any = None,
+        role_router: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Compile and return the L2 adaptive meta-graph.
 
         Returns a CompiledStateGraph ready for ainvoke(initial_state).
+
+        Args:
+            agents:      Dict of agent_id → Agent.
+            cfg:         TopologyConfig. See class docstring for extra keys.
+            human_cfg:   Optional HumanCfg (M9.1). When ``enabled=True``, inserts
+                         ``human_advisor`` between ``topology_router_node`` and
+                         ``dispatch_topology_node``.
+                         Extra keys in ``human_cfg.extra``:
+                           ``human_can_override_router`` (bool, default False):
+                               when True, human may override the router decision.
+            role_router: Optional HumanRoleRouter (M9.2). When not None, the
+                         human_advisor_node derives the active role dynamically via
+                         ``await role_router.decide(phase, shared)`` instead of
+                         using ``human_cfg.role`` directly.
+                         When None → back-compat behaviour: role = human_cfg.role.
         """
         extra = cfg.extra or {}
         checkpointer = kwargs.get("checkpointer")
@@ -393,6 +470,36 @@ class AdaptiveTopology:
         _topo_dec_slot: list[TopologyDecision | None] = [None]
 
         # ----------------------------------------------------------------
+        # HITL: human_advisor gateway setup (M9.1 / M9.2)
+        # ----------------------------------------------------------------
+        _hitl_enabled: bool = bool(human_cfg and getattr(human_cfg, "enabled", False))
+        _gateway: Any = None
+        _human_can_override: bool = False
+        # role_router captured in outer closure scope for use in human_advisor_node (M9.2).
+        # When None, the node falls back to human_cfg.role (back-compat).
+        _role_router: Any = role_router
+
+        if _hitl_enabled:
+            _human_extra: dict[str, Any] = dict(getattr(human_cfg, "extra", None) or {})
+            _human_can_override = bool(_human_extra.get("human_can_override_router", False))
+
+            gateway_type: str = getattr(human_cfg, "gateway", "llm_simulated")
+            if gateway_type == "cli" and _CLIGateway is not None:
+                _gateway = _CLIGateway()
+            elif _LLMSimulatedGateway is not None:
+                # Build LLMWrapper for LLMSimulatedGateway if human_gateway_llm kwarg provided.
+                # NOTE: kwarg name is "human_gateway_llm" (matches Runner.run_one contract).
+                llm_wrapper = kwargs.get("human_gateway_llm")
+                if llm_wrapper is not None:
+                    _gateway = _LLMSimulatedGateway(llm_wrapper)
+                else:
+                    _log.warning(
+                        "adaptive: human_cfg.enabled=True but no human_gateway_llm kwarg provided; "
+                        "HITL gateway unavailable — falling back to no-op advisory mode"
+                    )
+                    _hitl_enabled = False
+
+        # ----------------------------------------------------------------
         # Node: phase_router_node
         # ----------------------------------------------------------------
 
@@ -425,6 +532,238 @@ class AdaptiveTopology:
             )
             _topo_dec_slot[0] = decision
             return {}
+
+        # ----------------------------------------------------------------
+        # Node: human_advisor_node  (M9.1 HITL — inserted when hitl enabled)
+        # ----------------------------------------------------------------
+
+        async def human_advisor_node(state: GraphState) -> dict[str, Any]:
+            """HITL human_advisor between topology_router and dispatch_topology.
+
+            Advisory mode (default):
+                Human sees the current router decision and may write a hint into
+                ``shared.signals["human_advisor_hint"]``.  Does NOT mutate
+                ``_topo_dec_slot[0]``; routing is unchanged for this tick.
+
+            Override mode (human_can_override_router=True):
+                Human may specify a ``action="switch_topology"`` + ``payload.topology``
+                to replace the router's decision.  GuardedRouter (if active) is
+                re-evaluated against the proposed topology.  If guards block the
+                override, a log.warning is emitted, hint is set, and the original
+                decision stands.
+
+            # known-limitation: subgraph-level interrupt-resume (CLIGateway inside
+            # subgraph with real interrupt/resume) is deferred to M9.2.
+            # See arch/PLAN.md §M9.1 exit criterion lines 560-561.
+            """
+            assert _gateway is not None, "human_advisor_node called but _gateway is None"
+
+            shared: dict[str, Any] = dict(state.get("shared") or {})
+            signals: dict[str, Any] = dict(shared.get("signals") or {})
+
+            current_decision = _topo_dec_slot[0]
+            current_topo: str = (
+                current_decision.topology
+                if current_decision is not None
+                else (shared.get("active_topology") or "linear")
+            )
+
+            _raw_run_id = shared.get("run_id") or state.get("run_id")
+            run_id_val: uuid.UUID = (
+                _raw_run_id
+                if isinstance(_raw_run_id, uuid.UUID)
+                else uuid.UUID(str(_raw_run_id))
+                if _raw_run_id
+                else uuid.uuid4()
+            )
+            iter_total: int = int(shared.get("iter_total", 0))
+            request_id = f"adaptive:{run_id_val}:{iter_total}:advisor"
+
+            # M9.2: derive active role dynamically when role_router is provided.
+            # Phase coercion: raw value from shared may be a str or Phase instance.
+            if _role_router is not None:
+                _raw_phase = shared.get("phase", "planning")
+                _phase_val: Phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+                active_role = await _role_router.decide(_phase_val, shared)
+            else:
+                active_role = human_cfg.role
+
+            ctx = HumanContext(
+                run_id=run_id_val,
+                role=active_role,
+                question=(
+                    f"TopologyRouter chose '{current_topo}'. "
+                    f"Advisory: suggest a hint via action='advise' and payload.hint. "
+                    f"Override (if enabled): action='switch_topology' and payload.topology."
+                ),
+                recent_messages=tuple(state.get("messages", [])[-5:]),
+                allowed_actions=("advise", "switch_topology", "abstain"),
+                deadline_s=(
+                    int(human_cfg.timeout_s)
+                    if getattr(human_cfg, "timeout_s", None) is not None
+                    else None
+                ),
+            )
+
+            _requested_at = datetime.now(UTC)
+            try:
+                await adispatch_custom_event(
+                    "human_request",
+                    {
+                        "run_id": run_id_val,
+                        "request_id": request_id,
+                        "role": str(
+                            active_role.value if hasattr(active_role, "value") else active_role
+                        ),
+                        "context_json": ctx.model_dump(mode="json"),
+                        "requested_at": _requested_at,
+                    },
+                )
+            except Exception:
+                _log.debug("adaptive human_advisor: adispatch human_request skipped", exc_info=True)
+
+            _t0 = time.monotonic()
+            timeout_s: float | None = getattr(human_cfg, "timeout_s", None)
+            timeout_policy: str = getattr(human_cfg, "timeout_policy", "skip")
+
+            if _request_with_timeout is not None and timeout_s is not None:
+                response = await _request_with_timeout(
+                    _gateway,
+                    ctx,
+                    request_id=request_id,
+                    timeout_s=timeout_s,
+                    policy=timeout_policy,
+                )
+            else:
+                response = await _gateway.request(ctx, request_id=request_id)
+
+            _latency_s = time.monotonic() - _t0
+
+            try:
+                await adispatch_custom_event(
+                    "human_response",
+                    {
+                        "run_id": run_id_val,
+                        "request_id": request_id,
+                        "answered_at": datetime.now(UTC),
+                        "response_json": response.model_dump(mode="json"),
+                        "source": getattr(response, "source", "human"),
+                        "timed_out": getattr(response, "timed_out", False),
+                        "latency_s": _latency_s,
+                    },
+                )
+            except Exception:
+                _log.debug(
+                    "adaptive human_advisor: adispatch human_response skipped", exc_info=True
+                )
+
+            action: str = getattr(response, "action", "") or ""
+            payload: dict[str, Any] = dict(getattr(response, "payload", None) or {})
+            comment: str = getattr(response, "comment", "") or ""
+
+            if _human_can_override and action == "switch_topology":
+                # Override mode: attempt to replace topology decision
+                proposed_topo: str = str(payload.get("topology", "")).strip()
+                valid_topos = set(_TOPO_ALIAS.keys()) | set(_TOPO_ALIAS.values()) | {"adaptive"}
+
+                if not proposed_topo or proposed_topo not in valid_topos:
+                    _log.warning(
+                        "adaptive human_advisor: override proposed invalid topology %r (valid: %s); "
+                        "ignoring and writing hint",
+                        proposed_topo,
+                        sorted(valid_topos),
+                    )
+                    signals["human_advisor_hint"] = comment or f"invalid_topology:{proposed_topo!r}"
+                else:
+                    # Build proposed override decision
+                    override_decision = TopologyDecision(
+                        topology=proposed_topo,
+                        reason=f"human_override: {comment or proposed_topo}",
+                        decided_by="human_override",
+                        considered_alternatives=(current_topo,)
+                        if proposed_topo != current_topo
+                        else (),
+                    )
+
+                    # Apply guard violation checks directly against proposed_topo.
+                    # Re-calling topo_router.decide() would re-evaluate the inner
+                    # router (not the proposed topology), producing a tautological
+                    # result.  Instead, read the SwitchGuards config from topo_router
+                    # and evaluate each guard violation function directly.
+                    if use_guards:
+                        _raw_shared = state.get("shared")
+                        _shared_state: SharedState = (
+                            _raw_shared if _raw_shared is not None else SharedState()
+                        )
+                        # Extract guards config from the GuardedRouter (if available).
+                        # Fall back to default SwitchGuards if topo_router is not a
+                        # GuardedRouter (use_guards=True but router type changed).
+                        _guards_cfg: SwitchGuards = (
+                            topo_router._guards
+                            if isinstance(topo_router, GuardedRouter)
+                            else SwitchGuards()
+                        )
+                        # Only evaluate guards when the human proposes an ACTUAL switch.
+                        # If current_topo == proposed_topo the guards don't apply.
+                        _applied: list[str] = []
+                        if proposed_topo != current_topo:
+                            if _violates_min_dwell(_shared_state, _guards_cfg):
+                                _applied.append("min_dwell")
+                            if _violates_cooldown(_shared_state, proposed_topo, _guards_cfg):
+                                _applied.append("cooldown")
+                            if _violates_max_per_run(_shared_state, _guards_cfg):
+                                _applied.append("max_per_run")
+                            if _violates_max_per_phase(_shared_state, _guards_cfg):
+                                _applied.append("max_per_phase")
+
+                        if not _applied:
+                            # Guards allow — accept the human override
+                            _topo_dec_slot[0] = override_decision
+                            signals["human_advisor_hint"] = f"override_applied:{proposed_topo}"
+                            _log.info(
+                                "adaptive human_advisor: override accepted → topology=%r",
+                                proposed_topo,
+                            )
+                        else:
+                            # Guards blocked — record human intent in considered_alternatives
+                            _current_dec = _topo_dec_slot[0]
+                            blocked_with_intent = TopologyDecision(
+                                topology=current_topo,
+                                reason=f"guards={_applied}: keep '{current_topo}'",
+                                decided_by="guard_override",
+                                considered_alternatives=(
+                                    *(_current_dec.considered_alternatives if _current_dec else ()),
+                                    proposed_topo,
+                                ),
+                            )
+                            _topo_dec_slot[0] = blocked_with_intent
+                            signals["human_advisor_hint"] = (
+                                f"override_blocked_by_guards:{proposed_topo}"
+                            )
+                            _log.warning(
+                                "adaptive human_advisor: override to %r blocked by guards %s",
+                                proposed_topo,
+                                _applied,
+                            )
+                    else:
+                        # No guards — apply override directly
+                        _topo_dec_slot[0] = override_decision
+                        signals["human_advisor_hint"] = f"override_applied:{proposed_topo}"
+                        _log.info(
+                            "adaptive human_advisor: override accepted (no guards) → topology=%r",
+                            proposed_topo,
+                        )
+            else:
+                # Advisory mode (or abstain / non-override action)
+                # Only write a hint when there is a meaningful comment.
+                # "abstain" or "timeout" without a comment → pure no-op.
+                hint_text = (comment or "").strip()
+                if hint_text:
+                    signals["human_advisor_hint"] = hint_text
+                # _topo_dec_slot[0] is NOT mutated in advisory mode
+
+            shared["signals"] = signals
+            return {"shared": shared}
 
         # ----------------------------------------------------------------
         # Node: dispatch_topology_node  (runs the active subgraph)
@@ -604,7 +943,16 @@ class AdaptiveTopology:
 
         graph.add_edge(START, "phase_router_node")
         graph.add_edge("phase_router_node", "topology_router_node")
-        graph.add_edge("topology_router_node", "dispatch_topology_node")
+
+        if _hitl_enabled:
+            # M9.1: Insert human_advisor between topology_router and dispatch_topology
+            graph.add_node("human_advisor_node", human_advisor_node)
+            graph.add_edge("topology_router_node", "human_advisor_node")
+            graph.add_edge("human_advisor_node", "dispatch_topology_node")
+        else:
+            # Default (M8 back-compat): direct edge
+            graph.add_edge("topology_router_node", "dispatch_topology_node")
+
         graph.add_edge("dispatch_topology_node", "transition_gate_node")
 
         graph.add_conditional_edges(
