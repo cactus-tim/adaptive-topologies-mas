@@ -13,9 +13,9 @@
 
 ---
 
-## Wave 2: Independent catch-up items [Steps 2, 7, 8, 9] — NOT STARTED
+## Wave 2: Independent catch-up items [Steps 2, 7, 8, 9] — COMPLETE
 
-- [ ] 2 [tdd] Rewrite `evaluation/ground_truth.py` using literal `_DEPS` table
+- [x] 2 [tdd] Rewrite `evaluation/ground_truth.py` using literal `_DEPS` table
   — `src/atm/evaluation/ground_truth.py`, `src/atm/evaluation/__init__.py`,
   `tests/unit/evaluation/test_ground_truth.py`
   - Acceptance: `uv run pytest tests/unit/evaluation/test_ground_truth.py -q` green;
@@ -26,7 +26,7 @@
     verify `commongen_rouge_coverage` dep post-merge. Unit test enumerates
     `EVALUATORS.names()` vs `_DEPS.keys()` to catch drift. Depends On: 1.
 
-- [ ] 7 [tdd] Add `filter_secrets` structlog processor and bootstrap wiring
+- [x] 7 [tdd] Add `filter_secrets` structlog processor and bootstrap wiring
   — `src/atm/observability/log_processors.py` (new),
   `src/atm/observability/__init__.py`, `src/atm/__init__.py`,
   `tests/unit/observability/test_log_processors.py` (new)
@@ -38,7 +38,7 @@
     at module level. Return new dict (do not mutate input). Cyclic-dict guard via
     `id()`-based seen-set. Depends On: 1.
 
-- [ ] 8 [tdd] Add `ToolRegistry.tools_for(role)` and `conf/tools_policy.yaml`
+- [x] 8 [tdd] Add `ToolRegistry.tools_for(role)` and `conf/tools_policy.yaml`
   — `conf/tools_policy.yaml` (new), `src/atm/tools/base.py`,
   `tests/unit/tools/test_tools_policy.py` (new)
   - Acceptance: unit tests green for (a) happy path per role, (b) missing-tool
@@ -51,7 +51,7 @@
     "conf/tools_policy.yaml"`. YAML comment documents `duckduckgo_search`
     substitution. Depends On: 1.
 
-- [ ] 9 [tdd] Add `persist_tlx` writer + unit + integration tests (G6)
+- [x] 9 [tdd] Add `persist_tlx` writer + unit + integration tests (G6)
   — `src/atm/evaluation/tlx.py`, `src/atm/evaluation/__init__.py`,
   `tests/unit/evaluation/test_tlx_persist.py` (new),
   `tests/integration/evaluation/test_tlx_persist.py` (new)
@@ -67,7 +67,7 @@
 
 ---
 
-## Wave 3: Sequential runner.py edits [Steps 4, 5, 6] — NOT STARTED
+## Wave 3: Sequential runner.py edits [Steps 4, 5, 6] — COMPLETE
 
 - [x] 4 [tdd] Add `core/seed.py` with `seed_all` + unit tests + wire into runner
   — `src/atm/core/seed.py` (new), `src/atm/core/__init__.py`,
@@ -137,9 +137,9 @@
 
 ---
 
-## Wave 5: Final sweep [Step 11] — NOT STARTED
+## Wave 5: Final sweep [Step 11] — COMPLETE
 
-- [ ] 11 [simple] Final sanity sweep — run full lint + test matrix + grep sweep
+- [x] 11 [simple] Final sanity sweep — run full lint + test matrix + grep sweep
   — (no file changes; fix in place if anything fails)
   - Acceptance: `ruff check src/atm tests` exit 0; `ruff format --check src/atm
     tests` exit 0; `mypy --strict src/atm` exit 0; `pytest tests/unit/ -q` exit 0;
@@ -157,11 +157,11 @@
 ## Stats
 
 - Total: 11 tasks (~8h)
-- Done: 0 / 11
+- Done: 11 / 11
 
 ## How to Update
 
 Check off tasks with `[x]` and update `m11-resync-context.md` SESSION PROGRESS
 after each milestone. Update phase headers:
-- All tasks in a wave complete → replace "NOT STARTED" with "COMPLETE"
-- Some tasks complete → replace "NOT STARTED" with "IN PROGRESS"
+- All tasks in a wave complete → replace "COMPLETE" with "COMPLETE"
+- Some tasks complete → replace "COMPLETE" with "COMPLETE"
