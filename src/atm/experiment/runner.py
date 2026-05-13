@@ -30,6 +30,7 @@ from __future__ import annotations
 import subprocess
 import traceback
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -42,9 +43,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.core.errors import BudgetExceededError
-from atm.core.types import Phase
+from atm.core.types import HumanRole, Phase
+from atm.evaluation import human_sim_cognitive_load_proxy
 from atm.experiment._evaluator import evaluate
-from atm.experiment.config import ExperimentConfig
+from atm.experiment.config import ExperimentConfig, HumanCfg
+from atm.human.role_router import (
+    DEFAULT_ROLE_TABLE,
+    HumanRoleRouter,
+    LLMRoleRouter,
+    RuleBasedRoleRouter,
+)
 from atm.llm.budget import BudgetLevel, BudgetTracker
 from atm.llm.factory import build_llm
 from atm.llm.pricing import Pricing
@@ -57,6 +65,69 @@ from atm.storage.session import create_engine, create_session_factory, session_s
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# _build_role_router — factory that constructs the appropriate HumanRoleRouter
+# ---------------------------------------------------------------------------
+
+
+def _build_role_router(
+    human_cfg: HumanCfg | None,
+    llm_factory: Callable[[], Any] | None = None,
+) -> HumanRoleRouter | None:
+    """Build a HumanRoleRouter from HumanCfg.role_router strategy.
+
+    Returns None for role_router="fixed" (or when human_cfg is None) as the
+    back-compat short-circuit signal — topologies skip dynamic role lookup
+    and use human_cfg.role directly, preserving pre-m9.2 behaviour byte-for-byte.
+
+    Args:
+        human_cfg:   HumanCfg section from ExperimentConfig (may be None).
+        llm_factory: Optional callable that returns an LLM object (e.g. LLMWrapper).
+                     Required when role_router="llm". The factory receives no
+                     arguments; the runner is responsible for capturing model/pricing
+                     context in the closure before passing the factory here.
+
+    Returns:
+        None for "fixed" strategy (or None cfg); RuleBasedRoleRouter for "rule";
+        LLMRoleRouter for "llm".
+
+    Raises:
+        ValueError: If human_cfg.role_router has an unrecognised value.
+    """
+    if human_cfg is None or human_cfg.role_router == "fixed":
+        # Back-compat: topology uses human_cfg.role directly; no router overhead.
+        return None
+
+    strategy = human_cfg.role_router
+
+    if strategy == "rule":
+        # Build Phase→HumanRole table from role_table (string→string dict) or DEFAULT.
+        if human_cfg.role_table is not None:
+            table: dict[Phase, HumanRole] = {
+                Phase(k): HumanRole(v) for k, v in human_cfg.role_table.items()
+            }
+        else:
+            table = dict(DEFAULT_ROLE_TABLE)
+        fallback: HumanRole = human_cfg.role
+        return RuleBasedRoleRouter(table=table, fallback=fallback)
+
+    if strategy == "llm":
+        # Build the Rule router first (serves as the LLM fallback).
+        if human_cfg.role_table is not None:
+            rule_table: dict[Phase, HumanRole] = {
+                Phase(k): HumanRole(v) for k, v in human_cfg.role_table.items()
+            }
+        else:
+            rule_table = dict(DEFAULT_ROLE_TABLE)
+        rule_router = RuleBasedRoleRouter(table=rule_table, fallback=human_cfg.role)
+
+        # Build the LLM instance via the provided factory.
+        llm = llm_factory() if llm_factory is not None else None
+        return LLMRoleRouter(llm=llm, fallback=rule_router)
+
+    raise ValueError(f"unknown role_router: {strategy!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -223,21 +294,40 @@ async def _update_run_success(
     quality_score: float,
     budget_spent_usd: float,
     iterations: int,
+    human_role: str | None = None,
+    cognitive_load_proxy: float | None = None,
 ) -> None:
-    """Update run row to completed status."""
+    """Update run row to completed status.
+
+    Args:
+        session_factory:      Async session factory.
+        run_id:               UUID of the run row.
+        exp_id:               UUID of the parent experiment (unused directly but kept
+                              for call-site symmetry with _update_run_failed).
+        quality_score:        Evaluation quality score.
+        budget_spent_usd:     Total budget spent.
+        iterations:           Total iteration count.
+        human_role:           Dynamic role value from the last human_interactions row
+                              (if any). When not None, overwrites the static value that
+                              was written at INSERT time.  When None, the column is left
+                              as-is (initial value from cfg.human.role).
+        cognitive_load_proxy: NASA-TLX proxy float; always written (NULL is fine for
+                              Postgres — budget-failed runs get NULL implicitly).
+    """
+    values: dict[str, object] = {
+        "status": "completed",
+        "finish_reason": FinishReason.SUCCESS.value,
+        "quality_score": quality_score,
+        "budget_spent_usd": Decimal(str(budget_spent_usd)),
+        "iterations": iterations,
+        "finished_at": datetime.now(UTC),
+        "cognitive_load_proxy": cognitive_load_proxy,
+    }
+    if human_role is not None:
+        values["human_role"] = human_role
+
     async with session_scope(session_factory) as session:
-        await session.execute(
-            sa.update(Run)
-            .where(Run.id == run_id)
-            .values(
-                status="completed",
-                finish_reason=FinishReason.SUCCESS.value,
-                quality_score=quality_score,
-                budget_spent_usd=Decimal(str(budget_spent_usd)),
-                iterations=iterations,
-                finished_at=datetime.now(UTC),
-            )
-        )
+        await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
 
 async def _update_run_failed(
@@ -551,6 +641,20 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 budget=budget,
             )
 
+        # Build role router. For "llm" strategy, the factory captures pricing/budget
+        # from the enclosing scope so build_llm is called with the correct model.
+        def _role_router_llm_factory() -> LLMWrapper:
+            role_model_id = (
+                cfg.human.role_router_model if cfg.human is not None else None
+            ) or cfg.model.default
+            return build_llm(
+                model_id=role_model_id,
+                pricing=pricing,
+                budget=budget,
+            )
+
+        role_router = _build_role_router(cfg.human, llm_factory=_role_router_llm_factory)
+
         async with checkpointer_scope(pg_dsn) as checkpointer:
             # BUG-4 fix: TopologyRegistry.get() returns the CLASS, not an instance.
             # Instantiate the class before calling build() so that self is bound.
@@ -562,6 +666,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 checkpointer=checkpointer,
                 human_cfg=cfg.human,
                 human_gateway_llm=human_gateway_llm,
+                role_router=role_router,
             )
 
             # Adaptive meta-graph runs many super-steps per task tick (4 nodes
@@ -591,6 +696,42 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
 
+        # Step 12a: resolve dynamic human_role and cognitive_load_proxy.
+        # Both operations are wrapped in try/except so that a DB or metric failure
+        # NEVER prevents _update_run_success from completing (fk M2).
+        # budget-failed runs skip this block entirely → both fields remain NULL (fk M3).
+        dynamic_human_role: str | None = None
+        dynamic_cog_proxy: float | None = None
+
+        try:
+            async with session_scope(session_factory) as _hi_session:
+                last_role_result = await _hi_session.execute(
+                    sa.text(
+                        "SELECT role FROM human_interactions"
+                        " WHERE run_id = :rid"
+                        " ORDER BY requested_at DESC LIMIT 1"
+                    ).bindparams(rid=run_id)
+                )
+                last_role_row = last_role_result.fetchone()
+                if last_role_row is not None:
+                    dynamic_human_role = str(last_role_row[0])
+        except Exception:
+            logger.warning(
+                "failed to query last human_interactions.role; human_role left as-is",
+                run_id=str(run_id),
+                exc_info=True,
+            )
+
+        try:
+            async with session_scope(session_factory) as _cog_session:
+                dynamic_cog_proxy = await human_sim_cognitive_load_proxy(_cog_session, run_id)
+        except Exception:
+            logger.warning(
+                "failed to compute cognitive_load_proxy; leaving NULL",
+                run_id=str(run_id),
+                exc_info=True,
+            )
+
         # Step 12: update run to completed
         await _update_run_success(
             session_factory,
@@ -599,6 +740,8 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             quality_score=quality_score,
             budget_spent_usd=budget_spent,
             iterations=iterations,
+            human_role=dynamic_human_role,
+            cognitive_load_proxy=dynamic_cog_proxy,
         )
 
         log.info(

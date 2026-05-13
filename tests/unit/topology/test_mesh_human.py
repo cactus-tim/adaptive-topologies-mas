@@ -851,3 +851,187 @@ class TestEffectiveAgentOrderIncludesHumanPeer:
     def test_human_peer_id_constant(self) -> None:
         """_HUMAN_PEER_ID is 'human_peer' (per plan spec)."""
         assert _HUMAN_PEER_ID == "human_peer"
+
+
+# ---------------------------------------------------------------------------
+# Test 10: role_router back-compat — role_router=None uses human_cfg.role
+# ---------------------------------------------------------------------------
+
+
+class TestRoleRouterBackCompat:
+    """role_router=None (or omitted) → human_cfg.role is used for HumanContext."""
+
+    @pytest.mark.asyncio
+    async def test_back_compat_role_router_none_uses_cfg_role(self) -> None:
+        """When role_router is None, the role recorded in human_interactions matches human_cfg.role."""
+        from atm.core.types import HumanRole
+        from atm.human.gateway import HumanResponse
+
+        captured_roles: list[str] = []
+        mock_gw = MagicMock()
+
+        async def _mock_request(ctx: Any, *, request_id: str) -> HumanResponse:
+            # Capture the role from context
+            role_val = ctx.role.value if hasattr(ctx.role, "value") else str(ctx.role)
+            captured_roles.append(role_val)
+            return HumanResponse(
+                action="X",
+                comment="X",
+                payload={"vote_for": "X"},
+                source="llm_sim",
+                timed_out=False,
+            )
+
+        mock_gw.request = _mock_request
+
+        cfg = _make_topology_cfg(
+            agent_order=["planner"],
+            consensus_threshold=10,  # won't reach consensus
+            max_rounds=2,
+        )
+        # human_cfg.role = REVIEWER; no role_router → should stay REVIEWER
+        # activation_round=1 means human fires from dispatch_round >= 1 (second round)
+        human_cfg = _make_human_cfg(enabled=True, activation_round=1)
+        assert human_cfg.role == HumanRole.REVIEWER
+
+        topology = MeshTopology()
+        with (
+            patch("atm.topology.mesh.LLMSimulatedGateway", return_value=mock_gw),
+            patch("atm.topology.mesh.request_with_timeout", None),
+        ):
+            # role_router not passed → defaults to None
+            graph = topology.build(
+                {"planner": _make_mock_agent()},
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=mock_gw,
+            )
+
+        initial_state: dict[str, Any] = {
+            "shared": {
+                "task_id": "t",
+                "task_input": "t",
+                "iter_total": 0,
+                "iteration": 0,
+                "final_answer": None,
+                "signals": {},
+                "broadcast_bus": [],
+                "phase": "execution",
+                "phase_history": [],
+                "phase_started_at_iter": 0,
+                "active_topology": "mesh",
+                "topology_started_at_iter": 0,
+                "topology_switch_count": 0,
+                "topology_history": [],
+                "human_requests": [],
+                "human_responses": [],
+            },
+            "agents": {},
+            "messages": [],
+            "llm_calls": [],
+            "budget_events": [],
+            "topology_transitions": [],
+        }
+
+        await graph.ainvoke(initial_state)
+
+        assert len(captured_roles) >= 1, (
+            f"Expected human gateway to be called at least once, got {captured_roles}"
+        )
+        for r in captured_roles:
+            assert r == HumanRole.REVIEWER.value, (
+                f"Back-compat: expected role={HumanRole.REVIEWER.value!r}, got {r!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Test 11: role_router dynamic — FixedRoleRouter overrides human_cfg.role
+# ---------------------------------------------------------------------------
+
+
+class TestRoleRouterDynamic:
+    """role_router=FixedRoleRouter(JUDGE) overrides human_cfg.role=REVIEWER."""
+
+    @pytest.mark.asyncio
+    async def test_dynamic_role_router_overrides_cfg_role(self) -> None:
+        """FixedRoleRouter(role=JUDGE) with human_cfg.role=REVIEWER → role used = JUDGE."""
+        from atm.core.types import HumanRole
+        from atm.human.gateway import HumanResponse
+        from atm.human.role_router import FixedRoleRouter
+
+        captured_roles: list[str] = []
+        mock_gw = MagicMock()
+
+        async def _mock_request(ctx: Any, *, request_id: str) -> HumanResponse:
+            role_val = ctx.role.value if hasattr(ctx.role, "value") else str(ctx.role)
+            captured_roles.append(role_val)
+            return HumanResponse(
+                action="X",
+                comment="X",
+                payload={"vote_for": "X"},
+                source="llm_sim",
+                timed_out=False,
+            )
+
+        mock_gw.request = _mock_request
+
+        cfg = _make_topology_cfg(
+            agent_order=["planner"],
+            consensus_threshold=10,  # won't reach consensus
+            max_rounds=2,
+        )
+        # human_cfg.role = REVIEWER; role_router returns JUDGE
+        # activation_round=1 means human fires from dispatch_round >= 1 (second round)
+        human_cfg = _make_human_cfg(enabled=True, activation_round=1)
+        assert human_cfg.role == HumanRole.REVIEWER
+
+        fixed_router = FixedRoleRouter(role=HumanRole.JUDGE)
+
+        topology = MeshTopology()
+        with (
+            patch("atm.topology.mesh.LLMSimulatedGateway", return_value=mock_gw),
+            patch("atm.topology.mesh.request_with_timeout", None),
+        ):
+            graph = topology.build(
+                {"planner": _make_mock_agent()},
+                cfg,
+                human_cfg=human_cfg,
+                human_gateway_llm=mock_gw,
+                role_router=fixed_router,
+            )
+
+        initial_state: dict[str, Any] = {
+            "shared": {
+                "task_id": "t",
+                "task_input": "t",
+                "iter_total": 0,
+                "iteration": 0,
+                "final_answer": None,
+                "signals": {},
+                "broadcast_bus": [],
+                "phase": "execution",
+                "phase_history": [],
+                "phase_started_at_iter": 0,
+                "active_topology": "mesh",
+                "topology_started_at_iter": 0,
+                "topology_switch_count": 0,
+                "topology_history": [],
+                "human_requests": [],
+                "human_responses": [],
+            },
+            "agents": {},
+            "messages": [],
+            "llm_calls": [],
+            "budget_events": [],
+            "topology_transitions": [],
+        }
+
+        await graph.ainvoke(initial_state)
+
+        assert len(captured_roles) >= 1, (
+            f"Expected human gateway to be called at least once, got {captured_roles}"
+        )
+        for r in captured_roles:
+            assert r == HumanRole.JUDGE.value, (
+                f"Dynamic router: expected role={HumanRole.JUDGE.value!r}, got {r!r}"
+            )

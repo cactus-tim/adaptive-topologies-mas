@@ -336,3 +336,161 @@ async def test_node_factory_works_when_request_with_timeout_is_none() -> None:
     # Should fall back to direct gateway.request()
     gw.request.assert_called_once()
     assert result["shared"]["human_approved"] is True
+
+
+# ---------------------------------------------------------------------------
+# 9. role_router=None (back-compat) — role comes from human_cfg.role
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_role_router_none_uses_human_cfg_role() -> None:
+    """role_router=None (default) → HumanContext.role == human_cfg.role (back-compat)."""
+    from atm.core.types import HumanContext
+
+    cfg = _make_human_cfg(role=HumanRole.REVIEWER)
+    gw = _make_gateway(_make_approve_response())
+    state = _make_state()
+
+    captured_ctx: list[HumanContext] = []
+
+    original_gw_request = gw.request
+
+    async def capturing_request(ctx: Any, *, request_id: str) -> Any:
+        captured_ctx.append(ctx)
+        return await original_gw_request(ctx, request_id=request_id)
+
+    gw.request = capturing_request
+
+    node = build_human_node_factory(
+        topology_name="star",
+        human_cfg=cfg,
+        gateway=gw,
+        request_id_template="star:{run_id}:{iter_total}:reviewer",
+        question_extractor=lambda s: "Q?",
+        role_router=None,
+    )
+
+    with patch("atm.human._node_factory.adispatch_custom_event", new_callable=AsyncMock):
+        await node(state)
+
+    assert len(captured_ctx) == 1
+    assert captured_ctx[0].role == HumanRole.REVIEWER
+
+
+# ---------------------------------------------------------------------------
+# 10. role_router=FixedRoleRouter(JUDGE) — dynamic role used instead of cfg.role
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_role_router_dynamic_overrides_human_cfg_role() -> None:
+    """role_router provided → HumanContext.role uses router's decide() result."""
+    from atm.core.types import HumanContext
+    from atm.human.role_router import FixedRoleRouter
+
+    cfg = _make_human_cfg(role=HumanRole.REVIEWER)  # cfg says REVIEWER
+    gw = _make_gateway(_make_approve_response())
+    state = _make_state()
+
+    # Router always returns JUDGE — different from cfg.role
+    router = FixedRoleRouter(role=HumanRole.JUDGE)
+
+    captured_ctx: list[HumanContext] = []
+
+    original_gw_request = gw.request
+
+    async def capturing_request(ctx: Any, *, request_id: str) -> Any:
+        captured_ctx.append(ctx)
+        return await original_gw_request(ctx, request_id=request_id)
+
+    gw.request = capturing_request
+
+    node = build_human_node_factory(
+        topology_name="star",
+        human_cfg=cfg,
+        gateway=gw,
+        request_id_template="star:{run_id}:{iter_total}:reviewer",
+        question_extractor=lambda s: "Q?",
+        role_router=router,
+    )
+
+    with patch("atm.human._node_factory.adispatch_custom_event", new_callable=AsyncMock):
+        await node(state)
+
+    assert len(captured_ctx) == 1
+    # Dynamic role from router is used, not cfg.role
+    assert captured_ctx[0].role == HumanRole.JUDGE
+
+
+# ---------------------------------------------------------------------------
+# 11. role_router=None → human_interactions.role reflects human_cfg.role
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_role_router_none_event_payload_role_matches_cfg() -> None:
+    """role_router=None → human_request event 'role' field == human_cfg.role value."""
+    cfg = _make_human_cfg(role=HumanRole.COORDINATOR)
+    gw = _make_gateway(_make_approve_response())
+    state = _make_state()
+
+    node = build_human_node_factory(
+        topology_name="star",
+        human_cfg=cfg,
+        gateway=gw,
+        request_id_template="star:{run_id}:{iter_total}:reviewer",
+        question_extractor=lambda s: "Q?",
+        role_router=None,
+    )
+
+    captured_events: dict[str, Any] = {}
+
+    async def capturing_dispatch(name: str, data: Any) -> None:
+        captured_events[name] = data
+
+    with patch("atm.human._node_factory.adispatch_custom_event", side_effect=capturing_dispatch):
+        await node(state)
+
+    assert "human_request" in captured_events
+    # role in payload reflects cfg.role
+    assert captured_events["human_request"]["role"] == "coordinator"
+
+
+# ---------------------------------------------------------------------------
+# 12. role_router=FixedRoleRouter(PEER) → human_request event role is "peer"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_role_router_dynamic_event_payload_role_reflects_router() -> None:
+    """role_router provided → human_request event 'role' field == router-decided role."""
+    from atm.human.role_router import FixedRoleRouter
+
+    cfg = _make_human_cfg(role=HumanRole.REVIEWER)  # cfg says REVIEWER
+    gw = _make_gateway(_make_approve_response())
+    state = _make_state()
+
+    # Router returns PEER
+    router = FixedRoleRouter(role=HumanRole.PEER)
+
+    node = build_human_node_factory(
+        topology_name="star",
+        human_cfg=cfg,
+        gateway=gw,
+        request_id_template="star:{run_id}:{iter_total}:reviewer",
+        question_extractor=lambda s: "Q?",
+        role_router=router,
+    )
+
+    captured_events: dict[str, Any] = {}
+
+    async def capturing_dispatch(name: str, data: Any) -> None:
+        captured_events[name] = data
+
+    with patch("atm.human._node_factory.adispatch_custom_event", side_effect=capturing_dispatch):
+        await node(state)
+
+    assert "human_request" in captured_events
+    # role in payload reflects dynamic router result, not cfg.role
+    assert captured_events["human_request"]["role"] == "peer"

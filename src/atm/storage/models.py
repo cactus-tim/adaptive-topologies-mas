@@ -166,6 +166,10 @@ class Run(Base):
         sa.Double(),
         nullable=True,
     )
+    cognitive_load_proxy: Mapped[float | None] = mapped_column(
+        sa.Float(),
+        nullable=True,
+    )
     wall_time_s: Mapped[float | None] = mapped_column(
         sa.Double(),
         nullable=True,

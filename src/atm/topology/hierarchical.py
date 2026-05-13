@@ -87,6 +87,12 @@ try:
 except ImportError:  # pragma: no cover
     adispatch_custom_event = None  # type: ignore[assignment]
 
+HumanRoleRouter: Any
+try:
+    from atm.human.role_router import HumanRoleRouter as HumanRoleRouter
+except ImportError:  # pragma: no cover
+    HumanRoleRouter = None
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -135,6 +141,8 @@ def _extract_draft(state: dict[str, Any], agent_id: str) -> str | None:
 def _build_human_top_reviewer_node(
     human_cfg: HumanCfg,
     gateway: HumanGateway,
+    *,
+    role_router: Any = None,
 ) -> Any:
     """Build and return async human_top_reviewer node for scope='top'.
 
@@ -147,11 +155,15 @@ def _build_human_top_reviewer_node(
     Args:
         human_cfg: HumanCfg instance with role/timeout settings.
         gateway:   Pre-constructed HumanGateway instance.
+        role_router: Optional HumanRoleRouter; when not None, overrides human_cfg.role
+            dynamically via ``await role_router.decide(phase, state)``.
 
     Returns:
         Async callable compatible with LangGraph node signature.
     """
     from atm.core.types import Message
+
+    _role_router = role_router
 
     async def human_top_reviewer(state: dict[str, Any]) -> dict[str, Any]:
         shared: dict[str, Any] = dict(deepcopy(state.get("shared", {})))
@@ -184,9 +196,19 @@ def _build_human_top_reviewer_node(
                 "Please review the hierarchical team outputs and approve, reject, or abstain."
             )
 
+        # Resolve active role (dynamic via role_router or static from cfg)
+        from atm.core.types import Phase
+
+        if _role_router is not None:
+            _raw_phase = shared.get("phase", "execution")
+            _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+            active_role = await _role_router.decide(_phase, shared)
+        else:
+            active_role = human_cfg.role
+
         ctx = HumanContext(
             run_id=run_id,
-            role=human_cfg.role,
+            role=active_role,
             question=question,
             recent_messages=(),
             allowed_actions=("approve", "reject", "abstain"),
@@ -203,9 +225,7 @@ def _build_human_top_reviewer_node(
                         "run_id": run_id,
                         "request_id": request_id,
                         "role": str(
-                            human_cfg.role.value
-                            if hasattr(human_cfg.role, "value")
-                            else human_cfg.role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": datetime.now(UTC),
@@ -290,6 +310,8 @@ def _build_human_sub_reviewer_node(
     team_id: str,
     human_cfg: HumanCfg,
     gateway: HumanGateway,
+    *,
+    role_router: Any = None,
 ) -> Any:
     """Build and return async human_sub_reviewer node for scope='sub_team'.
 
@@ -308,11 +330,14 @@ def _build_human_sub_reviewer_node(
         team_id:   Team identifier (e.g. "team_a", "team_b") for request_id.
         human_cfg: HumanCfg with role/timeout settings.
         gateway:   Pre-constructed HumanGateway instance (LLMSimulatedGateway).
+        role_router: Optional HumanRoleRouter; when not None, overrides human_cfg.role
+            dynamically via ``await role_router.decide(phase, state)``.
 
     Returns:
         Async callable compatible with LangGraph node signature.
     """
     _team_id = team_id
+    _role_router = role_router
 
     async def human_sub_reviewer(state: dict[str, Any]) -> dict[str, Any]:
         shared: dict[str, Any] = dict(deepcopy(state.get("shared", {})))
@@ -331,9 +356,19 @@ def _build_human_sub_reviewer_node(
 
         question = f"Please review sub-team {_team_id} activity and approve, reject, or abstain."
 
+        # Resolve active role (dynamic via role_router or static from cfg)
+        from atm.core.types import Phase
+
+        if _role_router is not None:
+            _raw_phase = shared.get("phase", "execution")
+            _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+            active_role = await _role_router.decide(_phase, shared)
+        else:
+            active_role = human_cfg.role
+
         ctx = HumanContext(
             run_id=run_id,
-            role=human_cfg.role,
+            role=active_role,
             question=question,
             recent_messages=(),
             allowed_actions=("approve", "reject", "abstain"),
@@ -353,9 +388,7 @@ def _build_human_sub_reviewer_node(
                         "run_id": run_id,
                         "request_id": request_id,
                         "role": str(
-                            human_cfg.role.value
-                            if hasattr(human_cfg.role, "value")
-                            else human_cfg.role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": datetime.now(UTC),
@@ -525,6 +558,7 @@ class HierarchicalTopology:
         # HITL config extraction
         # ----------------------------------------------------------------
         human_cfg: HumanCfg | None = kwargs.get("human_cfg")
+        role_router: Any = kwargs.get("role_router")
         hitl_enabled = human_cfg is not None and human_cfg.enabled
         hitl_scope: str = "top"  # default scope
         if hitl_enabled and human_cfg is not None:
@@ -558,10 +592,20 @@ class HierarchicalTopology:
         if hitl_enabled and hitl_scope == "sub_team" and human_cfg is not None:
             # sub_team scope: insert human reviewer inside each subgraph
             team_a_subgraph = self._build_subgraph_with_human(
-                team_a_id, workers_a, agents, human_cfg, gateway_instance
+                team_a_id,
+                workers_a,
+                agents,
+                human_cfg,
+                gateway_instance,
+                role_router=role_router,
             )
             team_b_subgraph = self._build_subgraph_with_human(
-                team_b_id, workers_b, agents, human_cfg, gateway_instance
+                team_b_id,
+                workers_b,
+                agents,
+                human_cfg,
+                gateway_instance,
+                role_router=role_router,
             )
         else:
             team_a_subgraph = self._build_subgraph(team_a_id, workers_a, agents)
@@ -842,7 +886,9 @@ class HierarchicalTopology:
 
         if hitl_enabled and hitl_scope == "top" and human_cfg is not None:
             # Insert human_top_reviewer as an intermediate step before finalize
-            node_fn = _build_human_top_reviewer_node(human_cfg, gateway_instance)
+            node_fn = _build_human_top_reviewer_node(
+                human_cfg, gateway_instance, role_router=role_router
+            )
             graph.add_node("human_top_reviewer", node_fn)
 
             # after_team_b → conditional (finalize condition → human_top_reviewer | loop)
@@ -964,6 +1010,8 @@ class HierarchicalTopology:
         agents: dict[str, Any],
         human_cfg: HumanCfg,
         gateway: Any,
+        *,
+        role_router: Any = None,
     ) -> Any:
         """Build a compiled subgraph with human_sub_reviewer inserted after sub_coord.
 
@@ -984,6 +1032,8 @@ class HierarchicalTopology:
             agents: The agents dict passed to build().
             human_cfg: HumanCfg with role/timeout settings.
             gateway: Pre-constructed HumanGateway instance.
+            role_router: Optional HumanRoleRouter; when not None, overrides human_cfg.role
+                dynamically via ``await role_router.decide(phase, state)``.
 
         Returns:
             A compiled subgraph (CompiledStateGraph) with human node inserted.
@@ -1007,7 +1057,9 @@ class HierarchicalTopology:
 
         # Insert human_sub_reviewer immediately after sub_coord
         human_node_name = f"human_sub_reviewer_{_team_id}"
-        human_node_fn = _build_human_sub_reviewer_node(_team_id, human_cfg, gateway)
+        human_node_fn = _build_human_sub_reviewer_node(
+            _team_id, human_cfg, gateway, role_router=role_router
+        )
         sub_graph.add_node(human_node_name, human_node_fn)
         sub_graph.add_edge(sub_coord_name, human_node_name)
 

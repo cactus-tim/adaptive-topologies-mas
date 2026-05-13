@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.callbacks.manager import adispatch_custom_event
 
 if TYPE_CHECKING:
-    pass
+    from atm.human.role_router import HumanRoleRouter
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ def build_human_node_factory(
     request_id_template: str,
     question_extractor: Callable[[dict[str, Any]], str],
     apply_decision: Callable[[Any, dict[str, Any], dict[str, Any]], None] | None = None,
+    role_router: HumanRoleRouter | None = None,
 ) -> Any:
     """Build an async LangGraph-compatible node closure for HITL decisions.
 
@@ -189,6 +190,12 @@ def build_human_node_factory(
         Optional callback ``(response, state, shared) -> None`` that applies
         the human decision to ``shared``.  Defaults to ``_default_apply_decision``
         (approve → ``human_approved=True``; reject → ``needs_rerun=True``).
+    role_router:
+        Optional :class:`~atm.human.role_router.HumanRoleRouter` instance.
+        When ``None`` (default), ``human_cfg.role`` is used for every interaction
+        (byte-identical to pre-m9.2 behaviour).  When provided, the router's
+        ``decide(phase, shared)`` is awaited to determine the active role for
+        each node invocation.
 
     Returns
     -------
@@ -224,12 +231,22 @@ def build_human_node_factory(
         # Extract question from state
         question = question_extractor(state)
 
+        # Determine active role: use role_router if provided, else fall back to human_cfg.role
+        from atm.core.types import Phase
+
+        if role_router is not None:
+            _raw_phase = shared.get("phase", "execution")
+            active_phase: Phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+            active_role = await role_router.decide(active_phase, shared)
+        else:
+            active_role = human_cfg.role
+
         # Build HumanContext
         from atm.core.types import HumanContext
 
         ctx = HumanContext(
             run_id=run_id,
-            role=human_cfg.role,
+            role=active_role,
             question=question,
             recent_messages=tuple(state.get("messages", [])[-5:]),
             allowed_actions=("approve", "reject"),
@@ -245,7 +262,7 @@ def build_human_node_factory(
                     "run_id": run_id,
                     "request_id": request_id,
                     "role": str(
-                        human_cfg.role.value if hasattr(human_cfg.role, "value") else human_cfg.role
+                        active_role.value if hasattr(active_role, "value") else active_role
                     ),
                     "context_json": ctx.model_dump(mode="json"),
                     "requested_at": _requested_at,
