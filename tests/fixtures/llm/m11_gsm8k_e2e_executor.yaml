@@ -1,0 +1,18 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for M11 e2e integration test — Executor agent.
+# The executor emits "The answer is 42." as the final response.
+# GSM8KMatcher extracts the last numeric token ("42") from free text and
+# compares it to expected="42" via math.isclose → score=1.0.
+entries:
+  - agent_id: executor
+    role: executor
+    step_idx: 0
+    content: "The answer is 42."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 10
+      total_tokens: 70
+    model: "fake:scripted"

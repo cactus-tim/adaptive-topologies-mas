@@ -2,7 +2,7 @@
 
 Public API:
   - BudgetCfg, ModelCfg, ScratchpadCfg, AgentSetCfg, TopologyCfg, TaskCfg,
-    ObservabilityCfg, HumanCfg, ExperimentConfig
+    ObservabilityCfg, ExperimentConfig
   - load_config(path, overrides) -> ExperimentConfig
 
 Pipeline (arch.md §12.2):
@@ -112,8 +112,27 @@ class ObservabilityCfg(BaseModel):
     callback_sync: bool = False
 
 
+class EvaluationCfg(BaseModel):
+    """Post-hoc evaluation configuration (M11).
+
+    Controls the LLM judge used by the aggregator and self-consistency N.
+    Defaults are backward-compatible — existing YAML configs that do not
+    include an ``evaluation:`` section will use these values automatically.
+
+    Fields:
+        judge_model:             Model ID for LLM judge calls
+                                 (format: ``provider:model``).
+        judge_self_consistency_n: Number of independent judge calls when
+                                 using SelfConsistentJudge (1 = disabled).
+                                 Range: 1..10.
+    """
+
+    judge_model: str = "openai:gpt-4o"
+    judge_self_consistency_n: int = Field(default=3, ge=1, le=10)
+
+
 class HumanCfg(BaseModel):
-    """HITL gateway configuration (arch.md M9).
+    """HITL gateway configuration (arch.md M9/M9.1/M9.2).
 
     Controls whether human-in-the-loop is active, which gateway to use,
     which role the human plays, and how timeouts are handled.
@@ -122,24 +141,19 @@ class HumanCfg(BaseModel):
     as before — no ``human_reviewer`` node is inserted.
 
     ``model`` is an optional override for the LLM model used by
-    ``LLMSimulatedGateway``.  When ``None``, the gateway derives the model
-    from the top-level ``ModelCfg.default``.
+    ``LLMSimulatedGateway``. ``None`` -> derive from ModelCfg.default.
 
-    ``extra`` is an optional dict for per-topology HITL configuration (M9.1).
-    Keys are topology-specific (e.g. ``judge``, ``scope``, ``activation_round``,
-    ``override_coordinator``, ``human_can_override_router``).  Caller responsibility
-    for correct key naming — typos pass silently (per plan GAP-2).
+    ``extra`` is per-topology HITL configuration (M9.1). Keys are
+    topology-specific (e.g. ``judge``, ``scope``, ``activation_round``,
+    ``override_coordinator``, ``human_can_override_router``).
 
     M9.2 — Adaptive Role Router fields:
       ``role_router`` — strategy for selecting active HumanRole per-phase:
-        ``"fixed"``  (default) → use ``role`` directly; back-compat byte-identical.
-        ``"rule"``  → RuleBasedRoleRouter (table phase → HumanRole, optional override).
-        ``"llm"``    → LLMRoleRouter (LLM decides; falls back to rule on error).
+        ``"fixed"`` (default) → use ``role`` directly; back-compat byte-identical.
+        ``"rule"`` → RuleBasedRoleRouter (table phase → HumanRole, optional override).
+        ``"llm"`` → LLMRoleRouter (LLM decides; falls back to rule on error).
       ``role_table`` — optional override for the rule router's phase → HumanRole table.
-        Keys are Phase string values (``"planning"``, ``"execution"``, ...); values are
-        HumanRole string values. ``None`` → use DEFAULT_ROLE_TABLE.
-      ``role_router_model`` — optional LLM model override for ``LLMRoleRouter``.
-        ``None`` → derives from ``ModelCfg.default``.
+      ``role_router_model`` — optional LLM model override for LLMRoleRouter.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -151,7 +165,6 @@ class HumanCfg(BaseModel):
     timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
     model: str | None = None
     extra: dict[str, Any] | None = None
-    # M9.2 — Adaptive Role Router (defaults preserve back-compat)
     role_router: Literal["fixed", "rule", "llm"] = "fixed"
     role_table: dict[str, str] | None = None
     role_router_model: str | None = None
@@ -171,6 +184,7 @@ class ExperimentConfig(BaseModel):
     topology: TopologyCfg
     task: TaskCfg
     observability: ObservabilityCfg
+    evaluation: EvaluationCfg = Field(default_factory=lambda: EvaluationCfg())
     human: HumanCfg | None = None
 
     @model_validator(mode="after")

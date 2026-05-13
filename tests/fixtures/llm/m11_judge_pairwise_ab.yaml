@@ -1,0 +1,34 @@
+version: 1
+mode: scripted
+# Pairwise judge fixture — swap-consistent scenario.
+#
+# Scenario: answer_a is better than answer_b.
+#   AB call  (pairwise_judge_ab):  judge picks slot A → answer_a wins
+#   BA call  (pairwise_judge_ba):  judge picks slot A → but slot A is now answer_b
+#                                  so answer-relative winner is still answer_a → swap_consistent=True
+#
+# Responses use JSON {"winner": "A"/"B", "reasoning": "..."} format.
+entries:
+  - agent_id: pairwise_judge_ab
+    role: pairwise_judge_ab
+    step_idx: 0
+    content: '{"winner": "A", "reasoning": "Answer A is clearer and more concise."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"
+
+  - agent_id: pairwise_judge_ba
+    role: pairwise_judge_ba
+    step_idx: 0
+    content: '{"winner": "B", "reasoning": "Answer B (originally A) is better structured."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"

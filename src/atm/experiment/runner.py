@@ -11,7 +11,7 @@ Full lifecycle:
     8. Build initial_state with all 14 SharedState keys
     9. ainvoke(initial_state, config={callbacks, configurable:{thread_id}})
     10. parquet_writer.close()  — ALWAYS BEFORE _update_run_*
-    11. evaluate(cfg.task, final_state["shared"]["final_answer"])
+    11. compute_quality(spec, answer, sandbox, judge_llm, run_seed) via aggregator
     12. _update_run_success or _update_run_failed
     13. engine.dispose() in finally
 
@@ -43,9 +43,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.core.errors import BudgetExceededError
+from atm.core.seed import seed_all
 from atm.core.types import HumanRole, Phase
-from atm.evaluation import human_sim_cognitive_load_proxy
-from atm.experiment._evaluator import evaluate
+from atm.evaluation.aggregator import compute_quality
+from atm.evaluation.metrics import human_sim_cognitive_load_proxy
 from atm.experiment.config import ExperimentConfig, HumanCfg
 from atm.human.role_router import (
     DEFAULT_ROLE_TABLE,
@@ -62,6 +63,8 @@ from atm.storage.checkpointer import checkpointer_scope
 from atm.storage.models import Base, Experiment, FinishReason, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
+from atm.tasks import resolve_spec
+from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -81,29 +84,13 @@ def _build_role_router(
     Returns None for role_router="fixed" (or when human_cfg is None) as the
     back-compat short-circuit signal — topologies skip dynamic role lookup
     and use human_cfg.role directly, preserving pre-m9.2 behaviour byte-for-byte.
-
-    Args:
-        human_cfg:   HumanCfg section from ExperimentConfig (may be None).
-        llm_factory: Optional callable that returns an LLM object (e.g. LLMWrapper).
-                     Required when role_router="llm". The factory receives no
-                     arguments; the runner is responsible for capturing model/pricing
-                     context in the closure before passing the factory here.
-
-    Returns:
-        None for "fixed" strategy (or None cfg); RuleBasedRoleRouter for "rule";
-        LLMRoleRouter for "llm".
-
-    Raises:
-        ValueError: If human_cfg.role_router has an unrecognised value.
     """
     if human_cfg is None or human_cfg.role_router == "fixed":
-        # Back-compat: topology uses human_cfg.role directly; no router overhead.
         return None
 
     strategy = human_cfg.role_router
 
     if strategy == "rule":
-        # Build Phase→HumanRole table from role_table (string→string dict) or DEFAULT.
         if human_cfg.role_table is not None:
             table: dict[Phase, HumanRole] = {
                 Phase(k): HumanRole(v) for k, v in human_cfg.role_table.items()
@@ -114,7 +101,6 @@ def _build_role_router(
         return RuleBasedRoleRouter(table=table, fallback=fallback)
 
     if strategy == "llm":
-        # Build the Rule router first (serves as the LLM fallback).
         if human_cfg.role_table is not None:
             rule_table: dict[Phase, HumanRole] = {
                 Phase(k): HumanRole(v) for k, v in human_cfg.role_table.items()
@@ -122,8 +108,6 @@ def _build_role_router(
         else:
             rule_table = dict(DEFAULT_ROLE_TABLE)
         rule_router = RuleBasedRoleRouter(table=rule_table, fallback=human_cfg.role)
-
-        # Build the LLM instance via the provided factory.
         llm = llm_factory() if llm_factory is not None else None
         return LLMRoleRouter(llm=llm, fallback=rule_router)
 
@@ -291,7 +275,7 @@ async def _update_run_success(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: UUID,
     exp_id: UUID,
-    quality_score: float,
+    quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
     human_role: str | None = None,
@@ -299,22 +283,12 @@ async def _update_run_success(
 ) -> None:
     """Update run row to completed status.
 
-    Args:
-        session_factory:      Async session factory.
-        run_id:               UUID of the run row.
-        exp_id:               UUID of the parent experiment (unused directly but kept
-                              for call-site symmetry with _update_run_failed).
-        quality_score:        Evaluation quality score.
-        budget_spent_usd:     Total budget spent.
-        iterations:           Total iteration count.
-        human_role:           Dynamic role value from the last human_interactions row
-                              (if any). When not None, overwrites the static value that
-                              was written at INSERT time.  When None, the column is left
-                              as-is (initial value from cfg.human.role).
-        cognitive_load_proxy: NASA-TLX proxy float; always written (NULL is fine for
-                              Postgres — budget-failed runs get NULL implicitly).
+    M9.2 fields: ``human_role`` overrides the static cfg.human.role when a
+    dynamic role was selected by the RoleRouter during the run.
+    ``cognitive_load_proxy`` is the NASA-TLX proxy aggregated post-run from
+    ``human_interactions``. Both default to None for back-compat with non-HITL runs.
     """
-    values: dict[str, object] = {
+    values: dict[str, Any] = {
         "status": "completed",
         "finish_reason": FinishReason.SUCCESS.value,
         "quality_score": quality_score,
@@ -325,7 +299,6 @@ async def _update_run_success(
     }
     if human_role is not None:
         values["human_role"] = human_role
-
     async with session_scope(session_factory) as session:
         await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
@@ -335,26 +308,28 @@ async def _update_run_failed(
     run_id: UUID,
     status: str,
     finish_reason: str,
-    quality_score: float,
+    quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
     error_text: str | None = None,
+    human_role: str | None = None,
+    cognitive_load_proxy: float | None = None,
 ) -> None:
-    """Update run row to failed/budget_exceeded status."""
+    """Update run row to failed/budget_exceeded status (M9.2-aware)."""
+    values: dict[str, Any] = {
+        "status": status,
+        "finish_reason": finish_reason,
+        "quality_score": quality_score,
+        "budget_spent_usd": Decimal(str(budget_spent_usd)),
+        "iterations": iterations,
+        "finished_at": datetime.now(UTC),
+        "error": error_text,
+        "cognitive_load_proxy": cognitive_load_proxy,
+    }
+    if human_role is not None:
+        values["human_role"] = human_role
     async with session_scope(session_factory) as session:
-        await session.execute(
-            sa.update(Run)
-            .where(Run.id == run_id)
-            .values(
-                status=status,
-                finish_reason=finish_reason,
-                quality_score=quality_score,
-                budget_spent_usd=Decimal(str(budget_spent_usd)),
-                iterations=iterations,
-                finished_at=datetime.now(UTC),
-                error=error_text,
-            )
-        )
+        await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
 
 def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
@@ -572,9 +547,16 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
     exp_id: UUID | None = None
     run_id: UUID | None = None
     parquet_writer: ParquetWriter | None = None
+    judge_llm: LLMWrapper | None = None
+    quality_score: float | None = 0.0
     budget_spent: float = 0.0
     iterations: int = 0
     final_answer: str = ""
+    llms: dict[str, LLMWrapper] | None = None  # populated in try; read in finally
+    sandbox: Any | None = None  # populated in try; read in finally for digest capture
+
+    # Seed all RNGs for reproducibility before any stochastic work.
+    seed_all(cfg.seed)
 
     try:
         # Step 1: ensure experiment row exists
@@ -594,7 +576,26 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         pricing = _load_pricing()
 
-        # Step 4: build LLM wrappers per role
+        # Build judge LLM wrapper (shares the run's BudgetTracker).
+        # If construction fails (e.g. missing OPENAI_API_KEY when default judge_model
+        # is "openai:gpt-4o" but the run uses fake providers), silently fall back to
+        # judge_llm=None — the aggregator and ground_truth dispatch handle this and
+        # judge-required evaluators will surface a clear error at evaluation time.
+        try:
+            judge_llm = build_llm(
+                model_id=cfg.evaluation.judge_model,
+                pricing=pricing,
+                budget=budget,
+            )
+        except Exception as judge_build_exc:
+            logger.warning(
+                "judge LLM construction failed — proceeding without judge",
+                judge_model=cfg.evaluation.judge_model,
+                error=str(judge_build_exc)[:200],
+            )
+            judge_llm = None
+
+        # Step 4: build LLM wrappers per role (assigned to outer-scope var for finally block)
         llms = _build_llm_wrappers(cfg, budget, pricing)
 
         # Step 5: build agents
@@ -629,9 +630,10 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         # Step 9: run graph
         final_state: dict[str, Any]
 
-        # F4: Build a dedicated LLMWrapper for the HITL LLMSimulatedGateway when needed.
-        # The regular `llms` dict covers planning/execution roles; the human gateway
-        # needs its own wrapper so LLMSimulatedGateway receives a non-None llm arg.
+        # HITL wiring (M9/M9.1/M9.2) — built only when cfg.human.enabled.
+        # Topology builders that pre-date M9.1 ignore unknown kwargs; the spread
+        # is deferred via conditional dict so legacy build(agents, topology_cfg,
+        # checkpointer=...) keeps working byte-identical when HITL is off.
         human_gateway_llm: LLMWrapper | None = None
         if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
             human_model_id = cfg.human.model or cfg.model.default
@@ -641,8 +643,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 budget=budget,
             )
 
-        # Build role router. For "llm" strategy, the factory captures pricing/budget
-        # from the enclosing scope so build_llm is called with the correct model.
         def _role_router_llm_factory() -> LLMWrapper:
             role_model_id = (
                 cfg.human.role_router_model if cfg.human is not None else None
@@ -691,15 +691,34 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
         # Step 11: evaluate
-        quality_score = evaluate(cfg.task, final_answer)
+        sandbox = SubprocessSandbox()  # assigned to outer-scope var for finally digest capture
+        spec = resolve_spec(cfg.task)
+        if spec is None:
+            logger.debug(
+                "resolve_spec returned None (inline-prompt path); setting quality_score=0.0",
+                task=cfg.task.name,
+            )
+            quality_score = 0.0
+        else:
+            try:
+                quality_score, _details = await compute_quality(
+                    spec,
+                    final_answer,
+                    sandbox=sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning("compute_quality raised unexpectedly; setting quality_score=None")
+                quality_score = None
 
         # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
 
-        # Step 12a: resolve dynamic human_role and cognitive_load_proxy.
-        # Both operations are wrapped in try/except so that a DB or metric failure
-        # NEVER prevents _update_run_success from completing (fk M2).
-        # budget-failed runs skip this block entirely → both fields remain NULL (fk M3).
+        # Step 12a: resolve dynamic human_role + cognitive_load_proxy (M9.2 RQ4).
+        # Both ops wrapped in try/except — DB or metric failure must NEVER prevent
+        # _update_run_success from completing. Budget-failed/exception branches
+        # skip this block; both fields remain NULL there (acceptable per arch).
         dynamic_human_role: str | None = None
         dynamic_cog_proxy: float | None = None
 
@@ -709,7 +728,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                     sa.text(
                         "SELECT role FROM human_interactions"
                         " WHERE run_id = :rid"
-                        " ORDER BY requested_at DESC LIMIT 1"
+                        " ORDER BY requested_at DESC, id DESC LIMIT 1"
                     ).bindparams(rid=run_id)
                 )
                 last_role_row = last_role_result.fetchone()
@@ -769,7 +788,25 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         log.warning("budget exceeded", error=str(exc))
 
-        quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
+        _budget_exc_spec = resolve_spec(cfg.task)
+        if _budget_exc_spec is None or not final_answer or judge_llm is None:
+            quality_score = 0.0
+        else:
+            try:
+                _sandbox = SubprocessSandbox()
+                quality_score, _details = await compute_quality(
+                    _budget_exc_spec,
+                    final_answer,
+                    sandbox=_sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning(
+                    "compute_quality raised unexpectedly on budget exceeded; "
+                    "setting quality_score=None"
+                )
+                quality_score = None
 
         # FLUSH PARQUET BEFORE UPDATE (invariant — even on budget exceeded)
         if parquet_writer is not None:
@@ -810,7 +847,24 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         log.error("run failed", error=str(exc))
 
-        quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
+        _exc_spec = resolve_spec(cfg.task)
+        if _exc_spec is None or not final_answer or judge_llm is None:
+            quality_score = 0.0
+        else:
+            try:
+                _sandbox = SubprocessSandbox()
+                quality_score, _details = await compute_quality(
+                    _exc_spec,
+                    final_answer,
+                    sandbox=_sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning(
+                    "compute_quality raised unexpectedly on run failure; setting quality_score=None"
+                )
+                quality_score = None
         error_text = traceback.format_exc()
 
         # FLUSH PARQUET BEFORE UPDATE (invariant — even on failure)
@@ -838,4 +892,46 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         raise
 
     finally:
+        # Persist actual model versions reported by providers (G2 reproducibility).
+        # Runs in finally so even failed runs record provider fingerprints.
+        if run_id is not None and llms:
+            try:
+                snap = {
+                    role: w.last_model_version
+                    for role, w in llms.items()
+                    if getattr(w, "last_model_version", None) is not None
+                }
+                if snap:
+                    async with session_factory() as _snap_session:
+                        await _snap_session.execute(
+                            sa.update(Run)
+                            .where(Run.id == run_id)
+                            .values(model_version_snapshot=snap)
+                        )
+                        await _snap_session.commit()
+            except Exception as _snap_exc:
+                logger.warning(
+                    "model_version_snapshot UPDATE failed",
+                    error=str(_snap_exc)[:200],
+                )
+
+        # Persist sandbox image digest (G2 reproducibility).
+        # Only fires when sandbox has a non-None image_digest (i.e. DockerSandbox).
+        if run_id is not None and sandbox is not None:
+            _sandbox_digest = getattr(sandbox, "image_digest", None)
+            if _sandbox_digest is not None:
+                try:
+                    async with session_factory() as _dig_session:
+                        await _dig_session.execute(
+                            sa.update(Run)
+                            .where(Run.id == run_id)
+                            .values(sandbox_image_digest=_sandbox_digest[:80])
+                        )
+                        await _dig_session.commit()
+                except Exception as _dig_exc:
+                    logger.warning(
+                        "sandbox_image_digest UPDATE failed",
+                        error=str(_dig_exc)[:200],
+                    )
+
         await engine.dispose()

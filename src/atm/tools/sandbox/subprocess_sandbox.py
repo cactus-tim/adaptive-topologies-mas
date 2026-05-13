@@ -38,6 +38,8 @@ class SubprocessSandbox:
     ---------------
     IS_ISOLATED : ClassVar[bool]
         Always False — this sandbox shares the host filesystem and process tree.
+    image_digest : str | None
+        Always None — SubprocessSandbox does not use a container image.
 
     Notes
     -----
@@ -53,6 +55,7 @@ class SubprocessSandbox:
     """
 
     IS_ISOLATED: ClassVar[bool] = False
+    image_digest: ClassVar[str | None] = None
 
     async def execute(
         self,
