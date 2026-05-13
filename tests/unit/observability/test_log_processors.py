@@ -228,22 +228,20 @@ def test_bootstrap_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_bootstrap_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When ATM_DISABLE_STRUCTLOG_BOOTSTRAP is not set, the bootstrap runs configure_structlog.
+    """When ATM_DISABLE_STRUCTLOG_BOOTSTRAP is not set, atm.__init__ calls configure_structlog.
 
-    We verify the bootstrap LOGIC (env-gated import + call) directly rather than via
-    importlib.reload, which is sensitive to import caching of nested modules.
+    Verifies the actual production import path: reloading the atm package while the
+    env var is unset must invoke configure_structlog (the bootstrap block in
+    src/atm/__init__.py uses ``from atm.observability.log_processors import …``).
     """
     import unittest.mock as mock
+
+    import atm
 
     monkeypatch.delenv("ATM_DISABLE_STRUCTLOG_BOOTSTRAP", raising=False)
 
     with mock.patch("atm.observability.log_processors.configure_structlog") as mock_cfg:
-        import os
-
-        if os.environ.get("ATM_DISABLE_STRUCTLOG_BOOTSTRAP") != "1":
-            from atm.observability.log_processors import configure_structlog as _cfg
-
-            _cfg()
+        importlib.reload(atm)
         mock_cfg.assert_called_once()
 
 

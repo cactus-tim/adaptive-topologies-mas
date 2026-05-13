@@ -163,7 +163,7 @@ async def test_compute_and_persist_round_trip(
     await _insert_exp_and_run(factory, exp_id=exp_id, run_id=run_id)
 
     spec = _mmlu_spec()
-    answer = "A"  # correct answer for mmlu spec
+    answer = "42"  # correct answer for the gsm8k spec returned by helper
 
     # Mock score_ground_truth to return a passing EvalResult (correct MMLU answer)
     mock_result = EvalResult(score=1.0, passed=True, details={"match": True})

@@ -19,9 +19,9 @@ from atm.tasks.base import TASKS, TaskSpec
 
 
 def test_resolve_spec_registered_name_returns_task_spec() -> None:
-    """resolve_spec returns a TaskSpec for a registered dataset (mmlu)."""
-    # mmlu is registered by M10 via atm.tasks.mmlu side-effect import
-    # We patch TASKS.get to avoid needing actual dataset files
+    """resolve_spec returns a TaskSpec for a registered dataset (gsm8k post-M10)."""
+    # gsm8k is registered by M10 via atm.tasks.gsm8k side-effect import
+    # We patch TASKS.get/sample to avoid needing actual dataset files
     fake_spec = TaskSpec(
         id="mmlu/test/0",
         type="reasoning",

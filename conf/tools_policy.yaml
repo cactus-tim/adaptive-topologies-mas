@@ -1,5 +1,7 @@
 # Per-role tools policy (arch.md §5.3).
-# Ships with currently-registered tool names only. Add tools after registering them.
+# Role keys MUST match `AgentRole` values in src/atm/core/types.py (lowercase).
+# Tools listed here MUST already be registered in `ToolRegistry` (see src/atm/tools/);
+# unknown names raise ToolError lazily at `tools_for(role)` -> get(name) call sites.
 global:
   - calculator
   - file_read
@@ -7,16 +9,17 @@ global:
   - url_fetch
 
 per_role:
-  Planner:
+  planner:
     - plan_update
     - todo_write
-  Executor:
+  executor:
     - code_run
     - file_write
-  Critic:
+  critic:
     - diff
     - lint
     - test_run
-  Researcher:
+  researcher:
     - semantic_search
-# NOTE: legacy spec mentions arxiv_search; substitute with the registered search backend (duckduckgo_search in global).
+# NOTE: legacy spec mentions arxiv_search; substitute with the registered
+# search backend (duckduckgo_search in global).
