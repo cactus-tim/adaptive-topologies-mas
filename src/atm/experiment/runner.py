@@ -11,7 +11,7 @@ Full lifecycle:
     8. Build initial_state with all 14 SharedState keys
     9. ainvoke(initial_state, config={callbacks, configurable:{thread_id}})
     10. parquet_writer.close()  — ALWAYS BEFORE _update_run_*
-    11. evaluate(cfg.task, final_state["shared"]["final_answer"])
+    11. compute_quality(spec, answer, sandbox, judge_llm, run_seed) via aggregator
     12. _update_run_success or _update_run_failed
     13. engine.dispose() in finally
 
@@ -42,8 +42,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.core.errors import BudgetExceededError
+from atm.core.seed import seed_all
 from atm.core.types import Phase
-from atm.experiment._evaluator import evaluate
+from atm.evaluation.aggregator import compute_quality
 from atm.experiment.config import ExperimentConfig
 from atm.llm.budget import BudgetLevel, BudgetTracker
 from atm.llm.factory import build_llm
@@ -54,6 +55,8 @@ from atm.storage.checkpointer import checkpointer_scope
 from atm.storage.models import Base, Experiment, FinishReason, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
+from atm.tasks import resolve_spec
+from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -215,7 +218,7 @@ async def _update_run_success(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: UUID,
     exp_id: UUID,
-    quality_score: float,
+    quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
 ) -> None:
@@ -240,7 +243,7 @@ async def _update_run_failed(
     run_id: UUID,
     status: str,
     finish_reason: str,
-    quality_score: float,
+    quality_score: float | None,
     budget_spent_usd: float,
     iterations: int,
     error_text: str | None = None,
@@ -476,9 +479,16 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
     exp_id: UUID | None = None
     run_id: UUID | None = None
     parquet_writer: ParquetWriter | None = None
+    judge_llm: LLMWrapper | None = None
+    quality_score: float | None = 0.0
     budget_spent: float = 0.0
     iterations: int = 0
     final_answer: str = ""
+    llms: dict[str, LLMWrapper] | None = None  # populated in try; read in finally
+    sandbox: Any | None = None  # populated in try; read in finally for digest capture
+
+    # Seed all RNGs for reproducibility before any stochastic work.
+    seed_all(cfg.seed)
 
     try:
         # Step 1: ensure experiment row exists
@@ -498,7 +508,26 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         pricing = _load_pricing()
 
-        # Step 4: build LLM wrappers per role
+        # Build judge LLM wrapper (shares the run's BudgetTracker).
+        # If construction fails (e.g. missing OPENAI_API_KEY when default judge_model
+        # is "openai:gpt-4o" but the run uses fake providers), silently fall back to
+        # judge_llm=None — the aggregator and ground_truth dispatch handle this and
+        # judge-required evaluators will surface a clear error at evaluation time.
+        try:
+            judge_llm = build_llm(
+                model_id=cfg.evaluation.judge_model,
+                pricing=pricing,
+                budget=budget,
+            )
+        except Exception as judge_build_exc:
+            logger.warning(
+                "judge LLM construction failed — proceeding without judge",
+                judge_model=cfg.evaluation.judge_model,
+                error=str(judge_build_exc)[:200],
+            )
+            judge_llm = None
+
+        # Step 4: build LLM wrappers per role (assigned to outer-scope var for finally block)
         llms = _build_llm_wrappers(cfg, budget, pricing)
 
         # Step 5: build agents
@@ -566,7 +595,26 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
         # Step 11: evaluate
-        quality_score = evaluate(cfg.task, final_answer)
+        sandbox = SubprocessSandbox()  # assigned to outer-scope var for finally digest capture
+        spec = resolve_spec(cfg.task)
+        if spec is None:
+            logger.debug(
+                "resolve_spec returned None (inline-prompt path); setting quality_score=0.0",
+                task=cfg.task.name,
+            )
+            quality_score = 0.0
+        else:
+            try:
+                quality_score, _details = await compute_quality(
+                    spec,
+                    final_answer,
+                    sandbox=sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning("compute_quality raised unexpectedly; setting quality_score=None")
+                quality_score = None
 
         # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
@@ -606,7 +654,25 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         log.warning("budget exceeded", error=str(exc))
 
-        quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
+        _budget_exc_spec = resolve_spec(cfg.task)
+        if _budget_exc_spec is None or not final_answer or judge_llm is None:
+            quality_score = 0.0
+        else:
+            try:
+                _sandbox = SubprocessSandbox()
+                quality_score, _details = await compute_quality(
+                    _budget_exc_spec,
+                    final_answer,
+                    sandbox=_sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning(
+                    "compute_quality raised unexpectedly on budget exceeded; "
+                    "setting quality_score=None"
+                )
+                quality_score = None
 
         # FLUSH PARQUET BEFORE UPDATE (invariant — even on budget exceeded)
         if parquet_writer is not None:
@@ -647,7 +713,24 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         log.error("run failed", error=str(exc))
 
-        quality_score = evaluate(cfg.task, final_answer) if final_answer else 0.0
+        _exc_spec = resolve_spec(cfg.task)
+        if _exc_spec is None or not final_answer or judge_llm is None:
+            quality_score = 0.0
+        else:
+            try:
+                _sandbox = SubprocessSandbox()
+                quality_score, _details = await compute_quality(
+                    _exc_spec,
+                    final_answer,
+                    sandbox=_sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                logger.warning(
+                    "compute_quality raised unexpectedly on run failure; setting quality_score=None"
+                )
+                quality_score = None
         error_text = traceback.format_exc()
 
         # FLUSH PARQUET BEFORE UPDATE (invariant — even on failure)
@@ -675,4 +758,46 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         raise
 
     finally:
+        # Persist actual model versions reported by providers (G2 reproducibility).
+        # Runs in finally so even failed runs record provider fingerprints.
+        if run_id is not None and llms:
+            try:
+                snap = {
+                    role: w.last_model_version
+                    for role, w in llms.items()
+                    if getattr(w, "last_model_version", None) is not None
+                }
+                if snap:
+                    async with session_factory() as _snap_session:
+                        await _snap_session.execute(
+                            sa.update(Run)
+                            .where(Run.id == run_id)
+                            .values(model_version_snapshot=snap)
+                        )
+                        await _snap_session.commit()
+            except Exception as _snap_exc:
+                logger.warning(
+                    "model_version_snapshot UPDATE failed",
+                    error=str(_snap_exc)[:200],
+                )
+
+        # Persist sandbox image digest (G2 reproducibility).
+        # Only fires when sandbox has a non-None image_digest (i.e. DockerSandbox).
+        if run_id is not None and sandbox is not None:
+            _sandbox_digest = getattr(sandbox, "image_digest", None)
+            if _sandbox_digest is not None:
+                try:
+                    async with session_factory() as _dig_session:
+                        await _dig_session.execute(
+                            sa.update(Run)
+                            .where(Run.id == run_id)
+                            .values(sandbox_image_digest=_sandbox_digest[:80])
+                        )
+                        await _dig_session.commit()
+                except Exception as _dig_exc:
+                    logger.warning(
+                        "sandbox_image_digest UPDATE failed",
+                        error=str(_dig_exc)[:200],
+                    )
+
         await engine.dispose()

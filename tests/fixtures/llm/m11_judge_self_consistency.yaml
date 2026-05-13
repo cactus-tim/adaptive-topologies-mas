@@ -1,0 +1,58 @@
+version: 1
+mode: scripted
+# Self-consistency judge fixture — 3 independent calls with shuffled rubric.
+# Also contains a single rubric_judge entry for RubricJudge unit tests.
+#
+# Scenario: 3 rubric calls returning scores 8, 6, 7 (0..10 scale).
+# After normalisation: 0.8, 0.6, 0.7 → mean = 0.7
+#
+# agent_id: self_consistency_judge (used for all 3 calls; step_idx increments).
+# agent_id: rubric_judge           (used for RubricJudge unit test).
+entries:
+  - agent_id: rubric_judge
+    role: rubric_judge
+    step_idx: 0
+    content: '{"score": 8, "reasoning": "Strong answer with good structure."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 100
+      output_tokens: 15
+      total_tokens: 115
+    model: "fake:scripted"
+
+  - agent_id: self_consistency_judge
+    role: self_consistency_judge
+    step_idx: 0
+    content: '{"score": 8, "reasoning": "Strong answer with good structure."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 100
+      output_tokens: 15
+      total_tokens: 115
+    model: "fake:scripted"
+
+  - agent_id: self_consistency_judge
+    role: self_consistency_judge
+    step_idx: 1
+    content: '{"score": 6, "reasoning": "Decent answer but lacks detail."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 100
+      output_tokens: 15
+      total_tokens: 115
+    model: "fake:scripted"
+
+  - agent_id: self_consistency_judge
+    role: self_consistency_judge
+    step_idx: 2
+    content: '{"score": 7, "reasoning": "Good answer with minor gaps."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 100
+      output_tokens: 15
+      total_tokens: 115
+    model: "fake:scripted"
