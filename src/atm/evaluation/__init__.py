@@ -22,6 +22,7 @@ from atm.evaluation.metrics import (
     aggregate_human_load,
     aggregate_quality,
     cost_per_quality,
+    human_sim_cognitive_load_proxy,
     humaneval_pass_at_k,
     time_per_quality,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "aggregate_tlx",
     "compute_quality",
     "cost_per_quality",
+    "human_sim_cognitive_load_proxy",
     "humaneval_pass_at_k",
     "persist_quality",
     "persist_tlx",
