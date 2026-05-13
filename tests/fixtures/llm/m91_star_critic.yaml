@@ -1,0 +1,17 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM for StarTopology HITL integration test — Critic agent.
+# Used by: tests/integration/human/test_hitl_star.py
+# Single step: critic approves the executor output.
+entries:
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "APPROVE - task completed correctly."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 70
+      output_tokens: 10
+      total_tokens: 80
+    model: "fake:scripted"

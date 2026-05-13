@@ -1,0 +1,49 @@
+version: 1
+mode: scripted
+# FakeLLM scripted fixture for the Star + RuleBasedRoleRouter integration test.
+# Used by: tests/integration/human/test_role_router_star_e2e.py
+#
+# RuleBasedRoleRouter does NOT make LLM calls; only LLMSimulatedGateway does.
+# We dispatch 3 human interactions (one per phase: planning / execution / verification),
+# so 3 LLM-simulator entries are needed.
+#
+# All three gateway calls return "approve" to keep the simulated run moving forward.
+entries:
+  # Phase: planning  → role: coordinator (via DEFAULT_ROLE_TABLE)
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "approve", "payload": {}, "comment": "approved in planning phase"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 110
+      output_tokens: 15
+      total_tokens: 125
+    model: "fake:scripted"
+
+  # Phase: execution  → role: peer (via DEFAULT_ROLE_TABLE)
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 1
+    content: '{"action": "approve", "payload": {}, "comment": "approved in execution phase"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 110
+      output_tokens: 15
+      total_tokens: 125
+    model: "fake:scripted"
+
+  # Phase: verification  → role: reviewer (via DEFAULT_ROLE_TABLE)
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 2
+    content: '{"action": "approve", "payload": {}, "comment": "approved in verification phase"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 110
+      output_tokens: 15
+      total_tokens: 125
+    model: "fake:scripted"
