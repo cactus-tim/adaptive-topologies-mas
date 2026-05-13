@@ -63,8 +63,9 @@ async def compute_quality(
                    Judge LLM calls share the run's BudgetTracker; pass the
                    same LLMWrapper used during the run so costs are attributed
                    to the correct run budget.
-        judge_llm: An LLMLike instance — required for creative_judge /
-                   analysis_hybrid.  Judge calls share the run's BudgetTracker.
+        judge_llm: An LLMLike instance — required by evaluators that take
+                   a judge_llm kwarg (see _DEPS in ground_truth.py).
+                   Judge calls share the run's BudgetTracker.
         run_seed:  Seed for self-consistency judge call reproducibility
                    (reserved for future SelfConsistentJudge wiring).
 
