@@ -37,6 +37,7 @@ from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
 if TYPE_CHECKING:
     from atm.experiment.config import HumanCfg
     from atm.human.gateway import HumanGateway
+    from atm.human.role_router import HumanRoleRouter
 
 logger = logging.getLogger(__name__)
 
@@ -110,24 +111,30 @@ except ImportError:  # pragma: no cover
 def _build_human_reviewer_node(
     human_cfg: HumanCfg,
     gateway: HumanGateway,
+    role_router: HumanRoleRouter | None = None,
 ) -> Any:
     """Build and return an async node function for the human_reviewer step.
 
     The node:
       1. Reads run_id from state["shared"] (raises RuntimeError if missing).
-      2. Builds a HumanContext from state.
-      3. Computes request_id = f"chain:{iter_total}:reviewer".
-      4. Dispatches 'human_request' custom event (BEFORE gateway call).
-      5. Calls gateway.request (via request_with_timeout).
-      6. Dispatches 'human_response' custom event.
-      7. Updates state based on action:
+      2. Determines active role: if role_router is not None, calls
+         role_router.decide(phase, shared); otherwise uses human_cfg.role.
+      3. Builds a HumanContext from state using the active role.
+      4. Computes request_id = f"chain:{iter_total}:reviewer".
+      5. Dispatches 'human_request' custom event (BEFORE gateway call).
+      6. Calls gateway.request (via request_with_timeout).
+      7. Dispatches 'human_response' custom event.
+      8. Updates state based on action:
            approve  → shared["human_approved"] = True
            reject   → append synthesized Message + shared["needs_rerun"] = True
            abstain/timeout → no-op
 
     Args:
-        human_cfg: HumanCfg with gateway config, role, timeout settings.
-        gateway:   Pre-constructed HumanGateway instance to call.
+        human_cfg:   HumanCfg with gateway config, role, timeout settings.
+        gateway:     Pre-constructed HumanGateway instance to call.
+        role_router: Optional HumanRoleRouter; when None (default), human_cfg.role
+                     is used (back-compat).  When provided, decide() determines the
+                     active role for each interaction.
 
     Returns:
         An async function compatible with LangGraph node signature.
@@ -168,9 +175,21 @@ def _build_human_reviewer_node(
         if not isinstance(run_id, _uuid.UUID):
             run_id = _uuid.UUID(str(run_id))
 
+        # Determine active role: router takes precedence over human_cfg.role
+        from atm.core.types import Phase as _Phase
+
+        if role_router is not None:
+            _raw_phase = shared.get("phase", "execution")
+            _active_phase: _Phase = (
+                _Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+            )
+            active_role = await role_router.decide(_active_phase, shared)
+        else:
+            active_role = human_cfg.role
+
         ctx = HumanContext(
             run_id=run_id,
-            role=human_cfg.role,
+            role=active_role,
             question=question,
             recent_messages=recent_messages,
             allowed_actions=("approve", "reject", "abstain"),
@@ -187,7 +206,7 @@ def _build_human_reviewer_node(
                     "run_id": run_id,
                     "request_id": request_id,
                     "role": str(
-                        human_cfg.role.value if hasattr(human_cfg.role, "value") else human_cfg.role
+                        active_role.value if hasattr(active_role, "value") else active_role
                     ),
                     "context_json": ctx.model_dump(mode="json"),
                     "requested_at": datetime.now(UTC),
@@ -490,7 +509,10 @@ class ChainTopology:
                     "Ensure atm.human is installed."
                 )
 
-            node_fn = _build_human_reviewer_node(human_cfg, gateway_instance)
+            role_router = kwargs.get("role_router")
+            node_fn = _build_human_reviewer_node(
+                human_cfg, gateway_instance, role_router=role_router
+            )
             graph.add_node("human_reviewer", node_fn)
 
             # critic_postprocess → human_reviewer → conditional

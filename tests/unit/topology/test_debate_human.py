@@ -706,3 +706,188 @@ class TestDebateBuildValidation:
             ValueError, match="debater_pro_id and debater_contra_id must be different"
         ):
             topology.build(agents, cfg)
+
+
+# ---------------------------------------------------------------------------
+# Group 9 — role_router integration: back-compat + dynamic for both HITL points
+# ---------------------------------------------------------------------------
+
+
+class TestDebateRoleRouter:
+    """role_router=None → back-compat (human_cfg.role); role_router set → dynamic role."""
+
+    def setup_method(self) -> None:
+        _ensure_debate_registered()
+
+    # ---- Helper: build and run human_judge_node directly ----
+
+    def _run_human_judge_node(
+        self,
+        role: HumanRole,
+        role_router: Any | None,
+    ) -> list[HumanRole]:
+        """Run _build_human_judge_node and capture HumanContext.role values."""
+        from atm.core.types import HumanContext
+
+        run_id = uuid.uuid4()
+        state = _make_state(
+            run_id=run_id,
+            debater_pro_outbox=[_make_draft_msg("pro argument")],
+            debater_contra_outbox=[_make_draft_msg("contra argument")],
+        )
+
+        captured_roles: list[HumanRole] = []
+
+        mock_gateway = MagicMock()
+
+        async def capturing_request(ctx: HumanContext, *, request_id: str) -> Any:
+            captured_roles.append(ctx.role)
+            return _make_approve_response()
+
+        mock_gateway.request = capturing_request
+        human_cfg = _make_human_cfg(judge_mode="human", role=role)
+
+        node_fn = _build_human_judge_node(
+            human_cfg,
+            mock_gateway,
+            judge_id="judge",
+            debater_pro_id="debater_pro",
+            debater_contra_id="debater_contra",
+            role_router=role_router,
+        )
+
+        with patch(
+            "atm.topology.debate.adispatch_custom_event", new_callable=AsyncMock
+        ) as mock_dispatch:
+            mock_dispatch.return_value = None
+            asyncio.run(node_fn(state))
+
+        return captured_roles
+
+    @pytest.mark.parametrize(
+        "use_router,cfg_role,expected_role",
+        [
+            (False, HumanRole.JUDGE, HumanRole.JUDGE),  # back-compat: no router, uses cfg role
+            (
+                True,
+                HumanRole.REVIEWER,
+                HumanRole.COORDINATOR,
+            ),  # dynamic: router returns COORDINATOR
+        ],
+        ids=["back_compat", "dynamic"],
+    )
+    def test_human_mode_judge_pre_role(
+        self,
+        use_router: bool,
+        cfg_role: HumanRole,
+        expected_role: HumanRole,
+    ) -> None:
+        """judge_pre HITL point: back-compat uses human_cfg.role; dynamic uses router.decide()."""
+        from atm.human.role_router import FixedRoleRouter
+
+        router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
+        roles = self._run_human_judge_node(role=cfg_role, role_router=router)
+
+        assert len(roles) == 1, f"Expected exactly 1 gateway call, got {len(roles)}"
+        assert roles[0] == expected_role, f"Expected role={expected_role!r}, got {roles[0]!r}"
+
+    # ---- Helper: build and run judge_combined node (both mode) ----
+
+    def _run_judge_combined_node(
+        self,
+        cfg_role: HumanRole,
+        role_router: Any | None,
+    ) -> list[HumanRole]:
+        """Build Debate in 'both' mode and capture HumanContext.role from gateway."""
+        from atm.core.types import HumanContext
+
+        run_id = uuid.uuid4()
+        state = _make_state(
+            run_id=run_id,
+            debater_pro_outbox=[_make_draft_msg("pro argument here")],
+            debater_contra_outbox=[_make_draft_msg("contra argument here")],
+        )
+
+        captured_roles: list[HumanRole] = []
+
+        agents = {
+            "planner": _make_mock_agent(),
+            "debater_pro": _make_mock_agent(),
+            "debater_contra": _make_mock_agent(),
+            "judge": _make_mock_agent(),
+        }
+        decision = _make_decision_msg(approved=True, winner="pro")
+        agents["judge"].step = AsyncMock(return_value={"agents": {"judge": {"outbox": [decision]}}})
+
+        cfg = _make_cfg()
+        human_cfg = _make_human_cfg(judge_mode="both", role=cfg_role)
+
+        mock_gateway = MagicMock()
+
+        async def capturing_request(ctx: HumanContext, *, request_id: str) -> Any:
+            captured_roles.append(ctx.role)
+            return _make_approve_response()
+
+        mock_gateway.request = capturing_request
+
+        captured_nodes: dict[str, Any] = {}
+
+        def capture_add_node(name: str, fn: Any) -> None:
+            captured_nodes[name] = fn
+
+        mock_graph = MagicMock()
+        mock_graph.add_node.side_effect = capture_add_node
+        mock_graph.add_edge.return_value = None
+        mock_graph.add_conditional_edges.return_value = None
+        mock_graph.compile.return_value = MagicMock()
+
+        with patch("atm.topology.debate.StateGraph", return_value=mock_graph):
+            topology = DebateTopology()
+            topology.build(
+                agents,
+                cfg,
+                human_cfg=human_cfg,
+                gateway=mock_gateway,
+                role_router=role_router,
+            )
+
+        node_fn = captured_nodes["judge_combined"]
+
+        with patch(
+            "atm.topology.debate.adispatch_custom_event", new_callable=AsyncMock
+        ) as mock_dispatch:
+            mock_dispatch.return_value = None
+            asyncio.run(node_fn(state))
+
+        return captured_roles
+
+    @pytest.mark.parametrize(
+        "use_router,cfg_role,expected_role",
+        [
+            (False, HumanRole.JUDGE, HumanRole.JUDGE),  # back-compat: no router, uses cfg role
+            (
+                True,
+                HumanRole.REVIEWER,
+                HumanRole.COORDINATOR,
+            ),  # dynamic: router returns COORDINATOR
+        ],
+        ids=["back_compat", "dynamic"],
+    )
+    def test_judge_combined_role(
+        self,
+        use_router: bool,
+        cfg_role: HumanRole,
+        expected_role: HumanRole,
+    ) -> None:
+        """judge_combined HITL point: back-compat uses human_cfg.role; dynamic uses router.decide()."""
+        from atm.human.role_router import FixedRoleRouter
+
+        router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
+        roles = self._run_judge_combined_node(cfg_role=cfg_role, role_router=router)
+
+        assert len(roles) == 1, (
+            f"Expected exactly 1 gateway call in judge_combined, got {len(roles)}"
+        )
+        assert roles[0] == expected_role, (
+            f"judge_combined: Expected role={expected_role!r}, got {roles[0]!r}"
+        )

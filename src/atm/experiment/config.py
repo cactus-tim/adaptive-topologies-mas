@@ -129,6 +129,17 @@ class HumanCfg(BaseModel):
     Keys are topology-specific (e.g. ``judge``, ``scope``, ``activation_round``,
     ``override_coordinator``, ``human_can_override_router``).  Caller responsibility
     for correct key naming — typos pass silently (per plan GAP-2).
+
+    M9.2 — Adaptive Role Router fields:
+      ``role_router`` — strategy for selecting active HumanRole per-phase:
+        ``"fixed"``  (default) → use ``role`` directly; back-compat byte-identical.
+        ``"rule"``  → RuleBasedRoleRouter (table phase → HumanRole, optional override).
+        ``"llm"``    → LLMRoleRouter (LLM decides; falls back to rule on error).
+      ``role_table`` — optional override for the rule router's phase → HumanRole table.
+        Keys are Phase string values (``"planning"``, ``"execution"``, ...); values are
+        HumanRole string values. ``None`` → use DEFAULT_ROLE_TABLE.
+      ``role_router_model`` — optional LLM model override for ``LLMRoleRouter``.
+        ``None`` → derives from ``ModelCfg.default``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -140,6 +151,10 @@ class HumanCfg(BaseModel):
     timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
     model: str | None = None
     extra: dict[str, Any] | None = None
+    # M9.2 — Adaptive Role Router (defaults preserve back-compat)
+    role_router: Literal["fixed", "rule", "llm"] = "fixed"
+    role_table: dict[str, str] | None = None
+    role_router_model: str | None = None
 
 
 class ExperimentConfig(BaseModel):

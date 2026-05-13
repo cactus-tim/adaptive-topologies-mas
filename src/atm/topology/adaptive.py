@@ -101,6 +101,7 @@ _log = logging.getLogger(__name__)
 _LLMSimulatedGateway: Any
 _CLIGateway: Any
 _request_with_timeout: Any
+_HumanRoleRouter: Any
 
 try:
     from atm.human.llm_simulated import LLMSimulatedGateway as _LLMSimulatedGateway
@@ -116,6 +117,11 @@ try:
     from atm.human._timeout import request_with_timeout as _request_with_timeout
 except ImportError:  # pragma: no cover
     _request_with_timeout = None
+
+try:
+    from atm.human.role_router import HumanRoleRouter as _HumanRoleRouter
+except ImportError:  # pragma: no cover
+    _HumanRoleRouter = None
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -356,6 +362,7 @@ class AdaptiveTopology:
         cfg: TopologyConfig,
         *,
         human_cfg: Any = None,
+        role_router: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Compile and return the L2 adaptive meta-graph.
@@ -363,14 +370,19 @@ class AdaptiveTopology:
         Returns a CompiledStateGraph ready for ainvoke(initial_state).
 
         Args:
-            agents:    Dict of agent_id → Agent.
-            cfg:       TopologyConfig. See class docstring for extra keys.
-            human_cfg: Optional HumanCfg (M9.1). When ``enabled=True``, inserts
-                       ``human_advisor`` between ``topology_router_node`` and
-                       ``dispatch_topology_node``.
-                       Extra keys in ``human_cfg.extra``:
-                         ``human_can_override_router`` (bool, default False):
-                             when True, human may override the router decision.
+            agents:      Dict of agent_id → Agent.
+            cfg:         TopologyConfig. See class docstring for extra keys.
+            human_cfg:   Optional HumanCfg (M9.1). When ``enabled=True``, inserts
+                         ``human_advisor`` between ``topology_router_node`` and
+                         ``dispatch_topology_node``.
+                         Extra keys in ``human_cfg.extra``:
+                           ``human_can_override_router`` (bool, default False):
+                               when True, human may override the router decision.
+            role_router: Optional HumanRoleRouter (M9.2). When not None, the
+                         human_advisor_node derives the active role dynamically via
+                         ``await role_router.decide(phase, shared)`` instead of
+                         using ``human_cfg.role`` directly.
+                         When None → back-compat behaviour: role = human_cfg.role.
         """
         extra = cfg.extra or {}
         checkpointer = kwargs.get("checkpointer")
@@ -458,11 +470,14 @@ class AdaptiveTopology:
         _topo_dec_slot: list[TopologyDecision | None] = [None]
 
         # ----------------------------------------------------------------
-        # HITL: human_advisor gateway setup (M9.1)
+        # HITL: human_advisor gateway setup (M9.1 / M9.2)
         # ----------------------------------------------------------------
         _hitl_enabled: bool = bool(human_cfg and getattr(human_cfg, "enabled", False))
         _gateway: Any = None
         _human_can_override: bool = False
+        # role_router captured in outer closure scope for use in human_advisor_node (M9.2).
+        # When None, the node falls back to human_cfg.role (back-compat).
+        _role_router: Any = role_router
 
         if _hitl_enabled:
             _human_extra: dict[str, Any] = dict(getattr(human_cfg, "extra", None) or {})
@@ -564,9 +579,18 @@ class AdaptiveTopology:
             iter_total: int = int(shared.get("iter_total", 0))
             request_id = f"adaptive:{run_id_val}:{iter_total}:advisor"
 
+            # M9.2: derive active role dynamically when role_router is provided.
+            # Phase coercion: raw value from shared may be a str or Phase instance.
+            if _role_router is not None:
+                _raw_phase = shared.get("phase", "planning")
+                _phase_val: Phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+                active_role = await _role_router.decide(_phase_val, shared)
+            else:
+                active_role = human_cfg.role
+
             ctx = HumanContext(
                 run_id=run_id_val,
-                role=human_cfg.role,
+                role=active_role,
                 question=(
                     f"TopologyRouter chose '{current_topo}'. "
                     f"Advisory: suggest a hint via action='advise' and payload.hint. "
@@ -589,9 +613,7 @@ class AdaptiveTopology:
                         "run_id": run_id_val,
                         "request_id": request_id,
                         "role": str(
-                            human_cfg.role.value
-                            if hasattr(human_cfg.role, "value")
-                            else human_cfg.role
+                            active_role.value if hasattr(active_role, "value") else active_role
                         ),
                         "context_json": ctx.model_dump(mode="json"),
                         "requested_at": _requested_at,

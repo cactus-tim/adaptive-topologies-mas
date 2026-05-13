@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-05-12*
+*Auto-generated. Last updated: 2026-05-13*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -21,11 +21,11 @@
   - `agents/` — Agent base class, Planner/Researcher/Executor/Critic/Debater roles, scratchpad policy C (M5)
   - `topology/` — Topology protocol + Registry, 5 implementations: Star + Chain (M6); Mesh + Debate + Hierarchical (M7 complete)
   - `phases/` — PhaseManager FSM, TopologyRouter, SwitchGuards, signals (M8)
-  - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway (M9)
+  - `human/` — HumanGateway protocol, LLMSimulatedGateway, CLI gateway, HumanRoleRouter + 3 strategies (M9 + M9.2)
   - `storage/` — SQLAlchemy models, async session, ParquetWriter, checkpointer wrapper (M3 complete)
   - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), serializers (M3 complete)
   - `tasks/` — TaskSpec base, HumanEval/MMLU/Creative/Analysis implementations (M10)
-  - `evaluation/` — LLM-as-judge, ground truth runners, metrics, NASA-TLX (M11)
+  - `evaluation/` — `human_sim_cognitive_load_proxy` metric (M9.2); LLM-as-judge, ground-truth runners (M11 planned)
   - `experiment/` — Pydantic config schemas + OmegaConf loader, single-run runner (`run_one`), Typer CLI (`atm run`), inline evaluator (M6 complete; grid + sweep in M12)
   - `analysis/` — Loaders, plots (M13)
 - `tests/` — unit, integration, fixtures
@@ -143,7 +143,13 @@
 - `runner.py` — `run_with_human(graph, initial_state, *, thread_id, gateway, ...)`: forward-compatible interrupt/resume orchestrator for M14+; detects `__interrupt__` key in ainvoke result; in-process idempotency cache on `(thread_id, request_id)`; `MaxInteractionsExceededError` guard (default `max_interactions=10`); >1 interrupt in single result → `RuntimeError`.
 - `prompts.py` — `ROLE_SYSTEM_PROMPTS: dict[HumanRole, str]` for 5 roles (Coordinator/Reviewer/Judge/Peer/Monitor); `build_role_prompt(role, ctx) -> tuple[str, str]` renders (system_prompt, user_prompt); `allowed_actions` mentioned in user prompt.
 
-**Exports (from `atm.human`):** `HumanGateway`, `HumanContext`, `HumanResponse`, `HumanRole`, `LLMSimulatedGateway`, `CLIGateway`, `request_with_timeout`, `run_with_human`, `MaxInteractionsExceededError`, `build_role_prompt`, `ROLE_SYSTEM_PROMPTS`.
+**Exports (from `atm.human`):** `HumanGateway`, `HumanContext`, `HumanResponse`, `HumanRole`, `LLMSimulatedGateway`, `CLIGateway`, `request_with_timeout`, `run_with_human`, `MaxInteractionsExceededError`, `build_role_prompt`, `ROLE_SYSTEM_PROMPTS`, `build_human_node_factory`, `HumanRoleRouter`, `FixedRoleRouter`, `RuleBasedRoleRouter`, `LLMRoleRouter` (M9.2).
+
+**M9.2 — `role_router.py`:**
+- `HumanRoleRouter` — `@runtime_checkable` Protocol; `async decide(phase, state) -> HumanRole`; structural subtyping.
+- `FixedRoleRouter(role)` — constant; back-compat default when `role_router="fixed"`.
+- `RuleBasedRoleRouter(table, fallback)` — phase→HumanRole table; `DEFAULT_ROLE_TABLE = {planning:COORDINATOR, execution:PEER, verification:REVIEWER, done:REVIEWER}`; `from_yaml(path)` loader; ValueError on unknown phase/role string.
+- `LLMRoleRouter(llm, fallback_router)` — LLM-judge via `_RoleRouterDecision` Pydantic model; `agent_id="role_router"`; falls back to rule-router on any failure (malformed JSON, unknown role, LLM exception, validation error).
 
 **Persistence:** emitted via `adispatch_custom_event("human_request"|"human_response", ...)` from the `human_reviewer` node in Chain topology; handled by `ExperimentCallbackHandler` (`callbacks.py`) which writes to `human_interactions` table. Single-writer invariant (arch.md §10.2); idempotency by PG UNIQUE constraint `uq_human_interactions_run_request` on `(run_id, request_id)` (migration `0002_human_interactions_idempotency.py`). `on_custom_event` handles two new event names: `human_request` (INSERT ON CONFLICT DO NOTHING) and `human_response` (UPDATE WHERE response_json IS NULL).
 
@@ -164,13 +170,19 @@
 
 **`decided_by` Literal (M9.1):** Both `TopologyDecision.decided_by` and `TopologyTransition.decided_by` in `src/atm/core/types.py` now include `"human_override"`. No Alembic migration needed (DB column is `String(24)`, 14-char value fits).
 
-**Deferred to M9.2:** Subgraph-level interrupt-resume for CLIGateway inside Hierarchical `scope="sub_team"` subgraphs. WARNING docstring present on `_build_subgraph_with_human` and `_build_human_sub_reviewer_node` in `hierarchical.py`.
+**M9.2 role routing across topologies:** all 6 HITL topologies (`Chain`/`Star`/`Mesh`/`Debate`/`Hierarchical`/`Adaptive`) accept `role_router: HumanRoleRouter | None = None` kwarg on `build(...)`. When `None` (or `HumanCfg.role_router=="fixed"`), behaviour is byte-identical to pre-M9.2 (uses `human_cfg.role`). When set, the HITL node closure calls `await router.decide(Phase(shared.get("phase", default)), shared)` and uses the result as `HumanContext.role`. Debate captures router in **outer `build()` scope** (used by both `judge_pre` and `judge_combined` via `_both_judge_postprocess` closure); Hierarchical threads router through `_build_subgraph_with_human` → `_build_human_sub_reviewer_node`. SharedState TypedDict NOT modified — role persisted via existing callback to `human_interactions.role`.
+
+**M9.2 runner finalization (`experiment/runner.py`):**
+- `_build_role_router(human_cfg, llm_factory) -> HumanRoleRouter | None`: returns `None` for `fixed` (back-compat short-circuit), `RuleBasedRoleRouter` for `rule`, `LLMRoleRouter(fallback=rule)` for `llm`, `ValueError` for unknown.
+- After successful run: SQL `SELECT role FROM human_interactions WHERE run_id=:rid ORDER BY requested_at DESC LIMIT 1` → `runs.human_role`; `await human_sim_cognitive_load_proxy(session, run_id)` → `runs.cognitive_load_proxy`. Both wrapped in `try/except` — failure → NULL, run still completes. `_update_run_failed` path (budget-exceeded) unchanged: NULL acceptable.
 
 **Cross-topology acceptance test:** `tests/integration/human/test_hitl_cross_topology.py` — 6 parametrized scenarios (one per topology), PG-gated via `ATM_ENABLE_PG_TESTS=1`. Each scenario asserts `human_interactions count >= 1` and `runs.human_role = 'reviewer'`.
 
-**Config:** `conf/human/llm_simulated.yaml` and `conf/human/cli.yaml` define `HumanCfg` parameters; `ExperimentConfig.human: HumanCfg | None = None` (default=None for back-compat).
+**M9.2 integration test:** `tests/integration/human/test_role_router_star_e2e.py` (`@pytest.mark.requires_postgres`) — Rule router across 3 phases → ≥2 distinct roles in `human_interactions`, `runs.human_role == roles[-1]`, `runs.cognitive_load_proxy > 0`.
 
-**Status:** M9 complete, M9.1 complete (all 6 topologies HITL-enabled).
+**Config:** `conf/human/llm_simulated.yaml`, `conf/human/cli.yaml`, `conf/human/role_table.yaml` (M9.2 phase→role) define `HumanCfg` parameters. `HumanCfg` M9.2 fields: `role_router: Literal["fixed","rule","llm"]="fixed"`, `role_table: dict[str,str] | None = None`, `role_router_model: str | None = None`.
+
+**Status:** M9 complete, M9.1 complete (all 6 topologies HITL-enabled), M9.2 complete (Adaptive Role Router + cognitive_load_proxy).
 
 ### Storage Layer (`storage/`) — M3 complete
 
@@ -199,14 +211,18 @@ LangGraph callback handler + serializers.
 ### Migrations (`alembic/`) — M3 complete
 
 - `versions/0001_initial_business_schema.py` — creates 6 business tables (not checkpoint tables; those are owned by `AsyncPostgresSaver.setup()`). Chained off `bc5f66dd0897` placeholder. Downgrade in reverse FK order.
+- `versions/0002_human_interactions_idempotency.py` (M9) — adds UNIQUE constraint `uq_human_interactions_run_request` on `(run_id, request_id)`.
+- `versions/0003_runs_cognitive_load_proxy.py` (M9.2) — adds nullable `cognitive_load_proxy: Float` column to `runs`.
 
 ### Tasks & Evaluation (`tasks/`, `evaluation/`)
+- **`evaluation/metrics.py` (M9.2):** `human_sim_cognitive_load_proxy(session, run_id) -> float` computes `alpha*count + beta*mean(ctx_len_bytes) + gamma*mean(latency_s)` from `human_interactions`; `_load_weights(path)` reads `conf/evaluation/cognitive_load.yaml` with safe defaults fallback.
 - **Exports (M10-M11 planned):** `TaskSpec`, `TaskRegistry`, evaluators, NASA-TLX aggregator.
-- **Status:** M0 skeleton, not started.
+- **Status:** M0 skeleton; M9.2 metric complete; M10-M11 evaluators not started.
 
 ### Experiment Runner & CLI (`experiment/`)
 - **Exports (M12 planned):** Pydantic schemas, `ConfigLoader`, `Runner`, `GridExecutor`, CLI commands.
-- **Status:** M0 skeleton, M12 not started.
+- **M9.2 enhancements:** `_build_role_router(human_cfg, llm_factory)` factory; `run_one()` post-success step queries last `human_interactions.role` and computes `cognitive_load_proxy`, writes both into `runs` via extended `_update_run_success(human_role, cognitive_load_proxy)` signature (both kwargs default `None` for back-compat).
+- **Status:** M0 skeleton, M6 basic runner complete, M9.2 role routing + metrics finalization complete; M12 grid + sweep not started.
 
 ### Analysis & Plots (`analysis/`)
 - **Exports (M13 planned):** `load_experiment()`, `load_llm_calls()`, `load_runs()`, plot functions.
