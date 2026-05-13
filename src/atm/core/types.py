@@ -331,7 +331,9 @@ class TopologyTransition(BaseModel):
     phase_at_decision: Phase
     iter_within_phase: int
     iter_within_topology: int  # 0 if this is a switch (new topology)
-    decided_by: Literal["rule", "llm_router", "oracle", "guard_override", "initial"]
+    decided_by: Literal[
+        "rule", "llm_router", "oracle", "guard_override", "initial", "human_override"
+    ]
     reason: str
     considered_alternatives: tuple[str, ...] = ()
     guards_applied: tuple[str, ...] = ()  # names of guards that fired
@@ -364,7 +366,9 @@ class TopologyDecision(BaseModel):
 
     topology: str  # one of the 5 registered topologies
     reason: str
-    decided_by: Literal["rule", "llm_router", "oracle", "guard_override", "initial"]
+    decided_by: Literal[
+        "rule", "llm_router", "oracle", "guard_override", "initial", "human_override"
+    ]
     considered_alternatives: tuple[str, ...] = ()
     router_cost_usd: float = 0.0  # >0 only for llm_router
 

@@ -24,6 +24,7 @@ import structlog
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from atm.core.types import Message, PhaseTransition
@@ -34,11 +35,14 @@ from atm.observability.serializers import (
     phase_transition_to_row,
     topology_transition_to_row,
 )
-from atm.storage.models import BudgetEvent, Experiment, Run
+from atm.storage.models import BudgetEvent, Experiment, HumanInteraction, Run
 from atm.storage.models import Phase as PhaseModel
 from atm.storage.models import TopologyTransition as TTModel
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import session_scope
+
+# Constraint name for idempotent INSERT in human_interactions (migration 0002)
+CONSTRAINT_NAME = "uq_human_interactions_run_request"
 
 
 def _now_utc() -> datetime:
@@ -367,6 +371,10 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             await self._handle_phase_transition(data)
         elif name == "topology_transition":
             await self._handle_topology_transition(data)
+        elif name == "human_request":
+            await self._handle_human_request(data)
+        elif name == "human_response":
+            await self._handle_human_response(data)
 
     async def _handle_message_emit(self, data: Any) -> None:
         """Write a Message to the messages Parquet stream."""
@@ -470,3 +478,84 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             self._log.critical(
                 "on_custom_event[topology_transition]: pg insert failed", exc_info=True
             )
+
+    async def _handle_human_request(self, data: Any) -> None:
+        """INSERT a new HumanInteraction row (idempotent via ON CONFLICT DO NOTHING).
+
+        ``data`` is expected to be a dict with keys:
+            run_id       (UUID)
+            request_id   (str, <=64 chars)
+            role         (str or HumanRole)
+            context_json (dict — HumanContext.model_dump())
+            requested_at (datetime, timezone-aware)
+
+        Duplicate ``(run_id, request_id)`` pairs are silently ignored thanks to
+        the UNIQUE constraint ``uq_human_interactions_run_request`` (migration 0002)
+        and the ``ON CONFLICT DO NOTHING`` clause.
+        """
+        try:
+            fields: dict[str, Any] = {
+                "id": uuid.uuid4(),
+                "run_id": data["run_id"],
+                "request_id": data["request_id"],
+                "role": str(data["role"]),
+                "context_json": data.get("context_json", {}),
+                "requested_at": data.get("requested_at", _now_utc()),
+                "response_json": None,
+            }
+            stmt = pg_insert(HumanInteraction).values(**fields)
+            stmt = stmt.on_conflict_do_nothing(constraint=CONSTRAINT_NAME)
+            async with session_scope(self._session_factory) as session:
+                await session.execute(stmt)
+        except Exception:
+            self._log.error("on_custom_event[human_request]: db insert failed", exc_info=True)
+
+    async def _handle_human_response(self, data: Any) -> None:
+        """UPDATE a HumanInteraction row with the human/gateway response.
+
+        Matches on ``(run_id, request_id)`` AND ``response_json IS NULL`` so the
+        UPDATE is idempotent — a re-executed node that re-dispatches this event
+        will not overwrite an already-filled response.
+
+        ``data`` is expected to be a dict with keys:
+            run_id        (UUID)
+            request_id    (str)
+            answered_at   (datetime, timezone-aware)
+            response_json (dict — HumanResponse.model_dump())
+            source        (str)
+            timed_out     (bool)
+            latency_s     (float | None)
+        """
+        try:
+            run_id: UUID = data["run_id"]
+            request_id: str = data["request_id"]
+            answered_at: datetime = data.get("answered_at", _now_utc())
+            response_json: dict[str, Any] = data.get("response_json", {})
+            source: str = data.get("source", "human")
+            timed_out: bool = bool(data.get("timed_out", False))
+            latency_s: float | None = data.get("latency_s")
+
+            stmt = (
+                update(HumanInteraction)
+                .where(
+                    HumanInteraction.run_id == run_id,
+                    HumanInteraction.request_id == request_id,
+                    HumanInteraction.response_json.is_(None),
+                )
+                .values(
+                    answered_at=answered_at,
+                    response_json=response_json,
+                )
+            )
+            # Store source, timed_out, latency_s inside response_json if not already there,
+            # or as separate computed values. Since the model has no dedicated columns for
+            # these (they live in response_json as per HumanResponse.model_dump()), the
+            # caller should include them in response_json. We log them for diagnostics.
+            _ = source  # used by caller via response_json; kept for future column expansion
+            _ = timed_out
+            _ = latency_s
+
+            async with session_scope(self._session_factory) as session:
+                await session.execute(stmt)
+        except Exception:
+            self._log.error("on_custom_event[human_response]: db update failed", exc_info=True)

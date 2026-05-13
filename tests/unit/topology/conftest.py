@@ -17,11 +17,6 @@ import pytest
 
 from atm.topology.base import TopologyRegistry
 
-# m10-merge-m8 (Wave 7): test_*_human.py modules require m8 topology HITL
-# helpers (e.g. _build_human_judge_node, _DEFAULT_HUMAN_ACTIVATION_ROUND) that
-# arrive only in Wave 9 final merge. Skip-collect them until then.
-collect_ignore_glob = ["test_*_human.py"]
-
 # Mapping of topology name → (module_name, class_attribute_name)
 _TOPOLOGY_MODULES: list[tuple[str, str, str]] = [
     ("star", "atm.topology.star", "StarTopology"),

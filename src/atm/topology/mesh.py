@@ -7,15 +7,21 @@ Architecture (arch.md §7.3):
   messages to shared.broadcast_bus (capped at broadcast_bus_cap).
   mesh_postprocess tallies DECISION votes and checks for consensus.
 
-Graph structure:
+Graph structure (without HITL):
   START → dispatcher → agent_node → mesh_broadcast → mesh_postprocess
           ↑                                              |
           |_____________loop (no consensus)______________|
           |____________END  (consensus or max_rounds)____|
 
+Graph structure (with HITL, human_cfg.enabled=True):
+  human_peer is inserted into agent_order and participates in round-robin.
+  human_peer is skipped by the dispatcher until activation_round is reached
+  (default 2). human_peer votes via shared.broadcast_bus DECISION messages.
+
 Nodes:
   dispatcher, planner, researcher, executor, critic,
   mesh_broadcast, mesh_postprocess
+  (+ human_peer when human_cfg.enabled=True)
 
 TopologyConfig.extra keys:
   max_rounds           — max dispatch rounds before forced END (default 6)
@@ -24,6 +30,11 @@ TopologyConfig.extra keys:
   agent_order          — list of agent_ids for round-robin ordering
   broadcast_bus_cap    — hard cap on broadcast_bus list length (default 200, MC-5)
 
+HumanCfg.extra keys (when human_cfg.enabled=True):
+  activation_round     — first dispatch_round when human_peer participates (default 2)
+  on_consensus_pending — if True, human_peer also fires when consensus_pending signal
+                         is raised (default False)
+
 Stopping precedence (arch.md §7.1):
   budget → (raised upstream by LLMWrapper as BudgetExceededError)
   max_iter (global) → topology_success (consensus) → topology_max (max_rounds) → continue
@@ -31,6 +42,15 @@ Stopping precedence (arch.md §7.1):
 Vote payload format (MC-7 / task 2.2 test_consensus_vote_payload_str_format):
   MessageKind.DECISION with payload={"vote_for": str}
   Non-string vote_for values are silently ignored during tally.
+
+Design note — inline closure vs. build_human_node_factory:
+  Mesh's human_peer uses an inline closure (not ``build_human_node_factory``) because
+  broadcast_bus voting semantics and round-aware activation are tightly coupled to
+  mesh's dispatcher.  The node must read ``_mesh_dispatch_round`` from signals and
+  append a DECISION vote directly to ``broadcast_bus``, rather than writing
+  ``shared["human_approved"]`` / ``needs_rerun`` (the factory's default behaviour).
+  Migration to the shared factory would require a new ``apply_decision`` overload that
+  knows about broadcast_bus; this is deferred to a future refactor.
 """
 
 from __future__ import annotations
@@ -44,6 +64,38 @@ from atm.core.state import GraphState
 from atm.core.types import MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
 
+# ---------------------------------------------------------------------------
+# Lazy imports for HITL — patchable in tests
+# ---------------------------------------------------------------------------
+# These are set to None if the respective module is unavailable at import time.
+# Tests patch "atm.topology.mesh.<Name>" to inject stubs.
+# Typed as Any to allow both the class/function and None without mypy complaints.
+
+LLMSimulatedGateway: Any
+CLIGateway: Any
+request_with_timeout: Any
+
+try:
+    from atm.human.llm_simulated import LLMSimulatedGateway as LLMSimulatedGateway
+except ImportError:  # pragma: no cover
+    LLMSimulatedGateway = None
+
+try:
+    from atm.human.cli_gateway import CLIGateway as CLIGateway
+except ImportError:  # pragma: no cover
+    CLIGateway = None
+
+try:
+    from atm.human._timeout import request_with_timeout as request_with_timeout
+except ImportError:  # pragma: no cover
+    request_with_timeout = None
+
+HumanRoleRouter: Any
+try:
+    from atm.human.role_router import HumanRoleRouter as HumanRoleRouter
+except ImportError:  # pragma: no cover
+    HumanRoleRouter = None
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -55,6 +107,10 @@ _DEFAULT_CONSENSUS_THRESHOLD = 3
 _DEFAULT_BROADCAST_BUS_CAP = 200
 _DEFAULT_ACTIVATION_POLICY = "round_robin"
 _DEFAULT_AGENT_ORDER = ["planner", "researcher", "executor", "critic"]
+
+# HITL constants
+_DEFAULT_HUMAN_ACTIVATION_ROUND = 2
+_HUMAN_PEER_ID = "human_peer"
 
 # Route sentinels
 _ROUTE_AGENT_PREFIX = "agent:"  # sentinel prefix for dispatcher → agent routing
@@ -103,6 +159,10 @@ class MeshTopology:
                     planner, researcher, executor, critic.
             cfg:    TopologyConfig with max_iterations and extra mesh params.
             **kwargs: Optional; checkpointer=... forwarded to graph.compile().
+                      human_cfg=HumanCfg enables HITL (human_peer in agent_order).
+                      human_gateway_llm=LLMWrapper forwarded to LLMSimulatedGateway.
+                      role_router=HumanRoleRouter | None — when not None, overrides
+                          human_cfg.role dynamically via await role_router.decide(phase, state).
 
         Returns:
             CompiledStateGraph ready for ainvoke.
@@ -119,11 +179,60 @@ class MeshTopology:
         broadcast_bus_cap: int = int(extra.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP))
 
         # ----------------------------------------------------------------
+        # HITL configuration — human_peer participates in round-robin
+        # ----------------------------------------------------------------
+        human_cfg: Any = kwargs.get("human_cfg")
+        human_enabled: bool = human_cfg is not None and bool(getattr(human_cfg, "enabled", False))
+        role_router: Any = kwargs.get("role_router")
+
+        # Per-topology HITL extra config
+        human_extra: dict[str, Any] = {}
+        if human_enabled and human_cfg is not None:
+            human_extra = dict(getattr(human_cfg, "extra", None) or {})
+
+        activation_round: int = int(
+            human_extra.get("activation_round", _DEFAULT_HUMAN_ACTIVATION_ROUND)
+        )
+        on_consensus_pending: bool = bool(human_extra.get("on_consensus_pending", False))
+
+        # Build human_peer gateway when HITL is enabled
+        human_gateway: Any = None
+        if human_enabled and human_cfg is not None:
+            gateway_llm: Any = kwargs.get("human_gateway_llm")
+            gateway_kind: str = getattr(human_cfg, "gateway", "llm_simulated")
+            if gateway_kind == "cli":
+                human_gateway = CLIGateway() if CLIGateway is not None else None
+            else:
+                human_gateway = (
+                    LLMSimulatedGateway(llm=gateway_llm)
+                    if LLMSimulatedGateway is not None
+                    else None
+                )
+            if human_gateway is None:  # pragma: no cover
+                raise ImportError(
+                    f"Gateway class for '{gateway_kind}' could not be imported. "
+                    "Ensure atm.human is installed."
+                )
+
+        # Extend agent_order with human_peer when HITL is enabled
+        effective_agent_order: list[str] = list(agent_order)
+        if human_enabled:
+            effective_agent_order.append(_HUMAN_PEER_ID)
+
+        # ----------------------------------------------------------------
         # dispatcher node — selects next agent to activate
         # ----------------------------------------------------------------
 
         async def dispatcher_node(state: GraphState) -> dict[str, Any]:
-            """Increment round counter and record active_agent_id in signals."""
+            """Increment round counter and record active_agent_id in signals.
+
+            When human_peer is in effective_agent_order, it is skipped if the
+            current dispatch_round is < activation_round. The round-robin index
+            continues advancing through human_peer's slot (so ordering is stable)
+            but the dispatcher is called recursively until a non-skipped agent
+            is selected. This is done via a loop rather than recursion to avoid
+            deep LangGraph node re-invocation.
+            """
             shared: dict[str, Any] = dict(state.get("shared") or {})
             signals: dict[str, Any] = dict(shared.get("signals") or {})
 
@@ -131,19 +240,49 @@ class MeshTopology:
             rr_index: int = int(signals.get("_mesh_rr_index", 0))
             dispatch_round: int = int(signals.get("_mesh_dispatch_round", 0))
 
-            # Determine next agent
-            if activation_policy == "priority":
-                next_agent = _pick_priority_agent(state, agent_order, rr_index)
-            else:
-                next_agent = agent_order[rr_index % len(agent_order)]
+            # Determine next agent — may skip human_peer before activation_round
+            # and skip human_peer if consensus_pending is not set (when on_consensus_pending=True)
+            consensus_pending_set: bool = bool(signals.get("consensus_pending", False))
 
-            # Advance round-robin pointer
-            new_rr_index = (rr_index + 1) % len(agent_order)
-            # Increment dispatch round when we wrap around (full cycle) or always?
-            # We count dispatch_round as total calls to dispatcher.
+            # Loop to find the next non-skipped agent
+            attempts = 0
+            max_attempts = len(effective_agent_order) + 1
+            next_agent: str = effective_agent_order[0]
+            while attempts < max_attempts:
+                if activation_policy == "priority":
+                    candidate = _pick_priority_agent(state, effective_agent_order, rr_index)
+                else:
+                    candidate = effective_agent_order[rr_index % len(effective_agent_order)]
+
+                # Determine if this candidate should be skipped
+                skip = False
+                if (
+                    candidate == _HUMAN_PEER_ID
+                    and human_enabled
+                    and (
+                        dispatch_round < activation_round
+                        or (on_consensus_pending and not consensus_pending_set)
+                    )
+                ):
+                    skip = True
+
+                rr_index = (rr_index + 1) % len(effective_agent_order)
+
+                if not skip:
+                    next_agent = candidate
+                    break
+                attempts += 1
+            else:
+                # All candidates were skipped (e.g. only human_peer in order, not activated)
+                # Fall back to first non-human agent
+                for aid in effective_agent_order:
+                    if aid != _HUMAN_PEER_ID:
+                        next_agent = aid
+                        break
+
             new_dispatch_round = dispatch_round + 1
 
-            signals["_mesh_rr_index"] = new_rr_index
+            signals["_mesh_rr_index"] = rr_index
             signals["_mesh_dispatch_round"] = new_dispatch_round
             signals["_mesh_active_agent"] = next_agent
 
@@ -158,7 +297,7 @@ class MeshTopology:
             """Return the agent node name to activate."""
             shared: dict[str, Any] = dict(state.get("shared") or {})
             signals: dict[str, Any] = dict(shared.get("signals") or {})
-            active_agent: str = str(signals.get("_mesh_active_agent", agent_order[0]))
+            active_agent: str = str(signals.get("_mesh_active_agent", effective_agent_order[0]))
             return active_agent
 
         # ----------------------------------------------------------------
@@ -193,6 +332,173 @@ class MeshTopology:
             "executor": executor_node,
             "critic": critic_node,
         }
+
+        # ----------------------------------------------------------------
+        # human_peer node — HITL voter in the mesh
+        # ----------------------------------------------------------------
+
+        if human_enabled and human_cfg is not None and human_gateway is not None:
+            import time
+            from copy import deepcopy
+            from datetime import UTC, datetime
+
+            from langchain_core.callbacks.manager import adispatch_custom_event
+
+            _hcfg = human_cfg
+            _hgw = human_gateway
+            _role_router = role_router
+
+            async def human_peer_node(state: GraphState) -> dict[str, Any]:
+                """HITL peer node — requests a vote from the human gateway.
+
+                The human votes by returning an action payload that is converted
+                to a DECISION message with payload={"vote_for": action} and
+                appended to the broadcast_bus via shared state.
+
+                request_id: "mesh:{run_id}:{dispatch_round}:peer"
+                """
+                import uuid as _uuid_mod
+
+                shared: dict[str, Any] = dict(deepcopy(state.get("shared") or {}))
+                signals: dict[str, Any] = dict(shared.get("signals") or {})
+
+                dispatch_round_now: int = int(signals.get("_mesh_dispatch_round", 0))
+
+                _raw_run_id = shared.get("run_id") or (
+                    state.get("run_id") if hasattr(state, "get") else None
+                )
+                run_id: _uuid_mod.UUID = (
+                    _raw_run_id
+                    if isinstance(_raw_run_id, _uuid_mod.UUID)
+                    else _uuid_mod.UUID(str(_raw_run_id))
+                    if _raw_run_id
+                    else _uuid_mod.uuid4()
+                )
+
+                # request_id includes iter_total (monotonic across checkpointer-resume)
+                # and dispatch_round (per-resume-cycle uniqueness).  dispatch_round alone
+                # is not monotonic across resume — (run_id, request_id) must be UNIQUE.
+                iter_total_now: int = int(shared.get("iter_total", 0))
+                request_id = f"mesh:{run_id}:{iter_total_now}:{dispatch_round_now}:peer"
+
+                # Build HumanContext — extract question from bus or use default
+                from atm.core.types import HumanContext, Message, MessageKind, Phase
+
+                bus: list[Any] = list(shared.get("broadcast_bus") or [])
+                question = "Please vote for the best answer. Reply with your choice as 'vote_for'."
+                for msg in reversed(bus):
+                    if getattr(msg, "kind", None) == MessageKind.DRAFT:
+                        question = getattr(msg, "content", question) or question
+                        break
+
+                # Resolve active role — dynamic via role_router or static from cfg
+                if _role_router is not None:
+                    _raw_phase = shared.get("phase", "execution")
+                    _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+                    active_role = await _role_router.decide(_phase, shared)
+                else:
+                    active_role = _hcfg.role
+
+                ctx = HumanContext(
+                    run_id=run_id,
+                    role=active_role,
+                    question=question,
+                    recent_messages=(),
+                    allowed_actions=("vote",),
+                    deadline_s=int(_hcfg.timeout_s) if _hcfg.timeout_s is not None else None,
+                )
+
+                # Dispatch human_request event
+                _requested_at = datetime.now(UTC)
+                try:
+                    await adispatch_custom_event(
+                        "human_request",
+                        {
+                            "run_id": run_id,
+                            "request_id": request_id,
+                            "role": str(
+                                active_role.value if hasattr(active_role, "value") else active_role
+                            ),
+                            "context_json": ctx.model_dump(mode="json"),
+                            "requested_at": _requested_at,
+                        },
+                    )
+                except Exception:
+                    logger.debug(
+                        "mesh.human_peer: adispatch human_request skipped (no callback ctx)",
+                        exc_info=True,
+                    )
+
+                # Call gateway
+                _t0 = time.monotonic()
+                timeout_s_val: float | None = getattr(_hcfg, "timeout_s", None)
+                policy: str = getattr(_hcfg, "timeout_policy", "skip")
+
+                if request_with_timeout is not None and timeout_s_val is not None:
+                    response = await request_with_timeout(
+                        _hgw,
+                        ctx,
+                        request_id=request_id,
+                        timeout_s=timeout_s_val,
+                        policy=policy,
+                    )
+                else:
+                    response = await _hgw.request(ctx, request_id=request_id)
+
+                _latency_s = time.monotonic() - _t0
+
+                # Dispatch human_response event
+                try:
+                    await adispatch_custom_event(
+                        "human_response",
+                        {
+                            "run_id": run_id,
+                            "request_id": request_id,
+                            "answered_at": datetime.now(UTC),
+                            "response_json": response.model_dump(mode="json"),
+                            "source": getattr(response, "source", "human"),
+                            "timed_out": getattr(response, "timed_out", False),
+                            "latency_s": _latency_s,
+                        },
+                    )
+                except Exception:
+                    logger.debug(
+                        "mesh.human_peer: adispatch human_response skipped (no callback ctx)",
+                        exc_info=True,
+                    )
+
+                # Convert response action to a DECISION vote on the bus
+                action: str = getattr(response, "action", "") or ""
+                # The comment or payload may contain the vote_for value
+                comment: str = getattr(response, "comment", "") or ""
+
+                # Extract vote_for from response: prefer payload["vote_for"],
+                # then comment, then action itself
+                resp_payload: dict[str, Any] = dict(getattr(response, "payload", {}) or {})
+                vote_for: str = str(resp_payload.get("vote_for") or comment.strip() or action)
+
+                vote_msg = Message(
+                    sender=_HUMAN_PEER_ID,
+                    kind=MessageKind.DECISION,
+                    content=f"Human peer votes for: {vote_for}",
+                    payload={"vote_for": vote_for},
+                )
+
+                # Append to broadcast_bus
+                new_bus = [*list(bus), vote_msg]
+                if len(new_bus) > broadcast_bus_cap:
+                    new_bus = new_bus[-broadcast_bus_cap:]
+                shared["broadcast_bus"] = new_bus
+
+                logger.debug(
+                    "mesh.human_peer: voted vote_for=%r at dispatch_round=%d",
+                    vote_for,
+                    dispatch_round_now,
+                )
+
+                return {"shared": shared}
+
+            _agent_nodes[_HUMAN_PEER_ID] = human_peer_node
 
         # ----------------------------------------------------------------
         # _route_from_agent — after agent, go to mesh_broadcast
@@ -237,6 +543,11 @@ class MeshTopology:
             Sets shared.signals["consensus_reached"] = True and
             shared.final_answer = winner_value when threshold met.
             Also increments shared.iter_total (one iteration = one dispatch cycle).
+
+            When HITL is enabled: additionally sets signals["consensus_pending"] = True
+            when ≥1 vote exists but threshold is NOT yet reached. This is additive —
+            consensus_reached is set/cleared independently. consensus_pending is
+            consumed by the dispatcher to optionally activate human_peer early.
             """
             shared: dict[str, Any] = dict(state.get("shared") or {})
             bus: list[Any] = list(shared.get("broadcast_bus") or [])
@@ -272,6 +583,15 @@ class MeshTopology:
             else:
                 signals["consensus_reached"] = False
                 signals.pop("consensus_winner", None)
+
+            # Additive: set consensus_pending when HITL is enabled and there are
+            # votes but threshold not reached (split-vote condition).
+            if human_enabled:
+                total_votes = sum(vote_counts.values())
+                if total_votes > 0 and winner is None:
+                    signals["consensus_pending"] = True
+                else:
+                    signals["consensus_pending"] = False
 
             shared["signals"] = signals
             return {"shared": shared}
@@ -318,14 +638,18 @@ class MeshTopology:
         graph.add_edge(START, "dispatcher")
 
         # Dispatcher → agent (conditional)
+        # Include human_peer in routing map when HITL enabled
+        dispatcher_routing: dict[str, str] = {
+            agent_id: agent_id for agent_id in effective_agent_order
+        }
         graph.add_conditional_edges(
             "dispatcher",
             _route_from_dispatcher,
-            {agent_id: agent_id for agent_id in agent_order},
+            dispatcher_routing,  # type: ignore[arg-type]
         )
 
-        # Each agent → mesh_broadcast
-        for agent_id in agent_order:
+        # Each agent → mesh_broadcast (includes human_peer when enabled)
+        for agent_id in effective_agent_order:
             graph.add_edge(agent_id, "mesh_broadcast")
 
         # mesh_broadcast → mesh_postprocess
