@@ -1,0 +1,18 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for DebateTopology HITL test — planner agent.
+#
+# Single-round scenario for HITL test: planner opens, debaters argue once,
+# human judge evaluates and approves on first round.
+entries:
+  - agent_id: planner
+    role: planner
+    step_idx: 0
+    content: "Opening statement: Should we adopt a microservices architecture? Both sides should argue."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 50
+      output_tokens: 20
+      total_tokens: 70
+    model: "fake:scripted"

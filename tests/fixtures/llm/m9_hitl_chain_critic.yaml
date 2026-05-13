@@ -1,0 +1,16 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM for ChainTopology HITL integration tests — Critic agent.
+# Critic approves on the first step.
+entries:
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "APPROVE fib"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 70
+      output_tokens: 8
+      total_tokens: 78
+    model: "fake:scripted"

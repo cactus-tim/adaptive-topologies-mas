@@ -1,0 +1,5 @@
+# M9.2 default phase -> HumanRole table for RuleBasedRoleRouter
+planning: coordinator
+execution: peer
+verification: reviewer
+done: reviewer
