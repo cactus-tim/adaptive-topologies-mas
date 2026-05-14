@@ -86,6 +86,132 @@ dev/                 # план, arch-заметки, активные и зав
 | `docker compose up -d` | поднять Postgres |
 | `docker compose down -v` | остановить и **удалить данные** Postgres |
 
+## CLI (`atm`)
+
+Все команды доступны через `uv run atm <sub-command>` (точка входа зарегистрирована в `pyproject.toml`).
+
+### Сводка команд
+
+| Команда | Назначение |
+|---|---|
+| `atm run` | Запустить один эксперимент из YAML-конфига |
+| `atm grid` | Запустить параллельный sweep-эксперимент (ProcessPoolExecutor) |
+| `atm estimate` | Оценить стоимость конфига / grid без запуска |
+| `atm status` | Показать агрегированный статус эксперимента (cells done/failed/running, cost) |
+| `atm resume` | Возобновить прерванный run из последнего LangGraph-чекпоинта |
+| `atm replay` | Воспроизвести существующий run детерминированно или семантически |
+| `atm reconcile` | Найти «зомби»-ранги (running, но процесс мёртв) и опционально пометить их failed |
+
+### Описание и примеры
+
+```
+atm run --config conf/experiments/smoke.yaml [+key=val ...]
+```
+Запускает один эксперимент. Опция `--estimate` выводит оценку стоимости и запрашивает
+подтверждение, если она превышает 50% от `budget.per_experiment_usd`. `--yes` пропускает
+вопрос. Коды выхода: 0 — completed, 1 — failed, 2 — budget_exceeded, 3 — config error.
+
+```
+atm grid --config conf/experiments/grid.yaml [--parallelism N] [--fail-fast] [--yes]
+```
+Разворачивает sweep из YAML-блока `grid:` и запускает все cells параллельно.
+`--parallelism` переопределяет `grid.parallelism` из конфига. `--fail-fast` прерывает sweep
+на первом провале. Коды выхода: 0 — все cells завершены, 1 — часть провалилась, 2 — все провалились.
+
+```
+atm estimate --config conf/experiments/grid.yaml [+key=val ...]
+```
+Выводит таблицу оценки стоимости (tokens in/out, USD) по каждой cell и итог.
+Использует исторические данные из БД (по парам topology+task) или эвристику.
+
+```
+atm status --exp-id <uuid> [--json]
+atm status --exp-name my_experiment [--json]
+```
+Выводит сводку по эксперименту: статус, количество cells, avg quality, суммарные расходы.
+`--json` эмитирует JSON вместо таблицы.
+
+```
+atm resume --run-id <uuid> [--force]
+```
+Возобновляет run из последнего чекпоинта LangGraph (`thread_id=str(run_id)`).
+`ExperimentConfig` реагрузается из `experiments.config_snapshot` в БД.
+`--force` пропускает проверку живости исходного процесса.
+
+```
+atm replay <run_id> [--mode deterministic|semantic] [--output-config-only]
+```
+Создаёт новый run (`replay_of=<original_run_id>`) с той же конфигурацией.
+`deterministic` (default) — FakeLLM воспроизводит ответы из parquet; `semantic` — живая LLM.
+`--output-config-only` выводит реагрузенный JSON конфига и выходит без запуска.
+
+```
+atm reconcile --exp-id <uuid> [--dry-run]
+```
+Сканирует runs с `status='running'` у которых процесс уже не жив, и помечает их
+`status='failed', finish_reason='zombie'`. `--dry-run` только классифицирует, не мутирует БД.
+Требует переменную окружения `ATM_PG_DSN`.
+
+### Пример: полный цикл с grid-sweep
+
+**1. Создайте минимальный YAML-конфиг** (например, `conf/experiments/quick_sweep.yaml`):
+
+```yaml
+name: quick_sweep
+seed: 42
+
+model:
+  default: "openai:gpt-4o-mini"
+
+agents:
+  set: "canonical_4"
+
+topology:
+  name: "star"
+
+task:
+  name: "gsm8k"
+
+observability:
+  parquet_dir: "data/experiments"
+  pg_dsn: "${oc.env:PG_DSN}"
+
+grid:
+  parallelism: 2
+  seeds: [42, 43]
+  sweep:
+    topology.name: [star, chain]
+```
+
+Этот конфиг порождает 4 cells: 2 топологии × 2 seed.
+
+**2. Оцените стоимость:**
+
+```bash
+uv run atm estimate --config conf/experiments/quick_sweep.yaml
+```
+
+**3. Запустите sweep:**
+
+```bash
+uv run atm grid --config conf/experiments/quick_sweep.yaml --parallelism 2
+```
+
+**4. Проверьте статус:**
+
+```bash
+uv run atm status --exp-name quick_sweep
+# или с JSON-выводом:
+uv run atm status --exp-name quick_sweep --json
+```
+
+**5. Воспроизведите конкретный run:**
+
+```bash
+# <run_id> — UUID из вывода atm grid или atm status
+uv run atm replay <run_id> --mode deterministic
+```
+
 ## Дорожная карта milestone'ов
 
 См. `dev/PLAN.md §8` — подробный план M0...M13 с exit-criteria.
