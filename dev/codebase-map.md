@@ -170,6 +170,11 @@
 - **M11-resync key changes:** (a) `seed_all(cfg.seed)` at top of `run_one`; (b) `model_version_snapshot` UPDATE in finally block; (c) `sandbox_image_digest` UPDATE after sandbox init.
 - **Status:** M0 skeleton + M11-resync seed/snapshot/digest wiring.
 
+### Analysis Layer (`analysis/`) — M8.7
+- **Purpose:** Oracle labels pipeline — produces `OracleTable` consumed by `OracleTopologyRouter` (M8.3) and LOO-plot analysis (M13 G9).
+- **Exports (from `atm.analysis`):** `OracleTable` (Pydantic v2 frozen dataclass; fields: `by_task_type`, `by_task_id`, `default_topology` aliased `_default`), `build_leave_one_out_oracle` (async, reads `Run` rows from Postgres via SQLAlchemy 2.x session_factory), `build_loo_from_rows` (pure two-pass LOO aggregation helper, testable without DB), `load_oracle_table` (sync JSON/YAML loader, deserializes via `OracleTable.from_json_dict`).
+- **Status:** M8.7 complete (oracle.py implemented; unit tests passing).
+
 ## Patterns & Conventions
 
 ### State Management
