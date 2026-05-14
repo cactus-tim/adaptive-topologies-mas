@@ -1,0 +1,17 @@
+version: 1
+mode: scripted
+# All entries APPROVED — adaptive should reach DONE phase quickly via
+# critic_approved signal (Phase.VERIFICATION → DONE).
+entries:
+  - {agent_id: critic, role: critic, step_idx: 0, content: "APPROVED. fib(10) = 55 is correct.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 15, total_tokens: 115}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 1, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 2, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 3, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 4, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 5, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 6, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 7, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 8, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 9, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 10, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}
+  - {agent_id: critic, role: critic, step_idx: 11, content: "APPROVED.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 100, output_tokens: 5, total_tokens: 105}, model: "fake:scripted"}

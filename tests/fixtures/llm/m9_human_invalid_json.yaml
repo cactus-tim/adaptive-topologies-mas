@@ -1,0 +1,27 @@
+version: 1
+mode: scripted
+entries:
+  # First response: garbage (invalid JSON — triggers retry)
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: "This is not valid JSON at all! {{ broken"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 10
+      total_tokens: 130
+    model: "fake:scripted"
+  # Second response: valid JSON (retry succeeds)
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 1
+    content: '{"action": "approve", "payload": {}, "comment": "Recovered after retry"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 150
+      output_tokens: 18
+      total_tokens: 168
+    model: "fake:scripted"

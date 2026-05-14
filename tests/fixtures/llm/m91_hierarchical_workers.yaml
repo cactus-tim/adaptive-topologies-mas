@@ -1,0 +1,53 @@
+version: 1
+mode: scripted
+# FakeLLM fixture for HierarchicalTopology HITL integration tests.
+# 4 workers (2 per team): executor_a1, executor_a2, executor_b1, executor_b2.
+# Each worker emits a DRAFT message. Repeated to support multi-step runs.
+entries:
+  - agent_id: executor_a1
+    role: executor
+    step_idx: 0
+    content: "team_a result from executor_a1"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
+
+  - agent_id: executor_a2
+    role: executor
+    step_idx: 0
+    content: "team_a result from executor_a2"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
+
+  - agent_id: executor_b1
+    role: executor
+    step_idx: 0
+    content: "team_b result from executor_b1"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"
+
+  - agent_id: executor_b2
+    role: executor
+    step_idx: 0
+    content: "team_b result from executor_b2"
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 20
+      output_tokens: 8
+      total_tokens: 28
+    model: "fake:scripted"

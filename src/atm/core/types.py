@@ -11,7 +11,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 if TYPE_CHECKING:
     from langchain_core.messages import (
@@ -266,7 +266,7 @@ class TaskSpec(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str  # "humaneval/HumanEval/0"
-    type: Literal["programming", "qa", "creative", "analysis"]
+    type: Literal["programming", "reasoning", "creative", "decision"]
     input: str
     expected: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -331,7 +331,9 @@ class TopologyTransition(BaseModel):
     phase_at_decision: Phase
     iter_within_phase: int
     iter_within_topology: int  # 0 if this is a switch (new topology)
-    decided_by: Literal["rule", "llm_router", "oracle", "guard_override", "initial"]
+    decided_by: Literal[
+        "rule", "llm_router", "oracle", "guard_override", "initial", "human_override"
+    ]
     reason: str
     considered_alternatives: tuple[str, ...] = ()
     guards_applied: tuple[str, ...] = ()  # names of guards that fired
@@ -351,3 +353,42 @@ class BudgetEvent(BaseModel):
     limit_usd: float
     current_usd: float
     at: _dt.datetime = Field(default_factory=_utcnow)
+
+
+class TopologyDecision(BaseModel):
+    """Decision produced by TopologyRouter on each meta-graph tick.
+
+    Frozen to ensure immutability of router decisions after creation.
+    router_cost_usd > 0 only for llm_router decisions; rule/oracle/etc. cost 0.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    topology: str  # one of the 5 registered topologies
+    reason: str
+    decided_by: Literal[
+        "rule", "llm_router", "oracle", "guard_override", "initial", "human_override"
+    ]
+    considered_alternatives: tuple[str, ...] = ()
+    router_cost_usd: float = 0.0  # >0 only for llm_router
+
+    @field_validator("router_cost_usd")
+    @classmethod
+    def _router_cost_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("router_cost_usd must be >= 0")
+        return v
+
+
+class PhaseDecision(BaseModel):
+    """Decision produced by PhaseRouter on each meta-graph tick.
+
+    next_phase must be monotonic: >= current phase (enforced in TransitionGate).
+    Frozen to ensure immutability of router decisions after creation.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    next_phase: Phase  # monotonic: >= current_phase
+    reason: str
+    decided_by: Literal["rule", "llm_router", "agent_emit", "initial"]

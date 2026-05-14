@@ -1,0 +1,39 @@
+version: 1
+mode: scripted
+# FakeLLM fixture for adaptive HITL override scenario (M9.1 Step 2.16).
+# LLMSimulatedGateway returns a "switch_topology" action — override mode.
+# The human advisor overrides the router decision to switch to "mesh".
+entries:
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "switch_topology", "payload": {"topology": "mesh"}, "comment": "switch to mesh"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 1
+    content: '{"action": "switch_topology", "payload": {"topology": "mesh"}, "comment": "switch to mesh"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 2
+    content: '{"action": "abstain", "payload": {}, "comment": ""}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 100
+      output_tokens: 10
+      total_tokens: 110
+    model: "fake:scripted"

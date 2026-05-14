@@ -41,6 +41,7 @@ def _make_fake_container(
     if raise_logs:
         container.logs.side_effect = raise_logs
     else:
+
         def _logs_side_effect(stdout=True, stderr=True):  # type: ignore[override]
             if stdout and not stderr:
                 return stdout if isinstance(stdout, bytes) else b""
@@ -50,10 +51,13 @@ def _make_fake_container(
 
         # Return stdout bytes for stdout=True,stderr=False; stderr bytes otherwise
         container.logs.side_effect = lambda **kw: (
-            stdout if (kw.get("stdout") and not kw.get("stderr")) else
-            (globals()["_make_fake_container"]  # never called — just for type hints
-             if False else
-             (stderr if (kw.get("stderr") and not kw.get("stdout")) else b""))
+            stdout
+            if (kw.get("stdout") and not kw.get("stderr"))
+            else (
+                globals()["_make_fake_container"]  # never called — just for type hints
+                if False
+                else (stderr if (kw.get("stderr") and not kw.get("stdout")) else b"")
+            )
         )
         # Simpler: use a closure
         _stdout_bytes = stdout

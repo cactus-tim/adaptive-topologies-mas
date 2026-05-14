@@ -1,0 +1,39 @@
+version: 1
+mode: scripted
+entries:
+  # step 0 → judge role
+  - agent_id: role_router
+    role: role_router
+    step_idx: 0
+    content: '{"role": "judge", "reason": "verification phase needs neutral judgment"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 18
+      total_tokens: 98
+    model: "fake:scripted"
+  # step 1 → coordinator role
+  - agent_id: role_router
+    role: role_router
+    step_idx: 1
+    content: '{"role": "coordinator", "reason": "planning phase needs coordination"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 18
+      total_tokens: 98
+    model: "fake:scripted"
+  # step 2 → monitor role
+  - agent_id: role_router
+    role: role_router
+    step_idx: 2
+    content: '{"role": "monitor", "reason": "execution phase monitoring required"}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 80
+      output_tokens: 16
+      total_tokens: 96
+    model: "fake:scripted"

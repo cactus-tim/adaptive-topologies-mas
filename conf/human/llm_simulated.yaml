@@ -1,0 +1,6 @@
+enabled: true
+gateway: llm_simulated
+role: reviewer
+timeout_s: 900
+timeout_policy: llm_fallback
+model: openai:gpt-4o-mini

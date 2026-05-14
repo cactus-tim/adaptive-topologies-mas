@@ -1,0 +1,53 @@
+name: m8_adaptive_thrashing
+seed: 42
+
+task:
+  name: fibonacci_adaptive_thrashing
+  input: "Write a Python function fib(n) that returns the n-th Fibonacci number. Compute fib(10)."
+
+model:
+  default: "fake:scripted"
+  by_role:
+    planner: "fake:scripted"
+    executor: "fake:scripted"
+    critic: "fake:scripted"
+    researcher: "fake:scripted"
+    debater_pro: "fake:scripted"
+    debater_contra: "fake:scripted"
+    coordinator: "fake:scripted"
+  fake_fixtures:
+    planner: "tests/fixtures/llm/m8_adaptive_planner.yaml"
+    executor: "tests/fixtures/llm/m8_adaptive_executor.yaml"
+    critic: "tests/fixtures/llm/m8_adaptive_critic_reject.yaml"
+    researcher: "tests/fixtures/llm/m6_star_planner.yaml"
+
+agents:
+  set: canonical_4
+
+topology:
+  name: adaptive
+  max_iterations: 30
+  extra:
+    phase_router: "rule"
+    topology_router: "rule"
+    # Tight guards — first switch goes through, second is blocked → guard_override
+    switch_guards: true
+    switch_guards_config:
+      min_dwell_iters: 0
+      cooldown_iters: 0
+      max_per_run: 1     # only ONE real switch allowed in the whole run
+      max_per_phase: 1   # only ONE switch per phase
+    planning_max_iter: 3
+    exec_max_iter: 12
+    verify_max_iter: 4
+    subgraph_max_iterations: 10
+
+budget:
+  per_call_usd: 0.10
+  per_run_usd: 0.50
+  per_experiment_usd: 50.0
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_test}"
+  parquet_dir: "data/experiments"
+  callback_sync: true

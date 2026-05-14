@@ -1,0 +1,18 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for DebateTopology HITL test — LLMSimulatedGateway.
+#
+# Used by LLMSimulatedGateway when judge mode = "human" or "both".
+# The LLM simulates the human judge approving the debate with the pro side winning.
+entries:
+  - agent_id: llm_simulator
+    role: llm_simulator
+    step_idx: 0
+    content: '{"action": "approve", "payload": {"winner": "pro"}, "comment": "Pro side provided stronger arguments."}'
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 120
+      output_tokens: 20
+      total_tokens: 140
+    model: "fake:scripted"

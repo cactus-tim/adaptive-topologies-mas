@@ -1,0 +1,37 @@
+{
+  "by_task_type": {
+    "programming": {
+      "planning": "linear",
+      "execution": "mesh",
+      "verification": "debate"
+    },
+    "reasoning": {
+      "planning": "linear",
+      "execution": "linear",
+      "verification": "linear"
+    },
+    "creative": {
+      "planning": "mesh",
+      "execution": "mesh",
+      "verification": "debate"
+    },
+    "decision": {
+      "planning": "hierarchical",
+      "execution": "hierarchical",
+      "verification": "supervisor"
+    }
+  },
+  "by_task_id": {
+    "task_abc123": {
+      "planning": "supervisor",
+      "execution": "debate",
+      "verification": "linear"
+    },
+    "task_xyz789": {
+      "planning": "mesh",
+      "execution": "supervisor",
+      "verification": "hierarchical"
+    }
+  },
+  "_default": "linear"
+}

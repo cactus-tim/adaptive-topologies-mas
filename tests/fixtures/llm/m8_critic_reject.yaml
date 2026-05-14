@@ -1,0 +1,16 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for M8 signal tests — Critic agent reject response.
+# agent_id "critic" produces a REJECT response (no "approve" keyword).
+entries:
+  - agent_id: critic
+    role: critic
+    step_idx: 0
+    content: "REJECT: the output does not meet quality standards."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 70
+      output_tokens: 12
+      total_tokens: 82
+    model: "fake:scripted"

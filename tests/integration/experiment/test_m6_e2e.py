@@ -155,9 +155,12 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     # ── Assertion 1: result.status == "completed" ───────────────────────
     assert result.status == "completed", f"Expected status=completed, got {result.status}"
 
-    # ── Assertion 2: quality_score == 1.0 ───────────────────────────────
-    assert result.metrics.get("quality_score") == 1.0, (
-        f"Expected quality_score=1.0, got {result.metrics.get('quality_score')}"
+    # ── Assertion 2: quality_score == 0.0 ───────────────────────────────
+    # M11: inline-prompt path (task.input set, no registered TaskSpec) →
+    # resolve_spec returns None → runner short-circuits to quality_score=0.0.
+    # Pre-M11 stub returned 1.0 via "55"-substring check (now removed).
+    assert result.metrics.get("quality_score") == 0.0, (
+        f"Expected quality_score=0.0, got {result.metrics.get('quality_score')}"
     )
 
     # ── Assertion 15: final_answer contains "55" ────────────────────────
@@ -370,9 +373,12 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
     # ── Assertion 1: result.status == "completed" ───────────────────────
     assert result.status == "completed", f"Expected status=completed, got {result.status}"
 
-    # ── Assertion 2: quality_score == 1.0 ───────────────────────────────
-    assert result.metrics.get("quality_score") == 1.0, (
-        f"Expected quality_score=1.0, got {result.metrics.get('quality_score')}"
+    # ── Assertion 2: quality_score == 0.0 ───────────────────────────────
+    # M11: inline-prompt path (task.input set, no registered TaskSpec) →
+    # resolve_spec returns None → runner short-circuits to quality_score=0.0.
+    # Pre-M11 stub returned 1.0 via "55"-substring check (now removed).
+    assert result.metrics.get("quality_score") == 0.0, (
+        f"Expected quality_score=0.0, got {result.metrics.get('quality_score')}"
     )
 
     # ── Assertion 15: final_answer contains "55" ────────────────────────

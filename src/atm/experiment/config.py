@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from omegaconf import DictConfig, OmegaConf
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from atm.core.types import HumanRole
 
 # ---------------------------------------------------------------------------
 # Sub-schemas
@@ -110,6 +112,64 @@ class ObservabilityCfg(BaseModel):
     callback_sync: bool = False
 
 
+class EvaluationCfg(BaseModel):
+    """Post-hoc evaluation configuration (M11).
+
+    Controls the LLM judge used by the aggregator and self-consistency N.
+    Defaults are backward-compatible — existing YAML configs that do not
+    include an ``evaluation:`` section will use these values automatically.
+
+    Fields:
+        judge_model:             Model ID for LLM judge calls
+                                 (format: ``provider:model``).
+        judge_self_consistency_n: Number of independent judge calls when
+                                 using SelfConsistentJudge (1 = disabled).
+                                 Range: 1..10.
+    """
+
+    judge_model: str = "openai:gpt-4o"
+    judge_self_consistency_n: int = Field(default=3, ge=1, le=10)
+
+
+class HumanCfg(BaseModel):
+    """HITL gateway configuration (arch.md M9/M9.1/M9.2).
+
+    Controls whether human-in-the-loop is active, which gateway to use,
+    which role the human plays, and how timeouts are handled.
+
+    When ``enabled=False`` (the default), the topology behaves exactly
+    as before — no ``human_reviewer`` node is inserted.
+
+    ``model`` is an optional override for the LLM model used by
+    ``LLMSimulatedGateway``. ``None`` -> derive from ModelCfg.default.
+
+    ``extra`` is per-topology HITL configuration (M9.1). Keys are
+    topology-specific (e.g. ``judge``, ``scope``, ``activation_round``,
+    ``override_coordinator``, ``human_can_override_router``).
+
+    M9.2 — Adaptive Role Router fields:
+      ``role_router`` — strategy for selecting active HumanRole per-phase:
+        ``"fixed"`` (default) → use ``role`` directly; back-compat byte-identical.
+        ``"rule"`` → RuleBasedRoleRouter (table phase → HumanRole, optional override).
+        ``"llm"`` → LLMRoleRouter (LLM decides; falls back to rule on error).
+      ``role_table`` — optional override for the rule router's phase → HumanRole table.
+      ``role_router_model`` — optional LLM model override for LLMRoleRouter.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    gateway: Literal["llm_simulated", "cli"] = "llm_simulated"
+    role: HumanRole = HumanRole.REVIEWER
+    timeout_s: float | None = 900.0
+    timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
+    model: str | None = None
+    extra: dict[str, Any] | None = None
+    role_router: Literal["fixed", "rule", "llm"] = "fixed"
+    role_table: dict[str, str] | None = None
+    role_router_model: str | None = None
+
+
 class ExperimentConfig(BaseModel):
     """Top-level experiment configuration schema (arch.md §12.1).
 
@@ -124,6 +184,8 @@ class ExperimentConfig(BaseModel):
     topology: TopologyCfg
     task: TaskCfg
     observability: ObservabilityCfg
+    evaluation: EvaluationCfg = Field(default_factory=lambda: EvaluationCfg())
+    human: HumanCfg | None = None
 
     @model_validator(mode="after")
     def _check_topology(self) -> ExperimentConfig:
