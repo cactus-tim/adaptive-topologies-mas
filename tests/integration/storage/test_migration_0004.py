@@ -241,9 +241,10 @@ async def test_migration_0004_round_trip() -> None:
     host_info = await _column_info(pg_dsn, "host")
     assert host_info is not None, "Column 'host' must exist after upgrade to 0004"
     # character varying
-    assert "character varying" in host_info["data_type"] or host_info["data_type"] == "character varying", (
-        f"host data_type should be character varying, got {host_info['data_type']!r}"
-    )
+    assert (
+        "character varying" in host_info["data_type"]
+        or host_info["data_type"] == "character varying"
+    ), f"host data_type should be character varying, got {host_info['data_type']!r}"
     assert host_info["is_nullable"] == "YES", (
         f"host should be nullable, got is_nullable={host_info['is_nullable']!r}"
     )
@@ -286,9 +287,7 @@ async def test_migration_0004_round_trip() -> None:
     assert "replay_of" not in cols_after_downgrade, (
         "replay_of must be dropped after downgrade to 0003"
     )
-    assert "host" not in cols_after_downgrade, (
-        "host must be dropped after downgrade to 0003"
-    )
+    assert "host" not in cols_after_downgrade, "host must be dropped after downgrade to 0003"
     assert "process_pid" not in cols_after_downgrade, (
         "process_pid must be dropped after downgrade to 0003"
     )

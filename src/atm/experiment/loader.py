@@ -136,7 +136,7 @@ def load_grid_configs(
     Example::
 
         configs = load_grid_configs("conf/sweep.yaml")
-        # → one ExperimentConfig per (sweep_combination × seed) cell
+        # → one ExperimentConfig per (sweep_combination x seed) cell
     """
     base_cfg = load_config(str(path), overrides)
 
@@ -145,10 +145,10 @@ def load_grid_configs(
         return [base_cfg]
 
     # Validate sweep values are all scalars (str/int/float/bool).
-    _SCALAR_TYPES = (str, int, float, bool)
+    _scalar_types = (str, int, float, bool)
     for key, values in grid.sweep.items():
         for v in values:
-            if not isinstance(v, _SCALAR_TYPES):
+            if not isinstance(v, _scalar_types):
                 raise ValueError(
                     f"load_grid_configs: sweep value for key '{key}' must be a scalar "
                     f"(str/int/float/bool), got {type(v).__name__}: {v!r}"
@@ -167,7 +167,7 @@ def load_grid_configs(
             cell_oc: DictConfig = OmegaConf.create(cell_dict)
 
             # Apply sweep overrides.
-            for key, value in zip(sweep_keys, sweep_combo):
+            for key, value in zip(sweep_keys, sweep_combo, strict=False):
                 OmegaConf.update(cell_oc, key, value, merge=True)
 
             # Apply seed override.
