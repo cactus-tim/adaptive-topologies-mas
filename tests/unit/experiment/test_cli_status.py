@@ -105,6 +105,22 @@ def test_status_json_output() -> None:
     assert abs(parsed["total_cost"] - 1.2345) < 1e-9
 
 
+def test_status_invalid_exp_id_exits_3() -> None:
+    """A malformed --exp-id is rejected before touching the database."""
+    result = runner.invoke(
+        app,
+        [
+            "status",
+            "--pg-dsn",
+            "postgresql+asyncpg://x",
+            "--exp-id",
+            "not-a-uuid",
+        ],
+    )
+    assert result.exit_code == 3
+    assert "uuid" in result.output.lower()
+
+
 def test_status_no_match_exits_one() -> None:
     async def fake_query(*_args: object, **_kwargs: object) -> None:
         return None
