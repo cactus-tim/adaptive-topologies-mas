@@ -47,6 +47,12 @@ def _merge_includes(cfg: DictConfig, base_dir: Path) -> DictConfig:
         inc_path = Path(inc_path_str)
         if not inc_path.is_absolute():
             inc_path = base_dir / inc_path_str
+        inc_path = inc_path.resolve()
+        base_resolved = base_dir.resolve()
+        if not inc_path.is_relative_to(base_resolved):
+            raise ValueError(
+                f"include path '{inc_path_str}' escapes config directory {base_resolved}"
+            )
         inc_cfg: DictConfig = OmegaConf.load(inc_path)  # type: ignore[assignment]
         # include contents are the base; main cfg values take precedence
         merged = OmegaConf.merge(inc_cfg, merged)  # type: ignore[assignment]

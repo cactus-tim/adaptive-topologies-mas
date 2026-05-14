@@ -153,3 +153,68 @@ def test_grid_cells_preserve_grid_block() -> None:
         assert cfg.grid.parallelism == 2
         assert cfg.grid.fail_fast is False
         assert cfg.grid.seeds == [42, 43]
+
+
+# ---------------------------------------------------------------------------
+# Test 9: 2x2 sweep yields exactly 4 cells
+# ---------------------------------------------------------------------------
+
+
+def test_grid_expansion_2x2_yields_4_cells(tmp_path: Path) -> None:
+    """A sweep with 2 topology names x 2 task names x 1 seed must produce 4 cells."""
+    from atm.experiment import load_grid_configs
+
+    yaml_content = """
+name: "grid_2x2_test"
+seed: 42
+model:
+  default: "fake:scripted"
+agents:
+  set: "canonical_4"
+topology:
+  name: "star"
+task:
+  name: "humaneval"
+observability:
+  pg_dsn: "postgresql://localhost/test"
+grid:
+  sweep:
+    topology.name: [star, chain]
+    task.name: [humaneval, gsm8k]
+  seeds: [42]
+  parallelism: 4
+  fail_fast: false
+"""
+    cfg_file = tmp_path / "grid_2x2.yaml"
+    cfg_file.write_text(yaml_content)
+    configs = load_grid_configs(str(cfg_file))
+    assert len(configs) == 4
+
+
+# ---------------------------------------------------------------------------
+# Test 10: include path traversal is blocked
+# ---------------------------------------------------------------------------
+
+
+def test_include_path_traversal_raises(tmp_path: Path) -> None:
+    """load_config must raise ValueError when include: escapes the config directory."""
+    from atm.experiment.loader import load_config
+
+    yaml_content = """
+name: "traversal_test"
+include: "../../../etc/passwd"
+model:
+  default: "fake:scripted"
+agents:
+  set: "canonical_4"
+topology:
+  name: "chain"
+task:
+  name: "t1"
+observability:
+  pg_dsn: "postgresql://localhost/test"
+"""
+    cfg_file = tmp_path / "traversal.yaml"
+    cfg_file.write_text(yaml_content)
+    with pytest.raises(ValueError, match="escapes config directory"):
+        load_config(str(cfg_file))
