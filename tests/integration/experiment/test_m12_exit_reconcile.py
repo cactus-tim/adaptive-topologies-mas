@@ -250,9 +250,9 @@ async def test_reconcile_zombie_on_grid_start(
             # The zombie row must now be failed with finish_reason='zombie'.
             zombie_row = (
                 await conn.execute(
-                    sa.text(
-                        "SELECT status, finish_reason FROM runs WHERE id = :rid"
-                    ).bindparams(rid=zombie_run_id)
+                    sa.text("SELECT status, finish_reason FROM runs WHERE id = :rid").bindparams(
+                        rid=zombie_run_id
+                    )
                 )
             ).fetchone()
 

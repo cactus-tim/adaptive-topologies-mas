@@ -258,9 +258,9 @@ async def test_resume_after_sigkill_m12_exit_criterion(
         async with engine.connect() as conn:
             status_row = (
                 await conn.execute(
-                    sa.text(
-                        "SELECT status, quality_score FROM runs WHERE id = :rid"
-                    ).bindparams(rid=target_run_id)
+                    sa.text("SELECT status, quality_score FROM runs WHERE id = :rid").bindparams(
+                        rid=target_run_id
+                    )
                 )
             ).fetchone()
     finally:
@@ -280,11 +280,7 @@ async def test_resume_after_sigkill_m12_exit_criterion(
     engine2 = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine2.connect() as conn:
-            count_row = (
-                await conn.execute(
-                    sa.text("SELECT COUNT(*) FROM runs")
-                )
-            ).fetchone()
+            count_row = (await conn.execute(sa.text("SELECT COUNT(*) FROM runs"))).fetchone()
     finally:
         await engine2.dispose()
 
