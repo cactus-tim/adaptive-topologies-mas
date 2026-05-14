@@ -648,6 +648,7 @@ def replay(
         raise typer.Exit(3) from exc
 
     if output_config_only:
+
         async def _dump() -> str:
             import os
 

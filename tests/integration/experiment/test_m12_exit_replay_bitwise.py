@@ -41,9 +41,7 @@ pytestmark = [
 # ---------------------------------------------------------------------------
 
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
-_SMOKE_YAML = (
-    Path(__file__).parent.parent.parent.parent / "conf" / "experiments" / "smoke.yaml"
-)
+_SMOKE_YAML = Path(__file__).parent.parent.parent.parent / "conf" / "experiments" / "smoke.yaml"
 
 # UUID pattern to extract from ``atm run`` / ``atm replay`` stdout.
 _UUID_RE = re.compile(
@@ -201,9 +199,7 @@ async def test_replay_bitwise_via_subprocess(
     # If --yes is not supported yet (pre-merge state without estimate-status-cli),
     # fall back to running without --yes. Detection: non-zero exit + option-error text.
     _opt_error_markers = ("Got unexpected extra argument", "No such option", "no such option")
-    if run_proc.returncode != 0 and any(
-        m in (run_proc.stderr or "") for m in _opt_error_markers
-    ):
+    if run_proc.returncode != 0 and any(m in (run_proc.stderr or "") for m in _opt_error_markers):
         run_proc = subprocess.run(
             ["uv", "run", "atm", "run", "--config", str(cfg_path)],
             capture_output=True,
@@ -247,8 +243,7 @@ async def test_replay_bitwise_via_subprocess(
             orig_row = (
                 await conn.execute(
                     sa.text(
-                        "SELECT id, exp_id, model_version_snapshot"
-                        " FROM runs WHERE id = :rid"
+                        "SELECT id, exp_id, model_version_snapshot FROM runs WHERE id = :rid"
                     ).bindparams(rid=orig_run_id)
                 )
             ).fetchone()
@@ -268,8 +263,7 @@ async def test_replay_bitwise_via_subprocess(
     # ── Assertion: exactly one replay row ──────────────────────────────────────
     assert orig_row is not None, f"Original run row not found for run_id={orig_run_id}"
     assert len(replay_rows) == 1, (
-        f"Expected exactly 1 replay row, found {len(replay_rows)} "
-        f"(replay_of = {orig_run_id})"
+        f"Expected exactly 1 replay row, found {len(replay_rows)} (replay_of = {orig_run_id})"
     )
 
     replay_row = replay_rows[0]
@@ -280,16 +274,14 @@ async def test_replay_bitwise_via_subprocess(
     orig_mvs = orig_row[2]
     replay_mvs = replay_row[2]
     assert orig_mvs == replay_mvs, (
-        f"model_version_snapshot mismatch:\n"
-        f"  orig:   {orig_mvs}\n"
-        f"  replay: {replay_mvs}"
+        f"model_version_snapshot mismatch:\n  orig:   {orig_mvs}\n  replay: {replay_mvs}"
     )
 
     # ── Assertion: messages.parquet content equality ────────────────────────────
     # File layout: {parquet_dir}/experiments/{exp_id}/runs/{run_id}/messages.parquet
     # NOTE (OQ4): the parquet schema uses column name ``at``, not ``created_at``.
     # Drop columns: ['run_id', 'message_id', 'at'] before comparing.
-    _DROP_COLS = {"run_id", "message_id", "at"}
+    _drop_cols = {"run_id", "message_id", "at"}
 
     orig_msg_path = (
         parquet_dir
@@ -319,11 +311,11 @@ async def test_replay_bitwise_via_subprocess(
     replay_tbl = pq.read_table(replay_msg_path)
 
     # Drop non-deterministic identity/timing columns before comparing.
-    orig_cols = [c for c in orig_tbl.column_names if c not in _DROP_COLS]
-    replay_cols = [c for c in replay_tbl.column_names if c not in _DROP_COLS]
+    orig_cols = [c for c in orig_tbl.column_names if c not in _drop_cols]
+    replay_cols = [c for c in replay_tbl.column_names if c not in _drop_cols]
 
     assert orig_cols == replay_cols, (
-        f"messages.parquet column mismatch after dropping {_DROP_COLS}:\n"
+        f"messages.parquet column mismatch after dropping {_drop_cols}:\n"
         f"  orig:   {orig_cols}\n"
         f"  replay: {replay_cols}"
     )
@@ -336,7 +328,5 @@ async def test_replay_bitwise_via_subprocess(
         f"Original run_id:  {orig_run_id}\n"
         f"Replay   run_id:  {replay_run_id}\n"
         "Differing columns: "
-        + ", ".join(
-            k for k in orig_cols if orig_content.get(k) != replay_content.get(k)
-        )
+        + ", ".join(k for k in orig_cols if orig_content.get(k) != replay_content.get(k))
     )

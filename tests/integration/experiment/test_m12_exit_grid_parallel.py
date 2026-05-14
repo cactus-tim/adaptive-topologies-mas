@@ -219,9 +219,7 @@ async def test_grid_parallel_all_cells_complete(
         async with engine.connect() as conn:
             # Retrieve the experiment id from the runs table.
             exp_id_row = (
-                await conn.execute(
-                    sa.text("SELECT DISTINCT exp_id FROM runs")
-                )
+                await conn.execute(sa.text("SELECT DISTINCT exp_id FROM runs"))
             ).fetchone()
 
             assert exp_id_row is not None, (
@@ -234,9 +232,9 @@ async def test_grid_parallel_all_cells_complete(
             # 4 run rows for this experiment.
             run_rows = (
                 await conn.execute(
-                    sa.text(
-                        "SELECT id, status FROM runs WHERE exp_id = :eid"
-                    ).bindparams(eid=exp_id)
+                    sa.text("SELECT id, status FROM runs WHERE exp_id = :eid").bindparams(
+                        eid=exp_id
+                    )
                 )
             ).fetchall()
 
@@ -247,9 +245,7 @@ async def test_grid_parallel_all_cells_complete(
             )
 
             # All 4 runs must be completed.
-            non_completed = [
-                (str(row[0]), row[1]) for row in run_rows if row[1] != "completed"
-            ]
+            non_completed = [(str(row[0]), row[1]) for row in run_rows if row[1] != "completed"]
             assert not non_completed, (
                 f"Some runs did not reach 'completed' status: {non_completed}.\n"
                 f"stdout:\n{result.stdout}\n"
@@ -259,9 +255,7 @@ async def test_grid_parallel_all_cells_complete(
             # Experiment aggregate status must be 'completed'.
             exp_status = (
                 await conn.execute(
-                    sa.text(
-                        "SELECT status FROM experiments WHERE id = :eid"
-                    ).bindparams(eid=exp_id)
+                    sa.text("SELECT status FROM experiments WHERE id = :eid").bindparams(eid=exp_id)
                 )
             ).scalar_one()
 
