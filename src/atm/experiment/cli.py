@@ -131,8 +131,8 @@ def grid(
         if parallelism is not None
         else (configs[0].grid.parallelism if configs[0].grid is not None else 4)
     )
-    effective_fail_fast: bool = (
-        fail_fast or (configs[0].grid.fail_fast if configs[0].grid is not None else False)
+    effective_fail_fast: bool = fail_fast or (
+        configs[0].grid.fail_fast if configs[0].grid is not None else False
     )
 
     typer.echo(
@@ -141,10 +141,9 @@ def grid(
     )
 
     # Step 2: interactive confirm (skipped with --yes or in non-TTY).
-    if not yes and sys.stdin.isatty():
-        if not typer.confirm("Proceed?", default=True):
-            typer.echo("Aborted.", err=True)
-            raise typer.Exit(3)
+    if not yes and sys.stdin.isatty() and not typer.confirm("Proceed?", default=True):
+        typer.echo("Aborted.", err=True)
+        raise typer.Exit(3)
 
     # Step 3: drive run_grid with live-progress callback.
     # Imported lazily so `atm grid --help` doesn't require sqlalchemy etc.

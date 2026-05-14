@@ -27,6 +27,7 @@ fail_fast semantics:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Callable
@@ -221,9 +222,7 @@ async def _update_experiment_status(
     try:
         async with session_scope(session_factory) as session:
             await session.execute(
-                sa.update(Experiment)
-                .where(Experiment.id == exp_id)
-                .values(status=new_status)
+                sa.update(Experiment).where(Experiment.id == exp_id).values(status=new_status)
             )
     except Exception as exc:
         logger.warning(
@@ -303,8 +302,7 @@ async def run_grid(
     try:
         # Submit all futures eagerly; pool throttles concurrency to max_workers.
         futures = [
-            loop.run_in_executor(executor, _run_cell_worker, cfg_dict)
-            for cfg_dict in cfg_dicts
+            loop.run_in_executor(executor, _run_cell_worker, cfg_dict) for cfg_dict in cfg_dicts
         ]
 
         for fut in asyncio.as_completed(futures):
@@ -331,10 +329,8 @@ async def run_grid(
 
             rid_str = result.get("run_id")
             if rid_str:
-                try:
+                with contextlib.suppress(Exception):
                     run_ids.append(UUID(rid_str))
-                except Exception:
-                    pass
 
             # Emit live progress.
             done = sum(counters.values())
@@ -417,12 +413,10 @@ async def _resolve_exp_id(pg_dsn: str, exp_name: str) -> UUID | None:
                 row = await session.execute(
                     sa.select(Experiment.id).where(Experiment.name == exp_name)
                 )
-                scalar = row.scalar_one_or_none()
-                return scalar  # type: ignore[no-any-return]
+                scalar: UUID | None = row.scalar_one_or_none()
+                return scalar
         except Exception as exc:
-            logger.warning(
-                "resolve_exp_id failed: name=%s err=%s", exp_name, str(exc)[:200]
-            )
+            logger.warning("resolve_exp_id failed: name=%s err=%s", exp_name, str(exc)[:200])
             return None
     finally:
         await engine.dispose()

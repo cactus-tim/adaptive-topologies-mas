@@ -309,7 +309,7 @@ async def test_run_grid_mixed_outcomes(stub_pool: dict[str, Any]) -> None:
 
 @pytest.mark.asyncio
 async def test_run_grid_progress_callback_invoked(stub_pool: dict[str, Any]) -> None:
-    from atm.experiment.grid import GridProgress, run_grid
+    from atm.experiment.grid import run_grid
 
     def worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
         return {

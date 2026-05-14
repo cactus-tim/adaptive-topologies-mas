@@ -24,10 +24,7 @@ import pytest
 
 _PG_TESTS_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _FIXTURE_YAML = (
-    Path(__file__).parent.parent.parent
-    / "fixtures"
-    / "experiment"
-    / "grid_runner_failfast.yaml"
+    Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "grid_runner_failfast.yaml"
 )
 
 

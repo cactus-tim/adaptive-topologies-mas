@@ -147,6 +147,6 @@ async def test_debater_nodes_can_run_concurrently_under_gather() -> None:
     gap = abs(start_times["pro"] - start_times["contra"])
     assert gap < 0.020, f"debater start gap = {gap:.4f}s — expected concurrent dispatch"
 
-    # Total wall time ≈ single-node sleep (parallel), not 2× (serial).
+    # Total wall time ~ single-node sleep (parallel), not 2x (serial).
     elapsed = t1 - t0
     assert elapsed < 0.080, f"elapsed={elapsed:.3f}s — expected ≈0.05 if parallel"

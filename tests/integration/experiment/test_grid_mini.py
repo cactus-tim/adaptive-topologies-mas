@@ -1,7 +1,7 @@
-"""M12 grid-runner integration test (PG): mini 2×1×2 = 4-cell grid.
+"""M12 grid-runner integration test (PG): mini 2x1x2 = 4-cell grid.
 
 Verifies the end-to-end M12 grid pipeline:
-  - ``load_grid_configs`` expands the YAML's grid.sweep × seeds into 4 cells.
+  - ``load_grid_configs`` expands the YAML's grid.sweep x seeds into 4 cells.
   - ``run_grid(parallelism=2)`` spawns child processes via ProcessPoolExecutor;
     each invokes ``run_one`` against the ephemeral PG.
   - All 4 ``runs`` rows present with terminal ``status='completed'``.
@@ -68,17 +68,14 @@ async def test_grid_mini_all_cells_complete_with_host_pid(
             rows = (
                 await conn.execute(
                     sa.text(
-                        "SELECT id, status, host, process_pid"
-                        " FROM runs WHERE exp_id = :eid"
+                        "SELECT id, status, host, process_pid FROM runs WHERE exp_id = :eid"
                     ).bindparams(eid=result.exp_id)
                 )
             ).fetchall()
             assert len(rows) == 4, f"expected 4 run rows; got {len(rows)}"
             for row in rows:
                 assert row.status == "completed", f"run {row.id} status={row.status}"
-                assert row.host is not None and row.host != "", (
-                    f"run {row.id} host not populated"
-                )
+                assert row.host is not None and row.host != "", f"run {row.id} host not populated"
                 assert row.process_pid is not None and row.process_pid > 0, (
                     f"run {row.id} process_pid not populated"
                 )
