@@ -12,6 +12,7 @@ Public API:
 
 from __future__ import annotations
 
+import types
 from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -233,15 +234,18 @@ def _resolve_dotpath(path: str) -> None:
 def _unwrap_optional(annotation: Any) -> Any:
     """Strip ``T | None`` (Union[T, None]) wrappers, return inner type T.
 
-    Handles both ``X | None`` (Python 3.10+ union) and ``Optional[X]``
-    (which is ``Union[X, None]``).  Returns the annotation unchanged if it is
-    not a nullable union.
+    Handles both ``X | None`` (Python 3.10+ native union via ``types.UnionType``)
+    and ``Optional[X]`` / ``Union[X, None]`` (``typing.Union``).  Returns the
+    annotation unchanged if it is not a nullable union, or if it is a union of
+    multiple non-None types (not unwrappable).
     """
     origin = get_origin(annotation)
-    if origin is Union:
-        args = [a for a in get_args(annotation) if a is not type(None)]
+    if origin is Union or origin is types.UnionType:
+        args = tuple(a for a in get_args(annotation) if a is not type(None))
         if len(args) == 1:
             return args[0]
+        # union of multiple non-None types — not unwrappable, return as-is
+        return annotation
     return annotation
 
 

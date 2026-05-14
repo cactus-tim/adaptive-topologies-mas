@@ -151,3 +151,23 @@ def test_grid_cfg_rejects_topology_extra_keys() -> None:
     """topology.extra.* keys should be rejected as untyped leaves."""
     with pytest.raises((ValueError, ValidationError)):
         GridCfg(sweep={"topology.extra.custom_param": ["a", "b"]})
+
+
+# ---------------------------------------------------------------------------
+# 11. _resolve_dotpath handles Python 3.10+ X | None annotations
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_dotpath_handles_native_union_type() -> None:
+    """_resolve_dotpath must not raise for fields using X | None annotation syntax.
+
+    ExperimentConfig.human is ``HumanCfg | None`` (types.UnionType on Python
+    3.10+) and ExperimentConfig.grid is ``GridCfg | None``.  Both must be
+    traversable so sweep keys like ``human.enabled`` and ``grid.parallelism``
+    are valid.
+    """
+    from atm.experiment.config import _resolve_dotpath
+
+    # These must not raise — they traverse X | None fields
+    _resolve_dotpath("human.enabled")
+    _resolve_dotpath("grid.parallelism")
