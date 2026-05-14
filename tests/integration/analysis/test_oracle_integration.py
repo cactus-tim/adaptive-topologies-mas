@@ -130,9 +130,7 @@ async def test_oracle_producer_consumer_contract(
       2. by_task_type[task_type][phase]  (requires state["task_type"] to be set explicitly)
       3. _default  (fallback)
     """
-    exp_id = await _seed_experiment(
-        session_factory_fast, name=f"oracle-integration-{_new_uuid()}"
-    )
+    exp_id = await _seed_experiment(session_factory_fast, name=f"oracle-integration-{_new_uuid()}")
 
     # --- programming rows ---
     await _seed_run(
@@ -242,8 +240,7 @@ async def test_oracle_producer_consumer_contract(
 
     # LOO winner for GSM8K/0 = linear (no other reasoning rows → fallback to default)
     assert oracle.by_task_id.get("GSM8K/0") == "linear", (
-        f"LOO fallback for GSM8K/0: expected 'linear', "
-        f"got {oracle.by_task_id.get('GSM8K/0')!r}"
+        f"LOO fallback for GSM8K/0: expected 'linear', got {oracle.by_task_id.get('GSM8K/0')!r}"
     )
 
     # --- Serialize to router dict and construct OracleTopologyRouter ---
@@ -307,8 +304,7 @@ async def test_oracle_producer_consumer_contract(
     assert decision_unknown.decided_by == "oracle"
     # Falls through to by_task_type["programming"]["planning"] = mesh (global winner)
     assert decision_unknown.topology == "mesh", (
-        f"by_task_type fallback for programming: expected 'mesh', "
-        f"got {decision_unknown.topology!r}"
+        f"by_task_type fallback for programming: expected 'mesh', got {decision_unknown.topology!r}"
     )
 
     # --- Router test 4: by_task_type fallback for reasoning type ---

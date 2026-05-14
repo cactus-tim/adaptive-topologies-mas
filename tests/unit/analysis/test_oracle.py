@@ -31,14 +31,44 @@ def rows_basic() -> list[dict]:
     """Three tasks of the same type with unambiguous winner."""
     return [
         # task_A: mesh wins clearly
-        {"task_id": "HumanEval/10", "task_type": "programming", "topology": "mesh",   "quality_score": 0.90},
-        {"task_id": "HumanEval/10", "task_type": "programming", "topology": "linear", "quality_score": 0.40},
+        {
+            "task_id": "HumanEval/10",
+            "task_type": "programming",
+            "topology": "mesh",
+            "quality_score": 0.90,
+        },
+        {
+            "task_id": "HumanEval/10",
+            "task_type": "programming",
+            "topology": "linear",
+            "quality_score": 0.40,
+        },
         # task_B: mesh wins clearly
-        {"task_id": "HumanEval/11", "task_type": "programming", "topology": "mesh",   "quality_score": 0.85},
-        {"task_id": "HumanEval/11", "task_type": "programming", "topology": "linear", "quality_score": 0.45},
+        {
+            "task_id": "HumanEval/11",
+            "task_type": "programming",
+            "topology": "mesh",
+            "quality_score": 0.85,
+        },
+        {
+            "task_id": "HumanEval/11",
+            "task_type": "programming",
+            "topology": "linear",
+            "quality_score": 0.45,
+        },
         # task_C: mesh wins clearly
-        {"task_id": "HumanEval/12", "task_type": "programming", "topology": "mesh",   "quality_score": 0.88},
-        {"task_id": "HumanEval/12", "task_type": "programming", "topology": "linear", "quality_score": 0.42},
+        {
+            "task_id": "HumanEval/12",
+            "task_type": "programming",
+            "topology": "mesh",
+            "quality_score": 0.88,
+        },
+        {
+            "task_id": "HumanEval/12",
+            "task_type": "programming",
+            "topology": "linear",
+            "quality_score": 0.42,
+        },
     ]
 
 
@@ -50,16 +80,16 @@ def rows_flip() -> list[dict]:
       - mesh   mean across all = (5*0.95 + 1*0.40 + 1*0.40) / 7
                                  Note: only 1 mesh row each for /1 and /2.
       Simpler: per topology mean across all rows:
-        mesh  rows: /0 × 5 = [0.95]*5, /1 × 1 = [0.40], /2 × 1 = [0.40]
+        mesh  rows: /0 x 5 = [0.95]*5, /1 x 1 = [0.40], /2 x 1 = [0.40]
                    total = 5*0.95 + 0.40 + 0.40 = 5.55 → mean = 5.55/7 ≈ 0.793
-        linear rows: /0 × 1 = [0.50], /1 × 2 = [0.80, 0.80], /2 × 2 = [0.80, 0.80]
+        linear rows: /0 x 1 = [0.50], /1 x 2 = [0.80, 0.80], /2 x 2 = [0.80, 0.80]
                    total = 0.50 + 0.80*4 = 3.70 → mean = 3.70/5 = 0.74
       → global winner: "mesh"
 
     WITH LOO for HumanEval/0 (exclude /0 from aggregation):
       Only /1 and /2 remain:
-        mesh   rows: /1 × 1 = [0.40], /2 × 1 = [0.40] → mean = 0.40
-        linear rows: /1 × 2 = [0.80, 0.80], /2 × 2 = [0.80, 0.80] → mean = 0.80
+        mesh   rows: /1 x 1 = [0.40], /2 x 1 = [0.40] → mean = 0.40
+        linear rows: /1 x 2 = [0.80, 0.80], /2 x 2 = [0.80, 0.80] → mean = 0.80
       → LOO winner for HumanEval/0: "linear"  ← flipped!
 
     Note: all task_ids use "HumanEval/N" (capital H, capital E).
@@ -68,26 +98,56 @@ def rows_flip() -> list[dict]:
     # HumanEval/0: 5 mesh runs at 0.95, 1 linear run at 0.50
     for _ in range(5):
         rows.append(
-            {"task_id": "HumanEval/0", "task_type": "programming", "topology": "mesh", "quality_score": 0.95}
+            {
+                "task_id": "HumanEval/0",
+                "task_type": "programming",
+                "topology": "mesh",
+                "quality_score": 0.95,
+            }
         )
     rows.append(
-        {"task_id": "HumanEval/0", "task_type": "programming", "topology": "linear", "quality_score": 0.50}
+        {
+            "task_id": "HumanEval/0",
+            "task_type": "programming",
+            "topology": "linear",
+            "quality_score": 0.50,
+        }
     )
     # HumanEval/1: 2 linear runs at 0.80, 1 mesh run at 0.40
     for _ in range(2):
         rows.append(
-            {"task_id": "HumanEval/1", "task_type": "programming", "topology": "linear", "quality_score": 0.80}
+            {
+                "task_id": "HumanEval/1",
+                "task_type": "programming",
+                "topology": "linear",
+                "quality_score": 0.80,
+            }
         )
     rows.append(
-        {"task_id": "HumanEval/1", "task_type": "programming", "topology": "mesh", "quality_score": 0.40}
+        {
+            "task_id": "HumanEval/1",
+            "task_type": "programming",
+            "topology": "mesh",
+            "quality_score": 0.40,
+        }
     )
     # HumanEval/2: 2 linear runs at 0.80, 1 mesh run at 0.40
     for _ in range(2):
         rows.append(
-            {"task_id": "HumanEval/2", "task_type": "programming", "topology": "linear", "quality_score": 0.80}
+            {
+                "task_id": "HumanEval/2",
+                "task_type": "programming",
+                "topology": "linear",
+                "quality_score": 0.80,
+            }
         )
     rows.append(
-        {"task_id": "HumanEval/2", "task_type": "programming", "topology": "mesh", "quality_score": 0.40}
+        {
+            "task_id": "HumanEval/2",
+            "task_type": "programming",
+            "topology": "mesh",
+            "quality_score": 0.40,
+        }
     )
     return rows
 
@@ -106,7 +166,7 @@ class TestOracleTableSerializationRoundtrip:
         original = OracleTable(
             by_task_type={
                 "programming": "mesh",
-                "reasoning":   "linear",
+                "reasoning": "linear",
             },
             by_task_id={
                 "HumanEval/0": "linear",
@@ -119,7 +179,7 @@ class TestOracleTableSerializationRoundtrip:
         restored = OracleTable.from_dict(serialized)
 
         assert restored.by_task_type == original.by_task_type
-        assert restored.by_task_id   == original.by_task_id
+        assert restored.by_task_id == original.by_task_id
         assert restored.default_topology == original.default_topology
 
 
@@ -175,7 +235,7 @@ class TestBuildLooOracleExclusionFlipsWinner:
             "LOO exclusion of HumanEval/0 must flip winner from mesh (global) to linear"
         )
 
-        # HumanEval/1 and HumanEval/2: when excluded, remaining set = /0 (5×mesh@0.95, 1×linear@0.50)
+        # HumanEval/1 and HumanEval/2: when excluded, remaining set = /0 (5xmesh@0.95, 1xlinear@0.50)
         # mesh mean among remaining = 5*0.95/5 = 0.95 (only /0 rows contribute mesh)
         # linear mean among remaining = 0.50/1 = 0.50
         # → LOO winner for /1 and /2 is "mesh"
@@ -216,8 +276,18 @@ class TestBuildLooEdgeCaseSingleTask:
         from atm.analysis.oracle import OracleTable, build_loo_from_rows
 
         rows = [
-            {"task_id": "HumanEval/99", "task_type": "reasoning", "topology": "mesh",   "quality_score": 0.90},
-            {"task_id": "HumanEval/99", "task_type": "reasoning", "topology": "linear", "quality_score": 0.50},
+            {
+                "task_id": "HumanEval/99",
+                "task_type": "reasoning",
+                "topology": "mesh",
+                "quality_score": 0.90,
+            },
+            {
+                "task_id": "HumanEval/99",
+                "task_type": "reasoning",
+                "topology": "linear",
+                "quality_score": 0.50,
+            },
         ]
 
         table: OracleTable = build_loo_from_rows(rows)

@@ -44,10 +44,12 @@ _TASK_TYPE_PREFIX_MAP: list[tuple[str, str]] = [
     ("math/", "reasoning"),
     ("ARC/", "reasoning"),
     ("arc/", "reasoning"),
-    ("creative/", "creative"),
-    ("Creative/", "creative"),
-    ("decision/", "decision"),
-    ("Decision/", "decision"),
+    # CommonGen loader emits `commongen/{idx}` (real task IDs) — type=creative
+    ("commongen/", "creative"),
+    ("CommonGen/", "creative"),
+    # DABench loader emits `dabench/{qid}` — type=decision
+    ("dabench/", "decision"),
+    ("DABench/", "decision"),
 ]
 
 
@@ -56,9 +58,7 @@ _TASK_TYPE_PREFIX_MAP: list[tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 
 
-@pydantic_dataclass(
-    config=ConfigDict(frozen=True, populate_by_name=True)
-)
+@pydantic_dataclass(config=ConfigDict(frozen=True, populate_by_name=True))
 class OracleTable:
     """Flat oracle table: task_type/task_id → best topology.
 
@@ -136,12 +136,10 @@ class OracleTable:
         this expands each flat mapping into the phase-keyed dict.
         """
         by_task_type_nested: dict[str, Any] = {
-            t: dict.fromkeys(_PHASES, topo)
-            for t, topo in self.by_task_type.items()
+            t: dict.fromkeys(_PHASES, topo) for t, topo in self.by_task_type.items()
         }
         by_task_id_nested: dict[str, Any] = {
-            tid: dict.fromkeys(_PHASES, topo)
-            for tid, topo in self.by_task_id.items()
+            tid: dict.fromkeys(_PHASES, topo) for tid, topo in self.by_task_id.items()
         }
         return {
             "by_task_type": by_task_type_nested,
@@ -162,9 +160,7 @@ class OracleTable:
         by_task_type: dict[str, str] = {}
         for t, phase_map in data.get("by_task_type", {}).items():
             if not isinstance(phase_map, dict):
-                _log.debug(
-                    "from_json_dict: skipping non-dict phase_map for task_type=%r", t
-                )
+                _log.debug("from_json_dict: skipping non-dict phase_map for task_type=%r", t)
                 continue
             # Pick the first known phase's topology as the canonical value
             topo = None
@@ -175,16 +171,12 @@ class OracleTable:
             if topo is not None:
                 by_task_type[t] = str(topo)
             else:
-                _log.debug(
-                    "from_json_dict: no known phase keys for task_type=%r, dropping", t
-                )
+                _log.debug("from_json_dict: no known phase keys for task_type=%r, dropping", t)
 
         by_task_id: dict[str, str] = {}
         for tid, phase_map in data.get("by_task_id", {}).items():
             if not isinstance(phase_map, dict):
-                _log.debug(
-                    "from_json_dict: skipping non-dict phase_map for task_id=%r", tid
-                )
+                _log.debug("from_json_dict: skipping non-dict phase_map for task_id=%r", tid)
                 continue
             topo = None
             for phase in _PHASES:
@@ -194,9 +186,7 @@ class OracleTable:
             if topo is not None:
                 by_task_id[tid] = str(topo)
             else:
-                _log.debug(
-                    "from_json_dict: no known phase keys for task_id=%r, dropping", tid
-                )
+                _log.debug("from_json_dict: no known phase keys for task_id=%r, dropping", tid)
 
         return cls(
             by_task_type=by_task_type,
@@ -307,7 +297,8 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
 
         # Gather rows for the same task_type, excluding the target task_id
         remainder: list[dict[str, Any]] = [
-            r for r in normalized
+            r
+            for r in normalized
             if str(r.get("task_id")) != target_id
             and str(r.get("task_type")) == target_type
             and str(r.get("topology", "")) in _VALID_TOPOLOGIES
@@ -338,22 +329,27 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
 def _pick_best_topology(
     topo_scores: dict[str, list[float]],
 ) -> str | None:
-    """Return topology with highest mean quality_score; None if dict is empty."""
+    """Return topology with highest mean quality_score; None if dict is empty.
+
+    Ties on quality are broken by topology name (lexicographic ascending) so that
+    oracle generation is deterministic across runs and Python dict orderings.
+    """
     if not topo_scores:
         return None
 
-    best_topo: str | None = None
-    best_mean: float = float("-inf")
-
+    ranked: list[tuple[float, str]] = []
     for topo, scores in topo_scores.items():
         if not scores:
             continue
         mean = sum(scores) / len(scores)
-        if mean > best_mean:
-            best_mean = mean
-            best_topo = topo
+        ranked.append((mean, topo))
 
-    return best_topo
+    if not ranked:
+        return None
+
+    # Sort by (-mean, topo) — highest mean first, lex name as tiebreak.
+    ranked.sort(key=lambda x: (-x[0], x[1]))
+    return ranked[0][1]
 
 
 # ---------------------------------------------------------------------------
@@ -429,9 +425,7 @@ async def build_leave_one_out_oracle(
     rows: list[dict[str, Any]] = []
 
     async with session_factory() as session:
-        result = await session.execute(
-            select(Run).where(Run.exp_id == exp_id)
-        )
+        result = await session.execute(select(Run).where(Run.exp_id == exp_id))
         run_objects: list[Run] = list(result.scalars().all())
 
     for run in run_objects:
@@ -441,7 +435,9 @@ async def build_leave_one_out_oracle(
                 "task_type": _infer_task_type(run.task_id),
                 "topology": run.topology,
                 "quality_score": float(run.quality_score) if run.quality_score is not None else 0.0,
-                "budget_spent_usd": float(run.budget_spent_usd) if run.budget_spent_usd is not None else 0.0,
+                "budget_spent_usd": float(run.budget_spent_usd)
+                if run.budget_spent_usd is not None
+                else 0.0,
             }
         )
 
