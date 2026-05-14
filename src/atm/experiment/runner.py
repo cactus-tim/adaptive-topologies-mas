@@ -28,6 +28,7 @@ Exception handling:
 from __future__ import annotations
 
 import subprocess
+import time
 import traceback
 import uuid
 from collections.abc import Callable
@@ -280,6 +281,7 @@ async def _update_run_success(
     iterations: int,
     human_role: str | None = None,
     cognitive_load_proxy: float | None = None,
+    wall_time_s: float | None = None,
 ) -> None:
     """Update run row to completed status.
 
@@ -287,15 +289,18 @@ async def _update_run_success(
     dynamic role was selected by the RoleRouter during the run.
     ``cognitive_load_proxy`` is the NASA-TLX proxy aggregated post-run from
     ``human_interactions``. Both default to None for back-compat with non-HITL runs.
+    ``wall_time_s`` is elapsed wall-clock seconds from run start to finish.
     """
+    finished_at = datetime.now(UTC)
     values: dict[str, Any] = {
         "status": "completed",
         "finish_reason": FinishReason.SUCCESS.value,
         "quality_score": quality_score,
         "budget_spent_usd": Decimal(str(budget_spent_usd)),
         "iterations": iterations,
-        "finished_at": datetime.now(UTC),
+        "finished_at": finished_at,
         "cognitive_load_proxy": cognitive_load_proxy,
+        "wall_time_s": wall_time_s,
     }
     if human_role is not None:
         values["human_role"] = human_role
@@ -314,6 +319,7 @@ async def _update_run_failed(
     error_text: str | None = None,
     human_role: str | None = None,
     cognitive_load_proxy: float | None = None,
+    wall_time_s: float | None = None,
 ) -> None:
     """Update run row to failed/budget_exceeded status (M9.2-aware)."""
     values: dict[str, Any] = {
@@ -325,6 +331,7 @@ async def _update_run_failed(
         "finished_at": datetime.now(UTC),
         "error": error_text,
         "cognitive_load_proxy": cognitive_load_proxy,
+        "wall_time_s": wall_time_s,
     }
     if human_role is not None:
         values["human_role"] = human_role
@@ -558,6 +565,14 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
 
     # Seed all RNGs for reproducibility before any stochastic work.
     seed_all(cfg.seed)
+
+    # Wall-clock start — captured once and reused across all terminal branches
+    # (success / budget_exceeded / failed) so runs.wall_time_s reflects total
+    # elapsed time including DB setup, topology build, evaluation, and finalize.
+    _run_started_monotonic: float = time.monotonic()
+
+    def _elapsed_s() -> float:
+        return max(0.0, time.monotonic() - _run_started_monotonic)
 
     try:
         # Step 1: ensure experiment row exists
@@ -793,6 +808,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             iterations=iterations,
             human_role=dynamic_human_role,
             cognitive_load_proxy=dynamic_cog_proxy,
+            wall_time_s=_elapsed_s(),
         )
 
         log.info(
@@ -857,6 +873,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                     quality_score=quality_score,
                     budget_spent_usd=budget_spent,
                     iterations=iterations,
+                    wall_time_s=_elapsed_s(),
                 )
             except Exception:
                 log.error("run update failed after budget exceeded")
@@ -917,6 +934,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                     budget_spent_usd=budget_spent,
                     iterations=iterations,
                     error_text=error_text[:2000],
+                    wall_time_s=_elapsed_s(),
                 )
             except Exception:
                 log.error("run update failed after run failure")

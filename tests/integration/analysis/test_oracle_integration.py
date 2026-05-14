@@ -7,12 +7,12 @@ Verifies the end-to-end producer/consumer contract:
 
 Skip behaviour: transitively inherited from the ``session_factory_fast``
 fixture chain (``session_factory_fast`` → ``pg_engine_fast`` → ``pg_dsn``).
-``pg_dsn`` calls ``pytest.skip()`` when ``ATM_INTEGRATION_PG=1`` is not set.
+``pg_dsn`` calls ``pytest.skip()`` when ``ATM_ENABLE_PG_TESTS=1`` is not set.
 No manual ``pytest.skipif`` is needed or present.
 
 Prerequisite for running: a live PostgreSQL instance reachable at $ATM_PG_DSN
 (default: postgresql+asyncpg://atm:atm@localhost:5432/atm_test).
-Enable with: ATM_INTEGRATION_PG=1 uv run pytest tests/integration/analysis/ -v
+Enable with: ATM_ENABLE_PG_TESTS=1 uv run pytest tests/integration/analysis/ -v
 """
 
 from __future__ import annotations

@@ -11,7 +11,7 @@ This test:
   - GSM8KMatcher extracts the last numeric token "42" → score=1.0.
   - Asserts that ``runs.quality_score == 1.0`` is persisted in PostgreSQL.
 
-Skipped unless ``ATM_INTEGRATION_PG=1`` is set.
+Skipped unless ``ATM_ENABLE_PG_TESTS=1`` is set.
 
 Fixtures from ``tests/integration/conftest.py``:
   - ``pg_engine_fast`` (function scope) — Base.metadata.create_all DDL
