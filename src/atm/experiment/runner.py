@@ -403,6 +403,7 @@ def _build_llm_wrappers(
     pricing: Pricing,
     *,
     replay_sources: dict[str, Path] | None = None,
+    shared_replay_llm: Any = None,
 ) -> dict[str, LLMWrapper]:
     """Build one LLMWrapper per role from cfg.model.by_role + default fallback.
 
@@ -457,19 +458,33 @@ def _build_llm_wrappers(
             # m12-resume-replay: route to FakeLLM(mode="replay") using the
             # caller-supplied per-role Parquet table. Replay sources MUST be
             # provided when any role uses fake:replay.
-            replay_path = replay_sources.get(role) if replay_sources else None
-            if replay_path is None:
-                raise ValueError(
-                    f"fake:replay requested for role={role!r} but no replay_source "
-                    f"provided. Pass replay_sources={{'{role}': <parquet_path>}} "
-                    f"to _build_llm_wrappers / replay_one()."
+            #
+            # When ``shared_replay_llm`` is supplied (typical for replay_one)
+            # we wrap the SAME FakeLLM instance for every role so the global
+            # row counter advances in original call order, preserving bit
+            # identity across roles. Otherwise each role gets its own table
+            # (useful when each role has a partitioned parquet).
+            if shared_replay_llm is not None:
+                wrappers[role] = LLMWrapper(
+                    model_id=model_id,
+                    pricing=pricing,
+                    budget=budget,
+                    llm=shared_replay_llm,
                 )
-            wrappers[role] = build_llm(
-                model_id=model_id,
-                pricing=pricing,
-                budget=budget,
-                replay_source=replay_path,
-            )
+            else:
+                replay_path = replay_sources.get(role) if replay_sources else None
+                if replay_path is None:
+                    raise ValueError(
+                        f"fake:replay requested for role={role!r} but no replay_source "
+                        f"provided. Pass replay_sources={{'{role}': <parquet_path>}} "
+                        f"or shared_replay_llm to _build_llm_wrappers / replay_one()."
+                    )
+                wrappers[role] = build_llm(
+                    model_id=model_id,
+                    pricing=pricing,
+                    budget=budget,
+                    replay_source=replay_path,
+                )
         else:
             wrappers[role] = build_llm(
                 model_id=model_id,
@@ -1329,12 +1344,19 @@ async def replay_one(
                     original_versions=orig_versions,
                 )
 
-            # Override cfg.model so every role uses fake:replay → single
-            # parquet file. Each role replays the SAME llm_calls.parquet in
-            # role-keyed order — for arch.md's per-call schema this is the
-            # canonical deterministic mode.
-            replay_sources = dict.fromkeys(("planner", "executor", "critic", "researcher"), llm_calls_path)
-            # cfg is a Pydantic model — clone with model fields updated.
+            # Override cfg.model so every role uses fake:replay. To preserve
+            # bit identity of the final answer across the per-role LLM
+            # wrappers we build ONE FakeLLM and share it — its single row
+            # counter then advances in the original call order regardless
+            # of which role pulled the next call.
+            import pyarrow.parquet as pq
+
+            from atm.llm.fake import FakeLLM
+
+            shared_table = pq.read_table(str(llm_calls_path))  # type: ignore[no-untyped-call]
+            shared_fake: Any = FakeLLM(mode="replay", replay_table=shared_table)
+            replay_sources = None  # not needed when shared_replay_llm is used
+
             new_model_cfg = cfg.model.model_copy(update={"default": "fake:replay"})
             cfg = cfg.model_copy(update={"model": new_model_cfg})
 
@@ -1342,6 +1364,7 @@ async def replay_one(
             # Semantic mode keeps cfg as-is and lets the aggregator handle the
             # tolerance check post-run.
             replay_sources = None
+            shared_fake = None
         else:
             raise ValueError(f"replay_one: unknown mode {mode!r}")
 
@@ -1350,8 +1373,9 @@ async def replay_one(
             session_factory, exp_id, cfg, replay_of=original_run_id
         )
 
-        # 4) Execute via the shared core, passing replay_sources so the LLM
-        # factory routes to FakeLLM(mode='replay').
+        # 4) Execute via the shared core. For deterministic mode the shared
+        # FakeLLM keeps all four LLMWrappers reading from a single row
+        # cursor — preserving call order across roles.
         return await _execute_existing_run(
             cfg=cfg,
             run_id=new_run_id,
@@ -1359,6 +1383,7 @@ async def replay_one(
             engine=engine,
             session_factory=session_factory,
             replay_sources=replay_sources,
+            shared_replay_llm=shared_fake,
         )
     finally:
         await engine.dispose()
@@ -1438,6 +1463,7 @@ async def _execute_existing_run(
     engine: AsyncEngine,
     session_factory: async_sessionmaker[AsyncSession],
     replay_sources: dict[str, Path] | None,
+    shared_replay_llm: Any = None,
 ) -> RunResult:
     """Inner execution path shared by resume_one / replay_one.
 
@@ -1504,7 +1530,13 @@ async def _execute_existing_run(
         except Exception:
             judge_llm = None
 
-        llms = _build_llm_wrappers(cfg, budget, pricing, replay_sources=replay_sources)
+        llms = _build_llm_wrappers(
+            cfg,
+            budget,
+            pricing,
+            replay_sources=replay_sources,
+            shared_replay_llm=shared_replay_llm,
+        )
 
         from atm.tools.defaults import build_default_registry
         from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
