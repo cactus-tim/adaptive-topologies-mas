@@ -1,0 +1,27 @@
+[
+  {
+    "concept_set_idx": 0,
+    "concepts": ["ski", "mountain", "snow"],
+    "target": "She went skiing down the snow-covered mountain."
+  },
+  {
+    "concept_set_idx": 0,
+    "concepts": ["ski", "mountain", "snow"],
+    "target": "The skier descended the snowy mountain slope."
+  },
+  {
+    "concept_set_idx": 1,
+    "concepts": ["ride", "horse", "field"],
+    "target": "He rode his horse through the open field."
+  },
+  {
+    "concept_set_idx": 2,
+    "concepts": ["bake", "bread", "kitchen"],
+    "target": "She baked fresh bread in the warm kitchen."
+  },
+  {
+    "concept_set_idx": 3,
+    "concepts": ["swim", "lake", "summer"],
+    "target": "The children swam in the cool lake during summer."
+  }
+]

@@ -1,0 +1,18 @@
+version: 1
+mode: scripted
+# FakeLLM fixture for adaptive smoke — Planner.
+# 12 entries to outlast adaptive's max_iterations=30 across multiple subgraph
+# invocations of the chain (linear) topology.
+entries:
+  - {agent_id: planner, role: planner, step_idx: 0, content: "Plan: define fib(n) recursively; call fib(10).", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 20, total_tokens: 70}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 1, content: "Plan finalized: fib(10) = 55.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 10, total_tokens: 60}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 2, content: "Plan ready: fib(10).", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 5, total_tokens: 55}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 3, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 4, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 5, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 6, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 7, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 8, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 9, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 10, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}
+  - {agent_id: planner, role: planner, step_idx: 11, content: "Plan unchanged.", tool_calls: [], finish_reason: stop, usage: {input_tokens: 50, output_tokens: 3, total_tokens: 53}, model: "fake:scripted"}

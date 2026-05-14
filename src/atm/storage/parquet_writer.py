@@ -180,9 +180,7 @@ class ParquetWriter:
     async def write_scratchpad(self, agent_id: str, row: dict) -> None:  # type: ignore[type-arg]
         """Buffer a row for the per-agent scratchpad stream."""
         if not _SAFE_AGENT_ID_RE.match(agent_id):
-            raise ValueError(
-                f"Invalid agent_id {agent_id!r}: must match [A-Za-z0-9_-]{{1,64}}"
-            )
+            raise ValueError(f"Invalid agent_id {agent_id!r}: must match [A-Za-z0-9_-]{{1,64}}")
         state = await self._get_scratchpad_stream(agent_id)
         await self._append(state, row)
 

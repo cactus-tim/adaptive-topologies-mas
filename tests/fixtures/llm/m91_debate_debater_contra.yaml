@@ -1,0 +1,15 @@
+version: 1
+mode: scripted
+# Scripted FakeLLM fixture for DebateTopology HITL test — debater_contra agent.
+entries:
+  - agent_id: debater_contra
+    role: debater
+    step_idx: 0
+    content: "CONTRA: Microservices add operational complexity and distributed system challenges."
+    tool_calls: []
+    finish_reason: stop
+    usage:
+      input_tokens: 60
+      output_tokens: 25
+      total_tokens: 85
+    model: "fake:scripted"

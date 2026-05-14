@@ -24,6 +24,7 @@ import structlog
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from atm.core.types import Message, PhaseTransition
@@ -34,11 +35,14 @@ from atm.observability.serializers import (
     phase_transition_to_row,
     topology_transition_to_row,
 )
-from atm.storage.models import BudgetEvent, Experiment, Run
+from atm.storage.models import BudgetEvent, Experiment, HumanInteraction, Run
 from atm.storage.models import Phase as PhaseModel
 from atm.storage.models import TopologyTransition as TTModel
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import session_scope
+
+# Constraint name for idempotent INSERT in human_interactions (migration 0002)
+CONSTRAINT_NAME = "uq_human_interactions_run_request"
 
 
 def _now_utc() -> datetime:
@@ -280,7 +284,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             "started_at": time.monotonic(),
             "tool_name": serialized.get("name", "") if serialized else "",
             "agent_id": (metadata or {}).get("agent_id", ""),
-            "args_json": _dumps(inputs) if inputs is not None else (input_str if isinstance(input_str, str) else ""),
+            "args_json": _dumps(inputs)
+            if inputs is not None
+            else (input_str if isinstance(input_str, str) else ""),
             "at": datetime.now(UTC),
         }
 
@@ -295,7 +301,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Write tool call row to Parquet with ok=True."""
         try:
             start = self._tool_starts.pop(run_id, None)
-            latency_ms = (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            latency_ms = (
+                (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            )
 
             row = {
                 "run_id": str(self._run_id),
@@ -323,7 +331,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Write tool call row to Parquet with ok=False."""
         try:
             start = self._tool_starts.pop(run_id, None)
-            latency_ms = (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            latency_ms = (
+                (time.monotonic() - start["started_at"]) * 1000.0 if start is not None else 0.0
+            )
 
             row = {
                 "run_id": str(self._run_id),
@@ -361,6 +371,10 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             await self._handle_phase_transition(data)
         elif name == "topology_transition":
             await self._handle_topology_transition(data)
+        elif name == "human_request":
+            await self._handle_human_request(data)
+        elif name == "human_response":
+            await self._handle_human_response(data)
 
     async def _handle_message_emit(self, data: Any) -> None:
         """Write a Message to the messages Parquet stream."""
@@ -464,3 +478,114 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             self._log.critical(
                 "on_custom_event[topology_transition]: pg insert failed", exc_info=True
             )
+
+    async def _handle_human_request(self, data: Any) -> None:
+        """INSERT a new HumanInteraction row (idempotent via ON CONFLICT DO NOTHING).
+
+        ``data`` is expected to be a dict with keys:
+            run_id       (UUID)
+            request_id   (str, <=64 chars)
+            role         (str or HumanRole)
+            context_json (dict — HumanContext.model_dump())
+            requested_at (datetime, timezone-aware)
+
+        Duplicate ``(run_id, request_id)`` pairs are silently ignored thanks to
+        the UNIQUE constraint ``uq_human_interactions_run_request`` (migration 0002)
+        and the ``ON CONFLICT DO NOTHING`` clause.
+        """
+        try:
+            fields: dict[str, Any] = {
+                "id": uuid.uuid4(),
+                "run_id": data["run_id"],
+                "request_id": data["request_id"],
+                "role": str(data["role"]),
+                "context_json": data.get("context_json", {}),
+                "requested_at": data.get("requested_at", _now_utc()),
+                "response_json": None,
+            }
+            stmt = pg_insert(HumanInteraction).values(**fields)
+            stmt = stmt.on_conflict_do_nothing(constraint=CONSTRAINT_NAME)
+            async with session_scope(self._session_factory) as session:
+                await session.execute(stmt)
+        except Exception:
+            self._log.error("on_custom_event[human_request]: db insert failed", exc_info=True)
+
+    async def _handle_human_response(self, data: Any) -> None:
+        """Persist the human/gateway response for a (run_id, request_id) pair.
+
+        Race-tolerant UPSERT: ``human_request`` and ``human_response`` are dispatched
+        as independent custom events; their callback handlers are not strictly
+        ordered against each other (LangChain dispatches them in parallel and the
+        request INSERT may not have committed by the time the response handler
+        runs). Implementing this as a plain UPDATE WHERE response_json IS NULL
+        therefore loses the response when the order flips.
+
+        Strategy: INSERT placeholder row keyed by (run_id, request_id) with
+        response_json/answered_at filled, and ON CONFLICT (uq_human_interactions
+        _run_request) UPDATE the existing row's response_json/answered_at — but
+        only if the existing row still has response_json IS NULL, so a duplicate
+        re-dispatch never clobbers an already-filled response (idempotency).
+
+        Expected ``data`` keys:
+            run_id        (UUID), request_id (str)
+            answered_at   (datetime, tz-aware), response_json (dict)
+            role          (str | HumanRole, optional — defaults to 'Reviewer')
+            context_json  (dict, optional — defaults to {})
+            requested_at  (datetime, optional — defaults to answered_at)
+            source, timed_out, latency_s (carried inside response_json by caller)
+        """
+        try:
+            run_id: UUID = data["run_id"]
+            request_id: str = data["request_id"]
+            answered_at: datetime = data.get("answered_at", _now_utc())
+            response_json: dict[str, Any] = data.get("response_json", {})
+            role = str(data.get("role", "Reviewer"))
+            context_json: dict[str, Any] = data.get("context_json", {})
+            requested_at: datetime = data.get("requested_at", answered_at)
+
+            async with session_scope(self._session_factory) as session:
+                # SELECT ... FOR UPDATE serializes against a concurrent _handle_human_request
+                # INSERT for the same (run_id, request_id) so the race is collapsed inside
+                # a single transaction.
+                existing = (
+                    await session.execute(
+                        select(HumanInteraction)
+                        .where(
+                            HumanInteraction.run_id == run_id,
+                            HumanInteraction.request_id == request_id,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+
+                if existing is None:
+                    # No request row landed yet (or never will) — insert a complete row
+                    # so the response is not lost. ON CONFLICT DO NOTHING guards against
+                    # the request handler racing in between SELECT and INSERT.
+                    ins = (
+                        pg_insert(HumanInteraction)
+                        .values(
+                            id=uuid.uuid4(),
+                            run_id=run_id,
+                            request_id=request_id,
+                            role=role,
+                            context_json=context_json,
+                            requested_at=requested_at,
+                            answered_at=answered_at,
+                            response_json=response_json,
+                        )
+                        .on_conflict_do_nothing(constraint=CONSTRAINT_NAME)
+                    )
+                    await session.execute(ins)
+                elif existing.response_json is None:
+                    await session.execute(
+                        update(HumanInteraction)
+                        .where(HumanInteraction.id == existing.id)
+                        .values(
+                            answered_at=answered_at,
+                            response_json=response_json,
+                        )
+                    )
+                # else: response already filled — idempotent no-op
+        except Exception:
+            self._log.error("on_custom_event[human_response]: db upsert failed", exc_info=True)

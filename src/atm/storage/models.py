@@ -166,6 +166,11 @@ class Run(Base):
         sa.Double(),
         nullable=True,
     )
+    cognitive_load_proxy: Mapped[float | None] = mapped_column(
+        sa.Double(),
+        nullable=True,
+        doc="NASA-TLX proxy from human_interactions (M9.2 RQ4 metric).",
+    )
     wall_time_s: Mapped[float | None] = mapped_column(
         sa.Double(),
         nullable=True,
@@ -275,7 +280,14 @@ class HumanInteraction(Base):
 
     __tablename__ = "human_interactions"
 
-    __table_args__ = (sa.Index("human_interactions_run_id_idx", "run_id"),)
+    __table_args__ = (
+        sa.Index("human_interactions_run_id_idx", "run_id"),
+        sa.UniqueConstraint(
+            "run_id",
+            "request_id",
+            name="uq_human_interactions_run_request",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),

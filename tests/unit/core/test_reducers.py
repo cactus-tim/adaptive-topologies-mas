@@ -148,7 +148,14 @@ class TestMergeAgentStates:
 
 
 class TestDedupByIdReducer:
-    """11 tests covering all invariants for dedup_by_id_reducer factory."""
+    """14 tests covering all invariants for dedup_by_id_reducer factory.
+
+    Invariant index (Step 1.5 — explicit invariants for dedup_by_id_reducer):
+      - Idempotent   : test_idempotency       (Test 2)
+      - Associative  : test_associativity     (Test 13)
+      - Empty-neutral: test_empty_left_neutral (Test 5)
+                       test_empty_right_neutral (Test 6)
+    """
 
     def _make_items(self) -> list[dict[str, Any]]:
         return [

@@ -189,6 +189,28 @@ def _parse_tool_calls(ai_msg: AIMessage, issued_by: str) -> tuple[ToolCall, ...]
 
 
 # ---------------------------------------------------------------------------
+# Model version extraction helper
+# ---------------------------------------------------------------------------
+
+
+def _extract_model_version(response_metadata: dict[str, Any]) -> str | None:
+    """Extract the actual model version/fingerprint from LLM response_metadata.
+
+    Priority order (matches both Anthropic and OpenAI response shapes):
+      1. ``system_fingerprint`` — OpenAI uniquely identifies a model deployment
+      2. ``model_name``         — OpenAI canonical model name
+      3. ``model``              — Anthropic canonical model name (also OpenAI fallback)
+
+    Returns None if no non-empty value is found.
+    """
+    for key in ("system_fingerprint", "model_name", "model"):
+        value = response_metadata.get(key)
+        if value and isinstance(value, str) and value.strip():
+            return str(value)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Finish reason helper
 # ---------------------------------------------------------------------------
 
@@ -265,6 +287,10 @@ class LLMWrapper:
         parts = model_id.split(":", 1)
         self._provider: str = parts[0] if len(parts) == 2 else "unknown"
         self._bare_model: str = parts[1] if len(parts) == 2 else model_id
+
+        # Reproducibility: actual model version reported by provider after each call.
+        # Updated in-place by ainvoke(); only set to a non-None value, never cleared.
+        self.last_model_version: str | None = None
 
     @property
     def model_id(self) -> str:
@@ -414,6 +440,12 @@ class LLMWrapper:
                 finish_reason=fake_resp.finish_reason,
                 started_at=started_dt,
             )
+
+        # --- Capture actual model version from provider response_metadata ---
+        resp_meta_for_version: dict[str, Any] = dict(ai_msg.response_metadata or {})
+        extracted_version = _extract_model_version(resp_meta_for_version)
+        if extracted_version is not None:
+            self.last_model_version = extracted_version
 
         usage, cache_write_tokens = _detect_and_parse_usage(ai_msg, self._provider)
         actual_cost = self._pricing.cost(
