@@ -511,51 +511,81 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             self._log.error("on_custom_event[human_request]: db insert failed", exc_info=True)
 
     async def _handle_human_response(self, data: Any) -> None:
-        """UPDATE a HumanInteraction row with the human/gateway response.
+        """Persist the human/gateway response for a (run_id, request_id) pair.
 
-        Matches on ``(run_id, request_id)`` AND ``response_json IS NULL`` so the
-        UPDATE is idempotent — a re-executed node that re-dispatches this event
-        will not overwrite an already-filled response.
+        Race-tolerant UPSERT: ``human_request`` and ``human_response`` are dispatched
+        as independent custom events; their callback handlers are not strictly
+        ordered against each other (LangChain dispatches them in parallel and the
+        request INSERT may not have committed by the time the response handler
+        runs). Implementing this as a plain UPDATE WHERE response_json IS NULL
+        therefore loses the response when the order flips.
 
-        ``data`` is expected to be a dict with keys:
-            run_id        (UUID)
-            request_id    (str)
-            answered_at   (datetime, timezone-aware)
-            response_json (dict — HumanResponse.model_dump())
-            source        (str)
-            timed_out     (bool)
-            latency_s     (float | None)
+        Strategy: INSERT placeholder row keyed by (run_id, request_id) with
+        response_json/answered_at filled, and ON CONFLICT (uq_human_interactions
+        _run_request) UPDATE the existing row's response_json/answered_at — but
+        only if the existing row still has response_json IS NULL, so a duplicate
+        re-dispatch never clobbers an already-filled response (idempotency).
+
+        Expected ``data`` keys:
+            run_id        (UUID), request_id (str)
+            answered_at   (datetime, tz-aware), response_json (dict)
+            role          (str | HumanRole, optional — defaults to 'Reviewer')
+            context_json  (dict, optional — defaults to {})
+            requested_at  (datetime, optional — defaults to answered_at)
+            source, timed_out, latency_s (carried inside response_json by caller)
         """
         try:
             run_id: UUID = data["run_id"]
             request_id: str = data["request_id"]
             answered_at: datetime = data.get("answered_at", _now_utc())
             response_json: dict[str, Any] = data.get("response_json", {})
-            source: str = data.get("source", "human")
-            timed_out: bool = bool(data.get("timed_out", False))
-            latency_s: float | None = data.get("latency_s")
-
-            stmt = (
-                update(HumanInteraction)
-                .where(
-                    HumanInteraction.run_id == run_id,
-                    HumanInteraction.request_id == request_id,
-                    HumanInteraction.response_json.is_(None),
-                )
-                .values(
-                    answered_at=answered_at,
-                    response_json=response_json,
-                )
-            )
-            # Store source, timed_out, latency_s inside response_json if not already there,
-            # or as separate computed values. Since the model has no dedicated columns for
-            # these (they live in response_json as per HumanResponse.model_dump()), the
-            # caller should include them in response_json. We log them for diagnostics.
-            _ = source  # used by caller via response_json; kept for future column expansion
-            _ = timed_out
-            _ = latency_s
+            role = str(data.get("role", "Reviewer"))
+            context_json: dict[str, Any] = data.get("context_json", {})
+            requested_at: datetime = data.get("requested_at", answered_at)
 
             async with session_scope(self._session_factory) as session:
-                await session.execute(stmt)
+                # SELECT ... FOR UPDATE serializes against a concurrent _handle_human_request
+                # INSERT for the same (run_id, request_id) so the race is collapsed inside
+                # a single transaction.
+                existing = (
+                    await session.execute(
+                        select(HumanInteraction)
+                        .where(
+                            HumanInteraction.run_id == run_id,
+                            HumanInteraction.request_id == request_id,
+                        )
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+
+                if existing is None:
+                    # No request row landed yet (or never will) — insert a complete row
+                    # so the response is not lost. ON CONFLICT DO NOTHING guards against
+                    # the request handler racing in between SELECT and INSERT.
+                    ins = (
+                        pg_insert(HumanInteraction)
+                        .values(
+                            id=uuid.uuid4(),
+                            run_id=run_id,
+                            request_id=request_id,
+                            role=role,
+                            context_json=context_json,
+                            requested_at=requested_at,
+                            answered_at=answered_at,
+                            response_json=response_json,
+                        )
+                        .on_conflict_do_nothing(constraint=CONSTRAINT_NAME)
+                    )
+                    await session.execute(ins)
+                elif existing.response_json is None:
+                    await session.execute(
+                        update(HumanInteraction)
+                        .where(HumanInteraction.id == existing.id)
+                        .values(
+                            answered_at=answered_at,
+                            response_json=response_json,
+                        )
+                    )
+                # else: response already filled — idempotent no-op
         except Exception:
-            self._log.error("on_custom_event[human_response]: db update failed", exc_info=True)
+            self._log.error("on_custom_event[human_response]: db upsert failed", exc_info=True)

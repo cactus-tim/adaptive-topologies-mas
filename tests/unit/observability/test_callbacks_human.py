@@ -200,9 +200,10 @@ async def test_human_request_duplicate_does_not_double_insert() -> None:
 
 
 @pytest.mark.asyncio
-async def test_human_response_updates_with_is_null_filter() -> None:
-    """on_custom_event('human_response', ...) must execute an UPDATE that filters
-    WHERE response_json IS NULL to prevent overwriting an existing response.
+async def test_human_response_select_for_update_then_insert_when_missing() -> None:
+    """on_custom_event('human_response', ...) must SELECT ... FOR UPDATE first, and
+    when no existing request row is found, INSERT a complete row (race-tolerant
+    fallback for the case where the response handler runs before the request one).
     """
     executed_stmts: list[Any] = []
     session_factory = _build_session_factory()
@@ -211,7 +212,7 @@ async def test_human_response_updates_with_is_null_filter() -> None:
     async def capture_execute(stmt: Any, *args: Any, **kwargs: Any) -> MagicMock:
         executed_stmts.append(stmt)
         result = MagicMock()
-        result.scalar_one = MagicMock(return_value=None)
+        result.scalar_one_or_none = MagicMock(return_value=None)
         return result
 
     session.execute = AsyncMock(side_effect=capture_execute)
@@ -225,19 +226,16 @@ async def test_human_response_updates_with_is_null_filter() -> None:
         run_id=uuid4(),
     )
 
-    assert len(executed_stmts) == 1, f"Expected 1 statement, got {len(executed_stmts)}"
+    # Expect SELECT ... FOR UPDATE then INSERT ... ON CONFLICT DO NOTHING
+    assert len(executed_stmts) == 2, f"Expected 2 statements, got {len(executed_stmts)}"
 
-    stmt = executed_stmts[0]
-    compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
-    compiled_upper = compiled.upper()
+    first = str(executed_stmts[0].compile(compile_kwargs={"literal_binds": False})).upper()
+    assert first.strip().startswith("SELECT"), f"Expected SELECT first, got: {first}"
+    assert "FOR UPDATE" in first, f"Expected FOR UPDATE clause, got: {first}"
 
-    # Must be an UPDATE statement
-    assert compiled_upper.strip().startswith("UPDATE"), (
-        f"Expected UPDATE statement, got: {compiled}"
-    )
-
-    # Must have IS NULL filter for response_json
-    assert "IS NULL" in compiled_upper, f"Expected IS NULL filter in UPDATE, got: {compiled}"
+    second = str(executed_stmts[1].compile(compile_kwargs={"literal_binds": False})).upper()
+    assert second.strip().startswith("INSERT"), f"Expected INSERT second, got: {second}"
+    assert "ON CONFLICT" in second, f"Expected ON CONFLICT clause, got: {second}"
 
 
 # ---------------------------------------------------------------------------
@@ -246,38 +244,46 @@ async def test_human_response_updates_with_is_null_filter() -> None:
 
 
 @pytest.mark.asyncio
-async def test_human_response_idempotent_via_is_null_filter() -> None:
-    """A second human_response dispatch for the same (run_id, request_id) fires another
-    UPDATE, but the WHERE response_json IS NULL clause ensures it matches 0 rows once
-    the first response is written. We confirm the filter clause is present in all
-    generated UPDATE statements.
+async def test_human_response_idempotent_when_existing_response_present() -> None:
+    """A re-dispatch of human_response for a row whose response_json is already filled
+    must NOT issue an UPDATE — the SELECT ... FOR UPDATE branch sees a populated row
+    and short-circuits to a no-op (idempotency contract).
     """
+    from atm.storage.models import HumanInteraction
+
     executed_stmts: list[Any] = []
     session_factory = _build_session_factory()
     session = session_factory.return_value
 
+    # Simulate an existing row that already has response_json filled
+    existing_row = MagicMock(spec=HumanInteraction)
+    existing_row.id = uuid4()
+    existing_row.response_json = {"action": "approve"}
+
     async def capture_execute(stmt: Any, *args: Any, **kwargs: Any) -> MagicMock:
         executed_stmts.append(stmt)
         result = MagicMock()
-        result.scalar_one = MagicMock(return_value=None)
+        result.scalar_one_or_none = MagicMock(return_value=existing_row)
         return result
 
     session.execute = AsyncMock(side_effect=capture_execute)
 
     handler = _make_handler(session_factory=session_factory)
-    run_id = uuid4()
-    data = _human_response_data(run_id=run_id, request_id="chain:reviewer:2")
+    data = _human_response_data(request_id="chain:reviewer:2")
 
-    # Two dispatches simulating a re-executed node
     await handler.on_custom_event(name="human_response", data=data, run_id=uuid4())
     await handler.on_custom_event(name="human_response", data=data, run_id=uuid4())
 
-    assert len(executed_stmts) > 0, "No statements executed"
-    assert len(executed_stmts) == 2
-
+    # Each dispatch should issue exactly ONE statement (the SELECT ... FOR UPDATE);
+    # no UPDATE/INSERT follows because existing.response_json is non-NULL.
+    assert len(executed_stmts) == 2, (
+        f"Expected 2 statements (one SELECT per dispatch), got {len(executed_stmts)}"
+    )
     for stmt in executed_stmts:
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).upper()
-        assert "IS NULL" in compiled, "IS NULL guard missing from one of the UPDATE statements"
+        assert compiled.strip().startswith("SELECT"), (
+            f"Expected SELECT only — idempotency must short-circuit before UPDATE; got: {compiled}"
+        )
 
 
 # ---------------------------------------------------------------------------
