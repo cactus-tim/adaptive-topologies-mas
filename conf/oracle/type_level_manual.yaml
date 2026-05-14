@@ -1,0 +1,53 @@
+# conf/oracle/type_level_manual.yaml
+#
+# Purpose: Manual ground-truth topology recommendations for the Oracle module.
+#   Maps (task_type x phase) -> recommended_topology.
+#   Used to bootstrap / validate the ML oracle before training data is available.
+#
+# Shape: { task_type: { phase: { recommended_topology, comment } } }
+#
+# Allowed topology values: linear | supervisor | mesh | debate | hierarchical
+
+programming:
+  planning:
+    recommended_topology: TODO
+    comment: "e.g. supervisor for structured decomposition"
+  execution:
+    recommended_topology: TODO
+    comment: "e.g. hierarchical for parallel subtask execution"
+  verification:
+    recommended_topology: TODO
+    comment: "e.g. debate for adversarial code review"
+
+reasoning:
+  planning:
+    recommended_topology: TODO
+    comment: "e.g. mesh for collaborative hypothesis building"
+  execution:
+    recommended_topology: TODO
+    comment: "e.g. debate for multi-perspective reasoning"
+  verification:
+    recommended_topology: TODO
+    comment: "e.g. linear for sequential consistency checks"
+
+creative:
+  planning:
+    recommended_topology: TODO
+    comment: "e.g. mesh for divergent ideation"
+  execution:
+    recommended_topology: TODO
+    comment: "e.g. mesh for free-form collaborative generation"
+  verification:
+    recommended_topology: TODO
+    comment: "e.g. supervisor for quality gatekeeping"
+
+decision:
+  planning:
+    recommended_topology: TODO
+    comment: "e.g. debate for surfacing trade-offs"
+  execution:
+    recommended_topology: TODO
+    comment: "e.g. supervisor for option evaluation"
+  verification:
+    recommended_topology: TODO
+    comment: "e.g. linear for final decision synthesis"
