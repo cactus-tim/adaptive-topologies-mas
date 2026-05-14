@@ -27,6 +27,8 @@ Exception handling:
 
 from __future__ import annotations
 
+import os
+import socket
 import subprocess
 import time
 import traceback
@@ -270,6 +272,48 @@ async def _insert_run(
         session.add(run)
 
     return run_id
+
+
+async def _register_worker_identity(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+    *,
+    host: str | None = None,
+    pid: int | None = None,
+) -> None:
+    """Persist host/process_pid for the worker that owns ``run_id`` (M12).
+
+    Run UPDATE immediately after ``_insert_run`` so M12 reconcile (m12-resume-replay)
+    can detect crashed workers by matching ``runs.process_pid`` against the live
+    process list on ``runs.host``. Failure to UPDATE is logged but never raises —
+    the run itself proceeds.
+
+    Args:
+        session_factory: Async session factory.
+        run_id:          UUID of the run row to update.
+        host:            Hostname (defaults to ``socket.gethostname()``).
+        pid:             Process ID (defaults to ``os.getpid()``).
+    """
+    effective_host = host if host is not None else socket.gethostname()
+    effective_pid = pid if pid is not None else os.getpid()
+
+    # Defensive truncation — runs.host is VARCHAR(64) per Alembic 0004.
+    if len(effective_host) > 64:
+        effective_host = effective_host[:64]
+
+    try:
+        async with session_scope(session_factory) as session:
+            await session.execute(
+                sa.update(Run)
+                .where(Run.id == run_id)
+                .values(host=effective_host, process_pid=effective_pid)
+            )
+    except Exception as exc:
+        logger.warning(
+            "register_worker_identity UPDATE failed; leaving host/pid NULL",
+            run_id=str(run_id),
+            error=str(exc)[:200],
+        )
 
 
 async def _update_run_success(
@@ -580,6 +624,11 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
 
         # Step 2: insert run row
         run_id = await _insert_run(session_factory, exp_id, cfg)
+
+        # Step 2b (M12 grid-runner): register host + pid for worker tracking.
+        # Runs unconditionally (single-run benefits from observability too;
+        # m12-resume-replay needs this for crashed-worker reconcile).
+        await _register_worker_identity(session_factory, run_id)
 
         log = logger.bind(run_id=str(run_id), exp_id=str(exp_id))
         log.info("run started", topology=cfg.topology.name, task=cfg.task.name)
