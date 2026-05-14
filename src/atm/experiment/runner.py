@@ -27,6 +27,8 @@ Exception handling:
 
 from __future__ import annotations
 
+import os
+import socket
 import subprocess
 import time
 import traceback
@@ -193,6 +195,11 @@ async def _ensure_experiment(
     """
     git_sha = _get_git_sha()
 
+    # m12-resume-replay decision (a): widen config_snapshot to the full
+    # cfg.model_dump(mode="json") so resume_one / replay_one can rehydrate
+    # ExperimentConfig without requiring the original YAML file on disk.
+    full_snapshot = cfg.model_dump(mode="json")
+
     async with session_factory() as session:
         # Try INSERT ... ON CONFLICT DO NOTHING RETURNING id
         stmt = (
@@ -200,12 +207,7 @@ async def _ensure_experiment(
             .values(
                 id=uuid.uuid4(),
                 name=cfg.name,
-                config_snapshot={
-                    "name": cfg.name,
-                    "topology": cfg.topology.name,
-                    "task_name": cfg.task.name,
-                    "seed": cfg.seed,
-                },
+                config_snapshot=full_snapshot,
                 git_sha=git_sha,
                 started_at=sa.func.now(),
                 status="running",
@@ -251,6 +253,12 @@ async def _insert_run(
         cfg.human.role.value if cfg.human is not None and cfg.human.enabled else None
     )
 
+    # m12-resume-replay: capture host + pid so reconcile_zombies can verify
+    # liveness of stale 'running' rows on the same machine. Cross-host
+    # verification would need a heartbeat table — out of scope here.
+    host = socket.gethostname()
+    process_pid = os.getpid()
+
     async with session_scope(session_factory) as session:
         run = Run(
             id=run_id,
@@ -266,6 +274,8 @@ async def _insert_run(
             budget_spent_usd=Decimal("0"),
             started_at=datetime.now(UTC),
             human_role=human_role_value,
+            host=host,
+            process_pid=process_pid,
         )
         session.add(run)
 
