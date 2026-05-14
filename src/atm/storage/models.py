@@ -120,6 +120,7 @@ class Run(Base):
         sa.Index("runs_task_id_idx", "task_id"),
         sa.Index("runs_status_idx", "status"),
         sa.Index("runs_started_idx", "started_at"),
+        sa.Index("runs_exp_status_idx", "exp_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -186,6 +187,15 @@ class Run(Base):
         nullable=True,
     )
     error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+
+    # Replay / provenance columns (m12-config-schema §3)
+    replay_of: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("runs.id", ondelete="SET NULL", name="fk_runs_replay_of_runs"),
+        nullable=True,
+    )
+    host: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    process_pid: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
     # Relationships
     experiment: Mapped[Experiment] = relationship(
