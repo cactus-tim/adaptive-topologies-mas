@@ -155,9 +155,7 @@ async def test_resume_after_sigkill_completes_run(
         async with engine.connect() as conn:
             status_row = (
                 await conn.execute(
-                    sa.text("SELECT status FROM runs WHERE id = :rid").bindparams(
-                        rid=target_run_id
-                    )
+                    sa.text("SELECT status FROM runs WHERE id = :rid").bindparams(rid=target_run_id)
                 )
             ).fetchone()
     finally:

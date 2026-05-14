@@ -104,9 +104,9 @@ def _pid_alive(pid: int) -> bool:
         return False
 
     try:
-        import psutil  # type: ignore[import-not-found]
+        import psutil  # type: ignore[import-untyped]
     except ImportError:
-        psutil = None  # type: ignore[assignment]
+        psutil = None
 
     if psutil is not None:
         try:
@@ -123,9 +123,7 @@ def _pid_alive(pid: int) -> bool:
         # EPERM means the pid exists but is owned by another uid — still alive.
         return True
     except OSError as exc:  # pragma: no cover — defensive
-        if getattr(exc, "errno", None) == errno.ESRCH:
-            return False
-        return True
+        return getattr(exc, "errno", None) != errno.ESRCH
     return True
 
 
@@ -213,9 +211,7 @@ async def reconcile_zombies(
     # 2) Classify in-memory (no DB calls during the pid_alive probe).
     candidates: list[ZombieRow] = []
     for run_id, host, pid in rows:
-        zombie = _classify_row(
-            run_id=run_id, host=host, pid=pid, current_host=host_name
-        )
+        zombie = _classify_row(run_id=run_id, host=host, pid=pid, current_host=host_name)
         if zombie is not None:
             candidates.append(zombie)
     report.zombies = candidates

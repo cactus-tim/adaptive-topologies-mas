@@ -27,6 +27,7 @@ Exception handling:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import socket
 import subprocess
@@ -1201,8 +1202,7 @@ async def resume_one(
         # fires in the rare "no cfg" path; the CLI provides cfg=None and
         # this function discovers it from the snapshot.
         raise RuntimeError(
-            "resume_one: cannot determine pg_dsn — pass cfg explicitly or "
-            "ensure ATM_PG_DSN is set."
+            "resume_one: cannot determine pg_dsn — pass cfg explicitly or ensure ATM_PG_DSN is set."
         )
     engine, session_factory = bootstrap_engine
 
@@ -1288,8 +1288,7 @@ async def replay_one(
     bootstrap_engine = create_engine_for_dsn_discovery(cfg_override)
     if bootstrap_engine is None:
         raise RuntimeError(
-            "replay_one: cannot determine pg_dsn — pass cfg_override explicitly "
-            "or set ATM_PG_DSN."
+            "replay_one: cannot determine pg_dsn — pass cfg_override explicitly or set ATM_PG_DSN."
         )
     engine, session_factory = bootstrap_engine
 
@@ -1307,11 +1306,7 @@ async def replay_one(
         if mode == "deterministic":
             parquet_root = Path(cfg.observability.parquet_dir)
             llm_calls_path = (
-                parquet_root
-                / str(exp_id)
-                / "runs"
-                / str(original_run_id)
-                / "llm_calls.parquet"
+                parquet_root / str(exp_id) / "runs" / str(original_run_id) / "llm_calls.parquet"
             )
             if not llm_calls_path.exists():
                 raise FileNotFoundError(
@@ -1338,10 +1333,7 @@ async def replay_one(
             # parquet file. Each role replays the SAME llm_calls.parquet in
             # role-keyed order — for arch.md's per-call schema this is the
             # canonical deterministic mode.
-            replay_sources = {
-                role: llm_calls_path
-                for role in ("planner", "executor", "critic", "researcher")
-            }
+            replay_sources = dict.fromkeys(("planner", "executor", "critic", "researcher"), llm_calls_path)
             # cfg is a Pydantic model — clone with model fields updated.
             new_model_cfg = cfg.model.model_copy(update={"default": "fake:replay"})
             cfg = cfg.model_copy(update={"model": new_model_cfg})
@@ -1404,14 +1396,10 @@ async def _insert_replay_run(
     async with session_scope(session_factory) as session:
         # Parent equality: the replay run lives in the same experiment as the
         # original. Verify before INSERT to surface the constraint clearly.
-        parent_check = await session.execute(
-            sa.select(Run.exp_id).where(Run.id == replay_of)
-        )
+        parent_check = await session.execute(sa.select(Run.exp_id).where(Run.id == replay_of))
         parent_row = parent_check.fetchone()
         if parent_row is None:
-            raise LookupError(
-                f"replay_of={replay_of} not found in runs table"
-            )
+            raise LookupError(f"replay_of={replay_of} not found in runs table")
         if parent_row[0] != exp_id:
             raise ValueError(
                 f"replay_one: parent run {replay_of} belongs to exp_id "
@@ -1653,10 +1641,8 @@ async def _execute_existing_run(
 
     except BudgetExceededError:
         if parquet_writer is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await parquet_writer.close()
-            except Exception:
-                pass
         try:
             await _update_run_failed(
                 session_factory,
@@ -1685,10 +1671,8 @@ async def _execute_existing_run(
     except Exception:
         error_text = traceback.format_exc()
         if parquet_writer is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await parquet_writer.close()
-            except Exception:
-                pass
         try:
             await _update_run_failed(
                 session_factory,

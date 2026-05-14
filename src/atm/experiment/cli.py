@@ -162,6 +162,10 @@ def replay(
     if output_config_only:
         # Lightweight path — just rehydrate cfg from snapshot and print.
         async def _dump() -> str:
+            # Without cfg we don't have a DSN. Require ATM_PG_DSN env or fail
+            # gracefully — exposing the typer error.
+            import os
+
             from atm.experiment.runner import (
                 _fetch_experiment_snapshot,
                 _fetch_run_row,
@@ -169,15 +173,10 @@ def replay(
                 create_engine_for_dsn_discovery,
             )
 
-            # Without cfg we don't have a DSN. Require ATM_PG_DSN env or fail
-            # gracefully — exposing the typer error.
-            import os
-
-            dsn = os.environ.get("ATM_PG_DSN")
-            if dsn is None:
-                raise RuntimeError(
-                    "--output-config-only requires ATM_PG_DSN env variable."
-                )
+            dsn_env = os.environ.get("ATM_PG_DSN")
+            if dsn_env is None:
+                raise RuntimeError("--output-config-only requires ATM_PG_DSN env variable.")
+            dsn: str = dsn_env
             # Build a minimal cfg shim purely for DSN-discovery.
             from atm.experiment.config import ObservabilityCfg
 
@@ -273,9 +272,7 @@ def reconcile(
         engine = create_engine(dsn)
         session_factory = create_session_factory(engine)
         try:
-            report = await reconcile_zombies(
-                session_factory, eid, allow_force_resume=dry_run
-            )
+            report = await reconcile_zombies(session_factory, eid, allow_force_resume=dry_run)
             return {
                 "scanned": report.scanned,
                 "zombies": [
@@ -294,7 +291,7 @@ def reconcile(
 
     try:
         result = asyncio.run(_go())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         typer.echo(f"Reconcile failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 

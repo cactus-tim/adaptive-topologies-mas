@@ -24,7 +24,6 @@ from atm.experiment.reconcile import (
     reconcile_zombies,
 )
 
-
 # ---------------------------------------------------------------------------
 # _classify_row — pure-function tests
 # ---------------------------------------------------------------------------
@@ -263,8 +262,10 @@ async def test_reconcile_empty_experiment(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_zombie_row_is_frozen() -> None:
     """ZombieRow is frozen — immutable for safe sharing across callers."""
+    from dataclasses import FrozenInstanceError
+
     z = ZombieRow(run_id=uuid.uuid4(), host="x", pid=1, reason="pid_dead")
-    with pytest.raises(Exception):  # noqa: BLE001 — FrozenInstanceError
+    with pytest.raises(FrozenInstanceError):
         z.host = "y"  # type: ignore[misc]
 
 
