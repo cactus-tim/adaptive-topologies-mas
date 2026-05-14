@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -221,6 +222,15 @@ def status_cmd(
             err=True,
         )
         raise typer.Exit(3)
+
+    # Validate --exp-id as UUID early to avoid leaking DB error messages back
+    # to the user. UUID parsing is purely string-based; no DB call yet.
+    if exp_id is not None:
+        try:
+            uuid.UUID(exp_id)
+        except ValueError as exc:
+            typer.echo(f"Config error: --exp-id must be a valid UUID ({exc})", err=True)
+            raise typer.Exit(3) from exc
 
     engine = create_engine(pg_dsn)
     factory = create_session_factory(engine)
