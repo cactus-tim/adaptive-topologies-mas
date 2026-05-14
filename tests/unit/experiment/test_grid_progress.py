@@ -228,9 +228,11 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         await asyncio.sleep(0)
         return worker_fn(args[0] if args else None)
 
-    # Patch the running loop's run_in_executor (instance-level via type).
-    loop = asyncio.get_event_loop()
-    monkeypatch.setattr(type(loop), "run_in_executor", fake_run_in_executor, raising=True)
+    # Patch run_in_executor on the BaseEventLoop class so it applies
+    # regardless of which loop pytest-asyncio constructs for the test.
+    monkeypatch.setattr(
+        asyncio.BaseEventLoop, "run_in_executor", fake_run_in_executor, raising=True
+    )
 
     # Stub PG update + resolve to avoid DB I/O.
     async def fake_update(*args: Any, **kwargs: Any) -> None:
