@@ -7,7 +7,7 @@ end-to-end scenario, and verifies DDL equivalence between Base.metadata and
 the alembic migration head.
 
 Tests are marked @pytest.mark.integration and are skipped unless
-ATM_INTEGRATION_PG=1 is set in the environment.
+ATM_ENABLE_PG_TESTS=1 is set in the environment.
 
 Approach
 --------

@@ -1,6 +1,6 @@
 """Integration tests for atm.evaluation.aggregator — requires PostgreSQL.
 
-Skipped unless ATM_INTEGRATION_PG=1 is set in the environment.
+Skipped unless ATM_ENABLE_PG_TESTS=1 is set in the environment.
 
 4 tests:
   1. persist_quality writes quality_score column.

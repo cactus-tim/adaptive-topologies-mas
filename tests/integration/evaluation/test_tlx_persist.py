@@ -1,6 +1,6 @@
 """Integration tests for atm.evaluation.tlx.persist_tlx — requires PostgreSQL.
 
-Skipped unless ATM_INTEGRATION_PG=1 is set in the environment.
+Skipped unless ATM_ENABLE_PG_TESTS=1 is set in the environment.
 
 3 tests:
   1. persist_tlx writes raw_tlx_score to human_interactions row.

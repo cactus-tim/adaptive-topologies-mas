@@ -4,12 +4,12 @@ Promoted from tests/integration/storage/conftest.py so that evaluation
 integration tests can use the same fixtures without duplication.
 
 Fixtures:
-  - pg_dsn               (session scope) — returns PG DSN; skips if ATM_INTEGRATION_PG!=1
+  - pg_dsn               (session scope) — returns PG DSN; skips if ATM_ENABLE_PG_TESTS!=1
   - pg_engine_fast       (function scope) — create_all / drop_all DDL
   - pg_engine_alembic    (session scope)  — alembic upgrade head / downgrade base
   - session_factory_fast (function scope) — async_sessionmaker bound to pg_engine_fast
 
-All fixtures skip automatically when ATM_INTEGRATION_PG=1 is not set.
+All fixtures skip automatically when ATM_ENABLE_PG_TESTS is not in {"1","true","yes"}.
 """
 
 from __future__ import annotations
@@ -27,10 +27,11 @@ from atm.storage.models import Base
 from atm.storage.session import create_engine, create_session_factory
 
 # ---------------------------------------------------------------------------
-# Module-level flag: only run when ATM_INTEGRATION_PG=1
+# Module-level flag: only run when ATM_ENABLE_PG_TESTS is truthy
+# (canonical env-var across the whole suite; root conftest uses the same)
 # ---------------------------------------------------------------------------
 
-_PG_ENABLED = os.environ.get("ATM_INTEGRATION_PG", "") == "1"
+_PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 
 
@@ -38,7 +39,7 @@ _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 def pg_dsn() -> str:
     """Return the PG DSN from the environment, skip if integration flag not set."""
     if not _PG_ENABLED:
-        pytest.skip("ATM_INTEGRATION_PG=1 not set — skipping integration tests")
+        pytest.skip("ATM_ENABLE_PG_TESTS not set — skipping PostgreSQL integration tests")
     return os.environ.get("ATM_PG_DSN", _DEFAULT_DSN)
 
 
