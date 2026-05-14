@@ -98,9 +98,9 @@ class GridResult:
 # ---------------------------------------------------------------------------
 
 
-_TERMINAL_SUCCESS = {"completed"}
-_TERMINAL_FAILURE = {"failed", "budget_exceeded"}
-_TERMINAL = _TERMINAL_SUCCESS | _TERMINAL_FAILURE
+_TERMINAL_SUCCESS: frozenset[str] = frozenset({"completed"})
+_TERMINAL_FAILURE: frozenset[str] = frozenset({"failed", "budget_exceeded"})
+_TERMINAL: frozenset[str] = _TERMINAL_SUCCESS | _TERMINAL_FAILURE
 
 
 def _aggregate_experiment_status(statuses: list[str]) -> str:
