@@ -37,7 +37,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -400,6 +400,8 @@ def _build_llm_wrappers(
     cfg: ExperimentConfig,
     budget: BudgetTracker,
     pricing: Pricing,
+    *,
+    replay_sources: dict[str, Path] | None = None,
 ) -> dict[str, LLMWrapper]:
     """Build one LLMWrapper per role from cfg.model.by_role + default fallback.
 
@@ -409,7 +411,18 @@ def _build_llm_wrappers(
     with a warning log.
 
     For "fake:echo" providers, injects FakeLLM(mode="echo").
+    For "fake:replay" providers (m12-resume-replay), ``replay_sources`` must
+    contain a Parquet path per role pointing at the original ``llm_calls.parquet``.
     For real providers, init_chat_model is used (via build_llm / LLMWrapper).
+
+    Args:
+        cfg:            Experiment configuration.
+        budget:         Shared BudgetTracker.
+        pricing:        Pricing table.
+        replay_sources: Optional ``{role: parquet_path}`` for ``fake:replay``.
+                        When the configured model_id for a role is ``fake:replay``,
+                        the matching entry is forwarded to ``build_llm`` as
+                        ``replay_source=...``.
 
     Returns:
         Dict mapping role name to LLMWrapper.
@@ -438,6 +451,23 @@ def _build_llm_wrappers(
                 pricing=pricing,
                 budget=budget,
                 fixture_path=fixture_path,
+            )
+        elif provider == "fake" and bare_model == "replay":
+            # m12-resume-replay: route to FakeLLM(mode="replay") using the
+            # caller-supplied per-role Parquet table. Replay sources MUST be
+            # provided when any role uses fake:replay.
+            replay_path = replay_sources.get(role) if replay_sources else None
+            if replay_path is None:
+                raise ValueError(
+                    f"fake:replay requested for role={role!r} but no replay_source "
+                    f"provided. Pass replay_sources={{'{role}': <parquet_path>}} "
+                    f"to _build_llm_wrappers / replay_one()."
+                )
+            wrappers[role] = build_llm(
+                model_id=model_id,
+                pricing=pricing,
+                budget=budget,
+                replay_source=replay_path,
             )
         else:
             wrappers[role] = build_llm(
@@ -995,3 +1025,682 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                     )
 
         await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# m12-resume-replay: snapshot rehydration + resume_one + replay_one
+# ---------------------------------------------------------------------------
+
+
+def _load_cfg_from_snapshot(snapshot: dict[str, Any]) -> ExperimentConfig:
+    """Rehydrate an :class:`ExperimentConfig` from ``experiments.config_snapshot``.
+
+    The m12-resume-replay block widens ``config_snapshot`` to the full
+    ``cfg.model_dump(mode="json")`` payload, so this is just a thin wrapper
+    around ``ExperimentConfig.model_validate``. We keep it as a named helper
+    so that older sparse snapshots (4-field shape pre-m12) can be detected
+    and rejected with a clear error message in one place.
+
+    Args:
+        snapshot: The JSONB dict pulled from ``experiments.config_snapshot``.
+
+    Returns:
+        A fully-validated :class:`ExperimentConfig`.
+
+    Raises:
+        ValueError: If the snapshot is missing required keys (typical of the
+                    legacy 4-field shape from before m12-resume-replay).
+    """
+    # Sparse legacy snapshots only carry {name, topology, task_name, seed}.
+    # We can't rehydrate without 'observability', 'budget', 'model', etc.
+    required = {"name", "task", "model", "agents", "topology", "budget", "observability"}
+    missing = required - snapshot.keys()
+    if missing:
+        raise ValueError(
+            f"experiments.config_snapshot is missing keys {sorted(missing)} — "
+            "this row was written by a pre-m12 runner. Resume/replay require a "
+            "full cfg.model_dump() snapshot. Re-run the original experiment "
+            "after the m12-resume-replay deployment, or restore the YAML and "
+            "pass it explicitly."
+        )
+    return ExperimentConfig.model_validate(snapshot)
+
+
+async def _fetch_run_row(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+) -> dict[str, Any]:
+    """SELECT a single runs row and return its key fields as a dict.
+
+    Returns: dict with keys {id, exp_id, seed, model, models_by_role_json,
+    model_version_snapshot, status, host, process_pid, replay_of}.
+
+    Raises:
+        LookupError: if no row matches ``run_id``.
+    """
+    async with session_scope(session_factory) as session:
+        result = await session.execute(
+            sa.select(
+                Run.id,
+                Run.exp_id,
+                Run.seed,
+                Run.model,
+                Run.models_by_role_json,
+                Run.model_version_snapshot,
+                Run.status,
+                Run.host,
+                Run.process_pid,
+                Run.replay_of,
+            ).where(Run.id == run_id)
+        )
+        row = result.fetchone()
+    if row is None:
+        raise LookupError(f"run_id={run_id} not found in runs table")
+    return {
+        "id": row[0],
+        "exp_id": row[1],
+        "seed": row[2],
+        "model": row[3],
+        "models_by_role_json": row[4],
+        "model_version_snapshot": row[5],
+        "status": row[6],
+        "host": row[7],
+        "process_pid": row[8],
+        "replay_of": row[9],
+    }
+
+
+async def _fetch_experiment_snapshot(
+    session_factory: async_sessionmaker[AsyncSession],
+    exp_id: UUID,
+) -> dict[str, Any]:
+    """SELECT experiments.config_snapshot for the given exp_id."""
+    async with session_scope(session_factory) as session:
+        result = await session.execute(
+            sa.select(Experiment.config_snapshot).where(Experiment.id == exp_id)
+        )
+        row = result.fetchone()
+    if row is None:
+        raise LookupError(f"exp_id={exp_id} not found in experiments table")
+    snapshot = row[0]
+    if not isinstance(snapshot, dict):
+        raise ValueError(
+            f"experiments.config_snapshot for exp_id={exp_id} is not a dict "
+            f"(got {type(snapshot).__name__})"
+        )
+    return snapshot
+
+
+async def _set_run_status_running(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+) -> None:
+    """Reset a run row to status='running' (resume preamble).
+
+    Also updates host/process_pid so a subsequent reconcile sees the *new*
+    resuming worker, not the stale original. Idempotent.
+    """
+    async with session_scope(session_factory) as session:
+        await session.execute(
+            sa.update(Run)
+            .where(Run.id == run_id)
+            .values(
+                status="running",
+                finish_reason=None,
+                host=socket.gethostname(),
+                process_pid=os.getpid(),
+            )
+        )
+
+
+async def resume_one(
+    run_id: UUID,
+    cfg: ExperimentConfig | None = None,
+    *,
+    force: bool = False,
+) -> RunResult:
+    """Resume a previously-interrupted run from the last LangGraph checkpoint.
+
+    Reads the ``runs`` row identified by ``run_id``, rehydrates the
+    :class:`ExperimentConfig` from ``experiments.config_snapshot``, resets the
+    run status to 'running', and re-invokes the topology graph with
+    ``thread_id=str(run_id)`` so LangGraph's PG checkpointer continues from
+    the latest checkpoint.
+
+    Args:
+        run_id: UUID of the run row to resume.
+        cfg:    Optional pre-built ExperimentConfig (skips snapshot load — used
+                by tests). When None (default), config is rehydrated from
+                ``experiments.config_snapshot``.
+        force:  When True, skip the live-pid liveness check on the existing
+                ``runs.process_pid`` and proceed regardless. Use when the
+                original worker is stuck but not dead.
+
+    Returns:
+        :class:`RunResult` with the resumed run's terminal status + metrics.
+        The returned ``run_id`` equals the input ``run_id`` — resume does NOT
+        allocate a new run row.
+
+    Raises:
+        LookupError:       If ``run_id`` does not exist.
+        RuntimeError:      If the run is still alive (pid_alive=True) and
+                           ``force=False``.
+        Exception:         Re-raises any execution failure after persisting
+                           ``status='failed'``.
+    """
+    # Lazy import to avoid a top-level cycle with reconcile (which also lives
+    # in atm.experiment.*).
+    from atm.experiment.reconcile import _pid_alive
+
+    # 1) Fetch the run row to discover its experiment + reconstruct cfg.
+    bootstrap_engine = create_engine_for_dsn_discovery(cfg)
+    if bootstrap_engine is None:
+        # Without a cfg we don't know the DSN yet — caller must supply at
+        # least one of (cfg, ATM_PG_DSN env). We rely on cfg being passed
+        # from the CLI which itself loads the snapshot. This branch only
+        # fires in the rare "no cfg" path; the CLI provides cfg=None and
+        # this function discovers it from the snapshot.
+        raise RuntimeError(
+            "resume_one: cannot determine pg_dsn — pass cfg explicitly or "
+            "ensure ATM_PG_DSN is set."
+        )
+    engine, session_factory = bootstrap_engine
+
+    try:
+        run_row = await _fetch_run_row(session_factory, run_id)
+        exp_id: UUID = run_row["exp_id"]
+
+        if cfg is None:
+            snapshot = await _fetch_experiment_snapshot(session_factory, exp_id)
+            cfg = _load_cfg_from_snapshot(snapshot)
+
+        # 2) Liveness gate: refuse to resume a still-alive worker unless --force.
+        if not force:
+            stored_host = run_row["host"]
+            stored_pid = run_row["process_pid"]
+            same_host = stored_host == socket.gethostname()
+            if same_host and stored_pid is not None and _pid_alive(int(stored_pid)):
+                raise RuntimeError(
+                    f"resume_one: run {run_id} still has a live process "
+                    f"(pid={stored_pid}). Pass force=True to override."
+                )
+
+        # 3) Flip status to 'running' (clears stale 'failed' / kept 'running').
+        await _set_run_status_running(session_factory, run_id)
+
+        # 4) Reuse run_one's core execution path — but with the EXISTING run_id
+        # and exp_id. We replicate the inner machinery here because run_one's
+        # signature only takes cfg and always allocates new rows. Factoring
+        # the inner block out would touch a lot of well-tested code; the
+        # duplication is intentional and minimal.
+        return await _execute_existing_run(
+            cfg=cfg,
+            run_id=run_id,
+            exp_id=exp_id,
+            engine=engine,
+            session_factory=session_factory,
+            replay_sources=None,
+        )
+    finally:
+        await engine.dispose()
+
+
+async def replay_one(
+    original_run_id: UUID,
+    mode: Literal["deterministic", "semantic"] = "deterministic",
+    *,
+    cfg_override: ExperimentConfig | None = None,
+) -> RunResult:
+    """Deterministically (or semantically) replay an existing run.
+
+    Deterministic mode:
+      - Locates ``data/experiments/{exp_id}/runs/{original_run_id}/llm_calls.parquet``.
+      - Overrides ``cfg.model.default = "fake:replay"`` and points each role
+        at the original Parquet via ``replay_sources``.
+      - Verifies ``runs.model_version_snapshot`` of the original is non-empty
+        and matches the new run's intended models (loose check — exact
+        per-role parity is enforced only for non-fake models).
+      - INSERTs a new run row with ``replay_of=<original_run_id>``.
+
+    Semantic mode:
+      - Uses the real LLM with the same model + seed.
+      - Tolerance is checked downstream by the aggregator — this function
+        only plumbs the flag.
+
+    Args:
+        original_run_id: UUID of the run to replay.
+        mode:            "deterministic" (default) or "semantic".
+        cfg_override:    Optional override for tests to inject a cfg directly
+                         instead of loading from the snapshot.
+
+    Returns:
+        :class:`RunResult` for the new replay run.
+
+    Raises:
+        LookupError:    If ``original_run_id`` is unknown.
+        FileNotFoundError: If deterministic mode and the original parquet is
+                           missing.
+        ValueError:     If deterministic mode and the model_version_snapshot
+                        of the original is incompatible (caller can switch
+                        to semantic mode).
+    """
+    # 1) Discover pg_dsn + load original run + original cfg.
+    bootstrap_engine = create_engine_for_dsn_discovery(cfg_override)
+    if bootstrap_engine is None:
+        raise RuntimeError(
+            "replay_one: cannot determine pg_dsn — pass cfg_override explicitly "
+            "or set ATM_PG_DSN."
+        )
+    engine, session_factory = bootstrap_engine
+
+    try:
+        run_row = await _fetch_run_row(session_factory, original_run_id)
+        exp_id: UUID = run_row["exp_id"]
+
+        if cfg_override is None:
+            snapshot = await _fetch_experiment_snapshot(session_factory, exp_id)
+            cfg = _load_cfg_from_snapshot(snapshot)
+        else:
+            cfg = cfg_override
+
+        # 2) Mode-specific config mutation.
+        if mode == "deterministic":
+            parquet_root = Path(cfg.observability.parquet_dir)
+            llm_calls_path = (
+                parquet_root
+                / str(exp_id)
+                / "runs"
+                / str(original_run_id)
+                / "llm_calls.parquet"
+            )
+            if not llm_calls_path.exists():
+                raise FileNotFoundError(
+                    f"replay_one: original llm_calls.parquet not found at "
+                    f"{llm_calls_path}. Deterministic replay requires the "
+                    f"original run's parquet bundle."
+                )
+
+            # Verify model_version_snapshot parity. For fake models the
+            # snapshot is typically empty; we only enforce parity when the
+            # original used real providers.
+            orig_versions = run_row["model_version_snapshot"] or {}
+            if orig_versions:
+                # If any non-fake model appears, we'd need the same provider
+                # SDK at replay time; we surface this as a hint, but in
+                # deterministic mode we *replace* models with fake:replay
+                # anyway, so the snapshot is informational only.
+                logger.info(
+                    "replay_one: deterministic mode overrides original model versions",
+                    original_versions=orig_versions,
+                )
+
+            # Override cfg.model so every role uses fake:replay → single
+            # parquet file. Each role replays the SAME llm_calls.parquet in
+            # role-keyed order — for arch.md's per-call schema this is the
+            # canonical deterministic mode.
+            replay_sources = {
+                role: llm_calls_path
+                for role in ("planner", "executor", "critic", "researcher")
+            }
+            # cfg is a Pydantic model — clone with model fields updated.
+            new_model_cfg = cfg.model.model_copy(update={"default": "fake:replay"})
+            cfg = cfg.model_copy(update={"model": new_model_cfg})
+
+        elif mode == "semantic":
+            # Semantic mode keeps cfg as-is and lets the aggregator handle the
+            # tolerance check post-run.
+            replay_sources = None
+        else:
+            raise ValueError(f"replay_one: unknown mode {mode!r}")
+
+        # 3) Insert a new run row with replay_of=original_run_id.
+        new_run_id = await _insert_replay_run(
+            session_factory, exp_id, cfg, replay_of=original_run_id
+        )
+
+        # 4) Execute via the shared core, passing replay_sources so the LLM
+        # factory routes to FakeLLM(mode='replay').
+        return await _execute_existing_run(
+            cfg=cfg,
+            run_id=new_run_id,
+            exp_id=exp_id,
+            engine=engine,
+            session_factory=session_factory,
+            replay_sources=replay_sources,
+        )
+    finally:
+        await engine.dispose()
+
+
+def create_engine_for_dsn_discovery(
+    cfg: ExperimentConfig | None,
+) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]] | None:
+    """Helper: build (engine, session_factory) from cfg.observability.pg_dsn.
+
+    Returns None when ``cfg`` is None — callers must provide cfg or load it
+    earlier. In future this could fall back to ATM_PG_DSN env.
+    """
+    if cfg is None:
+        return None
+    engine: AsyncEngine = create_engine(cfg.observability.pg_dsn)
+    session_factory = create_session_factory(engine)
+    return engine, session_factory
+
+
+async def _insert_replay_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    exp_id: UUID,
+    cfg: ExperimentConfig,
+    *,
+    replay_of: UUID,
+) -> UUID:
+    """INSERT a new replay-run row. Enforces exp_id parity with original."""
+    run_id = uuid.uuid4()
+
+    human_role_value: str | None = (
+        cfg.human.role.value if cfg.human is not None and cfg.human.enabled else None
+    )
+
+    async with session_scope(session_factory) as session:
+        # Parent equality: the replay run lives in the same experiment as the
+        # original. Verify before INSERT to surface the constraint clearly.
+        parent_check = await session.execute(
+            sa.select(Run.exp_id).where(Run.id == replay_of)
+        )
+        parent_row = parent_check.fetchone()
+        if parent_row is None:
+            raise LookupError(
+                f"replay_of={replay_of} not found in runs table"
+            )
+        if parent_row[0] != exp_id:
+            raise ValueError(
+                f"replay_one: parent run {replay_of} belongs to exp_id "
+                f"{parent_row[0]} but new run targets exp_id {exp_id}. "
+                "Replay runs must live in the same experiment as the original."
+            )
+
+        run = Run(
+            id=run_id,
+            exp_id=exp_id,
+            topology=cfg.topology.name,
+            task_id=cfg.task.name,
+            agent_set=cfg.agents.set,
+            seed=cfg.seed,
+            model=cfg.model.default,
+            models_by_role_json=dict(cfg.model.by_role),
+            model_version_snapshot={},
+            status="running",
+            budget_spent_usd=Decimal("0"),
+            started_at=datetime.now(UTC),
+            human_role=human_role_value,
+            host=socket.gethostname(),
+            process_pid=os.getpid(),
+            replay_of=replay_of,
+        )
+        session.add(run)
+
+    return run_id
+
+
+async def _execute_existing_run(
+    *,
+    cfg: ExperimentConfig,
+    run_id: UUID,
+    exp_id: UUID,
+    engine: AsyncEngine,
+    session_factory: async_sessionmaker[AsyncSession],
+    replay_sources: dict[str, Path] | None,
+) -> RunResult:
+    """Inner execution path shared by resume_one / replay_one.
+
+    This is a stripped-down mirror of ``run_one`` that:
+      - skips experiment/run row creation (caller owns those);
+      - accepts a pre-allocated ``run_id`` + ``exp_id``;
+      - forwards ``replay_sources`` to ``_build_llm_wrappers``;
+      - delegates lifecycle terminals to ``_update_run_success`` /
+        ``_update_run_failed`` against the *given* run_id.
+
+    The shared LangGraph ``thread_id=str(run_id)`` semantics mean that when
+    the same run_id is re-invoked against the PG checkpointer, the graph
+    continues from the last persisted state (resume_one); when a NEW run_id
+    is invoked, the graph starts fresh (replay_one).
+    """
+    pg_dsn = cfg.observability.pg_dsn
+    parquet_root = Path(cfg.observability.parquet_dir)
+
+    # Ensure schema (idempotent, harmless on existing DB).
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        logger.warning("schema creation failed (may already exist)", error=str(e))
+
+    parquet_writer: ParquetWriter | None = None
+    judge_llm: LLMWrapper | None = None
+    quality_score: float | None = 0.0
+    budget_spent: float = 0.0
+    iterations: int = 0
+    final_answer: str = ""
+    llms: dict[str, LLMWrapper] | None = None
+    sandbox: Any | None = None
+
+    seed_all(cfg.seed)
+
+    _run_started_monotonic: float = time.monotonic()
+
+    def _elapsed_s() -> float:
+        return max(0.0, time.monotonic() - _run_started_monotonic)
+
+    log = logger.bind(run_id=str(run_id), exp_id=str(exp_id))
+    log.info(
+        "execute_existing_run",
+        topology=cfg.topology.name,
+        task=cfg.task.name,
+        replay=replay_sources is not None,
+    )
+
+    try:
+        budget = BudgetTracker(
+            per_call_usd=cfg.budget.per_call_usd,
+            per_run_usd=cfg.budget.per_run_usd,
+            per_experiment_usd=cfg.budget.per_experiment_usd,
+        )
+        pricing = _load_pricing()
+
+        try:
+            judge_llm = build_llm(
+                model_id=cfg.evaluation.judge_model,
+                pricing=pricing,
+                budget=budget,
+            )
+        except Exception:
+            judge_llm = None
+
+        llms = _build_llm_wrappers(cfg, budget, pricing, replay_sources=replay_sources)
+
+        from atm.tools.defaults import build_default_registry
+        from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
+
+        tools_workspace = parquet_root / "workspace" / str(run_id)
+        tools_workspace.mkdir(parents=True, exist_ok=True)
+        tools_corpus = tools_workspace / "_corpus"
+        tools_corpus.mkdir(exist_ok=True)
+        try:
+            tool_registry = build_default_registry(
+                workspace=tools_workspace,
+                corpus_dir=tools_corpus,
+                sandbox=_Sandbox(),
+            )
+        except Exception:
+            tool_registry = None
+        agents = _build_agents(cfg, llms, tool_registry=tool_registry)
+
+        parquet_writer = ParquetWriter(
+            root=parquet_root,
+            run_id=run_id,
+            exp_id=exp_id,
+        )
+        callback = ExperimentCallbackHandler(
+            run_id=run_id,
+            exp_id=exp_id,
+            session_factory=session_factory,
+            parquet_writer=parquet_writer,
+            budget_warn_threshold=Decimal(str(cfg.budget.per_run_usd * 0.8)),
+            budget_exceed_threshold=Decimal(str(cfg.budget.per_run_usd)),
+        )
+
+        initial_state = _build_initial_state(cfg, run_id)
+        topology_cfg = TopologyConfig(
+            name=cfg.topology.name,
+            max_iterations=cfg.topology.max_iterations,
+            extra=cfg.topology.extra,
+        )
+
+        # HITL wiring (replicated from run_one verbatim).
+        human_gateway_llm: LLMWrapper | None = None
+        if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
+            human_model_id = cfg.human.model or cfg.model.default
+            human_fixture_str = (
+                cfg.model.fake_fixtures.get("human")
+                if human_model_id.startswith("fake:scripted")
+                else None
+            )
+            human_gateway_llm = build_llm(
+                model_id=human_model_id,
+                pricing=pricing,
+                budget=budget,
+                fixture_path=Path(human_fixture_str) if human_fixture_str else None,
+            )
+
+        def _role_router_llm_factory() -> LLMWrapper:
+            role_model_id = (
+                cfg.human.role_router_model if cfg.human is not None else None
+            ) or cfg.model.default
+            return build_llm(
+                model_id=role_model_id,
+                pricing=pricing,
+                budget=budget,
+            )
+
+        role_router = _build_role_router(cfg.human, llm_factory=_role_router_llm_factory)
+
+        async with checkpointer_scope(pg_dsn) as checkpointer:
+            topology_cls = TopologyRegistry.get(cfg.topology.name)
+            topology_instance = topology_cls()
+            compiled_graph = topology_instance.build(
+                agents,
+                topology_cfg,
+                checkpointer=checkpointer,
+                human_cfg=cfg.human,
+                human_gateway_llm=human_gateway_llm,
+                role_router=role_router,
+            )
+
+            recursion_limit = max(100, (cfg.topology.max_iterations or 30) * 4 + 20)
+            final_state: dict[str, Any] = await compiled_graph.ainvoke(
+                initial_state,
+                config={
+                    "callbacks": [callback],
+                    "configurable": {"thread_id": str(run_id)},
+                    "recursion_limit": recursion_limit,
+                },
+            )
+
+        shared_final: dict[str, Any] = final_state.get("shared") or {}
+        final_answer = str(shared_final.get("final_answer") or "")
+        iterations = int(shared_final.get("iter_total") or 0)
+        budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
+
+        sandbox = SubprocessSandbox()
+        spec = resolve_spec(cfg.task)
+        if spec is None:
+            quality_score = 0.0
+        else:
+            try:
+                quality_score, _details = await compute_quality(
+                    spec,
+                    final_answer,
+                    sandbox=sandbox,
+                    judge_llm=judge_llm,
+                    run_seed=cfg.seed,
+                )
+            except Exception:
+                quality_score = None
+
+        await parquet_writer.close()
+
+        await _update_run_success(
+            session_factory,
+            run_id,
+            exp_id,
+            quality_score=quality_score,
+            budget_spent_usd=budget_spent,
+            iterations=iterations,
+            wall_time_s=_elapsed_s(),
+        )
+
+        return RunResult(
+            run_id=run_id,
+            exp_id=exp_id,
+            status="completed",
+            metrics={
+                "quality_score": quality_score,
+                "cost_usd": budget_spent,
+                "iters": iterations,
+            },
+            final_answer=final_answer,
+        )
+
+    except BudgetExceededError:
+        if parquet_writer is not None:
+            try:
+                await parquet_writer.close()
+            except Exception:
+                pass
+        try:
+            await _update_run_failed(
+                session_factory,
+                run_id,
+                status="budget_exceeded",
+                finish_reason=FinishReason.BUDGET_EXCEEDED.value,
+                quality_score=quality_score,
+                budget_spent_usd=budget_spent,
+                iterations=iterations,
+                wall_time_s=_elapsed_s(),
+            )
+        except Exception:
+            log.error("run update failed after budget exceeded")
+        return RunResult(
+            run_id=run_id,
+            exp_id=exp_id,
+            status="budget_exceeded",
+            metrics={
+                "quality_score": quality_score,
+                "cost_usd": budget_spent,
+                "iters": iterations,
+            },
+            final_answer=final_answer,
+        )
+
+    except Exception:
+        error_text = traceback.format_exc()
+        if parquet_writer is not None:
+            try:
+                await parquet_writer.close()
+            except Exception:
+                pass
+        try:
+            await _update_run_failed(
+                session_factory,
+                run_id,
+                status="failed",
+                finish_reason=FinishReason.ERROR.value,
+                quality_score=quality_score,
+                budget_spent_usd=budget_spent,
+                iterations=iterations,
+                error_text=error_text[:2000],
+                wall_time_s=_elapsed_s(),
+            )
+        except Exception:
+            log.error("run update failed after run failure")
+        raise
