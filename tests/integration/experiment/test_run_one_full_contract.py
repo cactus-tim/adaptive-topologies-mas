@@ -42,7 +42,7 @@ def _make_hitl_chain_cfg(*, pg_dsn: str, parquet_dir: str) -> Any:
     planner_fixture = str(_FIXTURES_DIR / "m6_chain_planner.yaml")
     executor_fixture = str(_FIXTURES_DIR / "m6_chain_executor.yaml")
     critic_fixture = str(_FIXTURES_DIR / "m6_chain_critic.yaml")
-    human_fixture = str(_FIXTURES_DIR / "m9_chain_human.yaml")
+    human_fixture = str(_FIXTURES_DIR / "m9_human_reviewer_approve.yaml")
 
     overrides = [
         f"observability.pg_dsn={pg_dsn}",

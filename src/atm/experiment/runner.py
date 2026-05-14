@@ -436,6 +436,7 @@ def _build_agents(
     cfg: ExperimentConfig,
     llms: dict[str, LLMWrapper],
     conf_dir: Path | None = None,
+    tool_registry: Any = None,
 ) -> dict[str, Any]:
     """Build Agent instances for each role in the agent set.
 
@@ -495,7 +496,7 @@ def _build_agents(
             logger.warning("no LLM wrapper for role, skipping agent", role=role)
             continue
 
-        tools = ToolRegistry()
+        tools = tool_registry if tool_registry is not None else ToolRegistry()
         # Use role name as both the dict key and the agent_id so topology nodes
         # (e.g. state["agents"]["critic"]) can find the agent by role directly.
         # BUG-3 fix: use Critic subclass for the critic role so step() emits DECISION.
@@ -598,8 +599,30 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         # Step 4: build LLM wrappers per role (assigned to outer-scope var for finally block)
         llms = _build_llm_wrappers(cfg, budget, pricing)
 
-        # Step 5: build agents
-        agents = _build_agents(cfg, llms)
+        # Step 5: build agents — share a single tool registry pre-populated with the
+        # M4 default toolset so cfg.tools entries (code_run, file_*, calculator, etc.)
+        # resolve at agent dispatch time instead of emitting "tool name not in registry"
+        # warnings. Workspace and corpus dirs live under the parquet root scoped to
+        # this run; SubprocessSandbox is the dev default (Docker required for prod).
+        from atm.tools.defaults import build_default_registry
+        from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
+
+        tools_workspace = parquet_root / "workspace" / str(run_id)
+        tools_workspace.mkdir(parents=True, exist_ok=True)
+        tools_corpus = tools_workspace / "_corpus"
+        tools_corpus.mkdir(exist_ok=True)
+        try:
+            tool_registry = build_default_registry(
+                workspace=tools_workspace,
+                corpus_dir=tools_corpus,
+                sandbox=_Sandbox(),
+            )
+        except Exception:
+            logger.warning(
+                "build_default_registry failed; falling back to empty registry", exc_info=True
+            )
+            tool_registry = None
+        agents = _build_agents(cfg, llms, tool_registry=tool_registry)
 
         # Step 7: build parquet writer and callback
         parquet_writer = ParquetWriter(
@@ -637,10 +660,19 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         human_gateway_llm: LLMWrapper | None = None
         if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
             human_model_id = cfg.human.model or cfg.model.default
+            # For fake:scripted, look up the fixture under fake_fixtures["human"]
+            # so the simulator returns canned JSON instead of falling back to echo
+            # mode (which would emit the prompt verbatim and crash the gateway).
+            human_fixture_str = (
+                cfg.model.fake_fixtures.get("human")
+                if human_model_id.startswith("fake:scripted")
+                else None
+            )
             human_gateway_llm = build_llm(
                 model_id=human_model_id,
                 pricing=pricing,
                 budget=budget,
+                fixture_path=Path(human_fixture_str) if human_fixture_str else None,
             )
 
         def _role_router_llm_factory() -> LLMWrapper:

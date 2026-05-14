@@ -280,7 +280,14 @@ class HumanInteraction(Base):
 
     __tablename__ = "human_interactions"
 
-    __table_args__ = (sa.Index("human_interactions_run_id_idx", "run_id"),)
+    __table_args__ = (
+        sa.Index("human_interactions_run_id_idx", "run_id"),
+        sa.UniqueConstraint(
+            "run_id",
+            "request_id",
+            name="uq_human_interactions_run_request",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
