@@ -29,6 +29,7 @@ def build_llm(
     pricing: Pricing,
     budget: BudgetTracker,
     fixture_path: str | Path | None = None,
+    replay_source: str | Path | None = None,
     fake_mode: str = "echo",
     cfg: dict[str, Any] | None = None,
 ) -> LLMWrapper:
@@ -39,19 +40,23 @@ def build_llm(
       - Any other provider → delegates to LLMWrapper (which uses init_chat_model)
 
     Args:
-        model_id:     Provider-qualified model ID, e.g. "fake:echo", "openai:gpt-4o".
-        pricing:      Pricing instance for cost calculation.
-        budget:       BudgetTracker instance for budget enforcement.
-        fixture_path: For "fake:scripted" — path to the YAML fixture file.
-        fake_mode:    FakeLLM mode to use when provider="fake" and no fixture is given.
-                      Defaults to "echo".
-        cfg:          Additional kwargs passed to the underlying model (real providers).
+        model_id:      Provider-qualified model ID, e.g. "fake:echo", "openai:gpt-4o".
+        pricing:       Pricing instance for cost calculation.
+        budget:        BudgetTracker instance for budget enforcement.
+        fixture_path:  For "fake:scripted" — path to the YAML fixture file.
+        replay_source: For "fake:replay" — path to a Parquet file matching REPLAY_SCHEMA
+                       (typically ``data/experiments/{exp}/runs/{run}/llm_calls.parquet``).
+        fake_mode:     FakeLLM mode to use when provider="fake" and bare_model is not one
+                       of the recognised modes. Defaults to "echo".
+        cfg:           Additional kwargs passed to the underlying model (real providers).
 
     Returns:
         A configured LLMWrapper instance.
 
     Raises:
-        ValueError: If provider="fake" with mode="scripted" but no fixture_path given.
+        ValueError: If provider="fake" with mode="scripted" but no fixture_path given,
+                    or mode="replay" but no replay_source given.
+        FileNotFoundError: If ``replay_source`` is supplied but does not exist on disk.
     """
     provider = model_id.split(":", 1)[0] if ":" in model_id else model_id
     bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
@@ -66,6 +71,23 @@ def build_llm(
                 fake_llm: FakeLLM = FakeLLM(mode="echo")
             else:
                 fake_llm = FakeLLM(mode="scripted", fixture=Path(fixture_path))
+        elif mode == "replay":
+            if replay_source is None:
+                raise ValueError(
+                    "build_llm: fake:replay requires 'replay_source' "
+                    "(path to llm_calls.parquet)"
+                )
+            replay_path = Path(replay_source)
+            if not replay_path.exists():
+                raise FileNotFoundError(
+                    f"build_llm: replay_source not found: {replay_path}"
+                )
+            # Local import keeps pyarrow.parquet load lazy so that callers that
+            # never touch replay mode don't pay the import cost.
+            import pyarrow.parquet as pq
+
+            table = pq.read_table(replay_path)
+            fake_llm = FakeLLM(mode="replay", replay_table=table)
         else:
             fake_llm = FakeLLM(mode="echo")
 
