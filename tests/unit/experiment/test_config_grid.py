@@ -22,7 +22,6 @@ from pydantic import ValidationError
 
 from atm.experiment.config import (
     EstimateCfg,
-    ExperimentConfig,
     GridCfg,
     load_config,
 )

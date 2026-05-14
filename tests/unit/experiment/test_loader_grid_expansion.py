@@ -4,7 +4,7 @@ Tests (8 cases):
   1. Import from atm.experiment works (load_grid_configs accessible)
   2. Import from atm.experiment.loader works (load_grid_configs accessible)
   3. grid_minimal.yaml → load_grid_configs returns exactly 8 configs
-     (2 topologies × 2 tasks × 2 seeds)
+     (2 topologies x 2 tasks x 2 seeds)
   4. All 8 (topology, task, seed) combinations are present and correct
   5. Without a grid: block, load_grid_configs returns [cfg] (single-element list)
   6. Invalid sweep dotpath in GridCfg raises ValidationError at construction time
@@ -36,7 +36,7 @@ VALID_MINIMAL = FIXTURES_DIR / "valid_minimal.yaml"
 
 def test_import_from_atm_experiment() -> None:
     """load_grid_configs is importable from atm.experiment."""
-    from atm.experiment import load_grid_configs  # noqa: F401
+    from atm.experiment import load_grid_configs
 
     assert callable(load_grid_configs)
 
@@ -48,7 +48,7 @@ def test_import_from_atm_experiment() -> None:
 
 def test_import_from_atm_experiment_loader() -> None:
     """load_grid_configs is importable from atm.experiment.loader."""
-    from atm.experiment.loader import load_grid_configs  # noqa: F401
+    from atm.experiment.loader import load_grid_configs
 
     assert callable(load_grid_configs)
 
@@ -59,7 +59,7 @@ def test_import_from_atm_experiment_loader() -> None:
 
 
 def test_grid_minimal_returns_eight_configs() -> None:
-    """grid_minimal.yaml with 2 topologies × 2 tasks × 2 seeds = 8 ExperimentConfigs."""
+    """grid_minimal.yaml with 2 topologies x 2 tasks x 2 seeds = 8 ExperimentConfigs."""
     from atm.experiment import load_grid_configs
 
     configs = load_grid_configs(str(GRID_MINIMAL))
@@ -99,7 +99,7 @@ def test_grid_minimal_all_combinations_present() -> None:
 
 def test_no_grid_block_returns_single_config() -> None:
     """Without a grid: block, load_grid_configs returns a list with exactly one config."""
-    from atm.experiment import load_grid_configs, load_config
+    from atm.experiment import load_config, load_grid_configs
 
     configs = load_grid_configs(str(VALID_MINIMAL))
     assert len(configs) == 1

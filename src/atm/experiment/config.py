@@ -251,10 +251,10 @@ class _ExperimentConfigRef:
     def __init__(self) -> None:
         self._cls: type[BaseModel] | None = None
 
-    def set(self, cls: type[BaseModel]) -> None:  # noqa: A003
+    def set(self, cls: type[BaseModel]) -> None:
         self._cls = cls
 
-    def get(self) -> type[BaseModel] | None:  # noqa: A003
+    def get(self) -> type[BaseModel] | None:
         return self._cls
 
 
@@ -350,4 +350,4 @@ _EXPERIMENT_CONFIG_REF.set(ExperimentConfig)
 # Back-compat re-export: loader functions live in atm.experiment.loader
 # ---------------------------------------------------------------------------
 
-from atm.experiment.loader import load_config as load_config  # noqa: E402, F401
+from atm.experiment.loader import load_config as load_config  # noqa: E402
