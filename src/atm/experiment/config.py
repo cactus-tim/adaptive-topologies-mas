@@ -1,24 +1,19 @@
-"""Pydantic v2 schemas for experiment configuration + OmegaConf loader.
+"""Pydantic v2 schemas for experiment configuration.
+
+The OmegaConf loader (``load_config``) and grid sweep expander
+(``load_grid_configs``) have been split into ``atm.experiment.loader``.
+This module re-exports ``load_config`` for full back-compat.
 
 Public API:
   - BudgetCfg, ModelCfg, ScratchpadCfg, AgentSetCfg, TopologyCfg, TaskCfg,
-    ObservabilityCfg, ExperimentConfig
-  - load_config(path, overrides) -> ExperimentConfig
-
-Pipeline (arch.md §12.2):
-  OmegaConf.load(path)
-  → merge _includes
-  → merge OmegaConf.from_dotlist(overrides)
-  → OmegaConf.to_container(resolve=True)
-  → ExperimentConfig.model_validate(dict)
+    ObservabilityCfg, ExperimentConfig, GridCfg, EstimateCfg
+  - load_config(path, overrides) -> ExperimentConfig  (re-exported from loader)
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal, Union, get_args, get_origin
 
-from omegaconf import DictConfig, OmegaConf
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from atm.core.types import HumanRole
@@ -352,87 +347,7 @@ _EXPERIMENT_CONFIG_REF.set(ExperimentConfig)
 
 
 # ---------------------------------------------------------------------------
-# OmegaConf loader
+# Back-compat re-export: loader functions live in atm.experiment.loader
 # ---------------------------------------------------------------------------
 
-
-def _merge_includes(cfg: DictConfig, base_dir: Path) -> DictConfig:
-    """Merge any ``include`` key found in the config (simplified include support).
-
-    Supports:
-      include: conf/topology/star.yaml     # single file
-      include:                             # list of files
-        - conf/topology/star.yaml
-        - conf/agents/canonical_4.yaml
-
-    The include files are merged INTO the base config (merge-left precedence).
-    After merging, the ``include`` key is removed from the result.
-    """
-    if "include" not in cfg:
-        return cfg
-
-    include_val: Any = OmegaConf.select(cfg, "include")
-
-    include_paths: list[str] = (
-        [str(include_val)] if isinstance(include_val, str) else [str(p) for p in include_val]
-    )
-
-    keys: list[str] = [str(k) for k in cfg if k != "include"]
-    merged: DictConfig = OmegaConf.masked_copy(cfg, keys)
-
-    for inc_path_str in include_paths:
-        inc_path = Path(inc_path_str)
-        if not inc_path.is_absolute():
-            inc_path = base_dir / inc_path_str
-        inc_cfg: DictConfig = OmegaConf.load(inc_path)  # type: ignore[assignment]
-        # include contents are the base; main cfg values take precedence
-        merged = OmegaConf.merge(inc_cfg, merged)  # type: ignore[assignment]
-
-    return merged
-
-
-def load_config(
-    path: str,
-    overrides: list[str] | None = None,
-) -> ExperimentConfig:
-    """Load and validate an experiment config from a YAML file.
-
-    Pipeline (arch.md §12.2):
-      1. OmegaConf.load(path)
-      2. Merge ``include`` files (simplified include mechanism)
-      3. OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides))
-      4. OmegaConf.to_container(resolve=True)
-      5. ExperimentConfig.model_validate(data)
-
-    Args:
-        path:      Path to the base YAML config file.
-        overrides: List of dotlist override strings, e.g. ["+topology.name=star"].
-                   Leading ``+`` is stripped before passing to OmegaConf.from_dotlist.
-
-    Returns:
-        Validated ExperimentConfig instance.
-
-    Raises:
-        pydantic.ValidationError: If the resolved config does not match the schema.
-        FileNotFoundError: If the config file does not exist.
-        omegaconf.OmegaConfBaseException: If interpolation resolution fails.
-    """
-    cfg_path = Path(path)
-    base_dir = cfg_path.parent
-
-    # Step 1: load base YAML
-    cfg: DictConfig = OmegaConf.load(cfg_path)  # type: ignore[assignment]
-
-    # Step 2: merge includes
-    cfg = _merge_includes(cfg, base_dir)
-
-    # Step 3: apply CLI overrides
-    if overrides:
-        # Strip leading '+' — OmegaConf.from_dotlist does not support it
-        clean_overrides = [o.lstrip("+") for o in overrides]
-        override_cfg = OmegaConf.from_dotlist(clean_overrides)
-        cfg = OmegaConf.merge(cfg, override_cfg)  # type: ignore[assignment]
-
-    # Step 4 + 5: resolve and convert to plain dict, then validate with Pydantic
-    data: Any = OmegaConf.to_container(cfg, resolve=True)
-    return ExperimentConfig.model_validate(data)
+from atm.experiment.loader import load_config as load_config  # noqa: E402, F401
