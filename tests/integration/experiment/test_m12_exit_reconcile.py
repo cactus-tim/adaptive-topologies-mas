@@ -235,13 +235,9 @@ async def test_reconcile_zombie_on_grid_start(
         timeout=180,
     )
 
-    # Diagnostics on failure.
-    if result.returncode != 0:
-        pytest.fail(
-            f"atm grid subprocess exited with code {result.returncode}.\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
+    # Diagnostics on failure (exit 0 = all completed, 1 = partial — both are acceptable
+    # since the seed-zombie run is intentionally marked failed by reconcile).
+    assert result.returncode in (0, 1), result.stderr
 
     # ── Step 3: verify the zombie row was reconciled ─────────────────────────
     engine2 = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)

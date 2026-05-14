@@ -112,7 +112,9 @@ atm run --config conf/experiments/smoke.yaml [+key=val ...]
 вопрос. Коды выхода: 0 — completed, 1 — failed, 2 — budget_exceeded, 3 — config error.
 
 ```
-atm grid --config conf/experiments/grid.yaml [--parallelism N] [--fail-fast] [--yes]
+atm grid --config <path> [+key=val ...]
+    [--parallelism N] [--fail-fast] [--yes]
+    [--no-reconcile] [--force-resume] [--resume-incomplete] [--no-estimate]
 ```
 Разворачивает sweep из YAML-блока `grid:` и запускает все cells параллельно.
 `--parallelism` переопределяет `grid.parallelism` из конфига. `--fail-fast` прерывает sweep

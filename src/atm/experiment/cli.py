@@ -240,10 +240,7 @@ def grid(
         bool,
         typer.Option(
             "--force-resume",
-            help=(
-                "Pass allow_force_resume=True to reconcile (zombies are logged but not "
-                "marked failed). No-op without --resume-incomplete."
-            ),
+            help="Pass allow_force_resume=True to reconcile: zombies are logged but not marked failed.",
         ),
     ] = False,
     resume_incomplete: Annotated[
@@ -308,7 +305,7 @@ def grid(
     # All three need a shared session_factory against cfg.observability.pg_dsn.
     asyncio.run(
         _grid_preflight(
-            base_cfg=base_cfg,
+            configs=configs,
             no_reconcile=no_reconcile,
             force_resume=force_resume,
             no_estimate=no_estimate,
@@ -365,7 +362,7 @@ def grid(
 
 async def _grid_preflight(
     *,
-    base_cfg: Any,
+    configs: list[Any],
     no_reconcile: bool,
     force_resume: bool,
     no_estimate: bool,
@@ -376,11 +373,14 @@ async def _grid_preflight(
 
     Uses lazy imports so ``atm grid --help`` doesn't pull in sqlalchemy.
     Each phase is independently gated by its CLI flag.
+    ``configs`` is the full list of expanded grid cells; ``configs[0]`` is used
+    for experiment-level settings (name, DSN, budget, etc.).
     """
     import sqlalchemy as sa
 
     from atm.storage.models import Experiment
 
+    base_cfg = configs[0]
     pg_dsn = base_cfg.observability.pg_dsn
     engine = create_engine(pg_dsn)
     session_factory = create_session_factory(engine)
@@ -424,7 +424,7 @@ async def _grid_preflight(
         if not no_estimate:
             pricing = _load_pricing()
             grid_est = await estimate_grid(
-                configs=[base_cfg],
+                configs=configs,
                 session_factory=session_factory if base_cfg.estimate.use_historical else None,
                 pricing=pricing,
                 cfg=base_cfg.estimate,
