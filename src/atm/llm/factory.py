@@ -74,19 +74,16 @@ def build_llm(
         elif mode == "replay":
             if replay_source is None:
                 raise ValueError(
-                    "build_llm: fake:replay requires 'replay_source' "
-                    "(path to llm_calls.parquet)"
+                    "build_llm: fake:replay requires 'replay_source' (path to llm_calls.parquet)"
                 )
             replay_path = Path(replay_source)
             if not replay_path.exists():
-                raise FileNotFoundError(
-                    f"build_llm: replay_source not found: {replay_path}"
-                )
+                raise FileNotFoundError(f"build_llm: replay_source not found: {replay_path}")
             # Local import keeps pyarrow.parquet load lazy so that callers that
             # never touch replay mode don't pay the import cost.
             import pyarrow.parquet as pq
 
-            table = pq.read_table(replay_path)
+            table = pq.read_table(str(replay_path))  # type: ignore[no-untyped-call]
             fake_llm = FakeLLM(mode="replay", replay_table=table)
         else:
             fake_llm = FakeLLM(mode="echo")

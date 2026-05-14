@@ -20,7 +20,6 @@ from atm.llm.factory import build_llm
 from atm.llm.fake import REPLAY_SCHEMA, FakeLLM
 from atm.llm.pricing import Pricing
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
