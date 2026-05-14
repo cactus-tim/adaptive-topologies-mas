@@ -229,6 +229,40 @@ def grid(
         bool,
         typer.Option("--yes", "-y", help="Skip the interactive confirmation prompt."),
     ] = False,
+    no_reconcile: Annotated[
+        bool,
+        typer.Option(
+            "--no-reconcile",
+            help="Skip per-experiment zombie-run reconciliation on grid start.",
+        ),
+    ] = False,
+    force_resume: Annotated[
+        bool,
+        typer.Option(
+            "--force-resume",
+            help=(
+                "Pass allow_force_resume=True to reconcile (zombies are logged but not "
+                "marked failed). No-op without --resume-incomplete."
+            ),
+        ),
+    ] = False,
+    resume_incomplete: Annotated[
+        bool,
+        typer.Option(
+            "--resume-incomplete",
+            help=(
+                "Before launching new grid cells, sequentially resume any failed/running "
+                "runs for this experiment that have a LangGraph checkpoint."
+            ),
+        ),
+    ] = False,
+    no_estimate: Annotated[
+        bool,
+        typer.Option(
+            "--no-estimate",
+            help="Skip cost estimation pre-flight (warning at total > per_experiment_usd).",
+        ),
+    ] = False,
     override: Annotated[
         list[str] | None,
         typer.Argument(help="OmegaConf dotlist overrides like +topology.name=star"),
@@ -237,7 +271,9 @@ def grid(
     """Run an experiment grid in parallel via ProcessPoolExecutor.
 
     The config may declare a ``grid:`` block (handled by ``load_grid_configs``);
-    if absent, the grid degenerates to a single cell.
+    if absent, the grid degenerates to a single cell. Performs per-experiment
+    zombie reconciliation, cost-estimation pre-flight, and optional resume of
+    incomplete runs before launching new cells.
     """
     # Step 1: load and expand configs.
     try:
@@ -251,15 +287,16 @@ def grid(
         raise typer.Exit(3)
 
     n_cells = len(configs)
+    base_cfg = configs[0]
 
     # Resolve effective parallelism: CLI flag > cfg.grid.parallelism > default 4.
     effective_parallelism: int = (
         parallelism
         if parallelism is not None
-        else (configs[0].grid.parallelism if configs[0].grid is not None else 4)
+        else (base_cfg.grid.parallelism if base_cfg.grid is not None else 4)
     )
     effective_fail_fast: bool = fail_fast or (
-        configs[0].grid.fail_fast if configs[0].grid is not None else False
+        base_cfg.grid.fail_fast if base_cfg.grid is not None else False
     )
 
     typer.echo(
@@ -267,12 +304,25 @@ def grid(
         f"fail_fast={effective_fail_fast}"
     )
 
-    # Step 2: interactive confirm (skipped with --yes or in non-TTY).
+    # Step 2: pre-flight phases (reconcile / estimate / resume-incomplete).
+    # All three need a shared session_factory against cfg.observability.pg_dsn.
+    asyncio.run(
+        _grid_preflight(
+            base_cfg=base_cfg,
+            no_reconcile=no_reconcile,
+            force_resume=force_resume,
+            no_estimate=no_estimate,
+            resume_incomplete=resume_incomplete,
+            yes=yes,
+        )
+    )
+
+    # Step 3: interactive confirm (skipped with --yes or in non-TTY).
     if not yes and sys.stdin.isatty() and not typer.confirm("Proceed?", default=True):
         typer.echo("Aborted.", err=True)
         raise typer.Exit(3)
 
-    # Step 3: drive run_grid with live-progress callback.
+    # Step 4: drive run_grid with live-progress callback.
     # Imported lazily so `atm grid --help` doesn't require sqlalchemy etc.
     from atm.experiment.grid import GridProgress, run_grid
 
@@ -311,6 +361,134 @@ def grid(
     if failed_total == result.total:
         raise typer.Exit(2)
     raise typer.Exit(1)
+
+
+async def _grid_preflight(
+    *,
+    base_cfg: Any,
+    no_reconcile: bool,
+    force_resume: bool,
+    no_estimate: bool,
+    resume_incomplete: bool,
+    yes: bool,
+) -> None:
+    """Run reconcile + estimate + resume-incomplete pre-flight phases.
+
+    Uses lazy imports so ``atm grid --help`` doesn't pull in sqlalchemy.
+    Each phase is independently gated by its CLI flag.
+    """
+    import sqlalchemy as sa
+
+    from atm.storage.models import Experiment
+
+    pg_dsn = base_cfg.observability.pg_dsn
+    engine = create_engine(pg_dsn)
+    session_factory = create_session_factory(engine)
+
+    try:
+        # Look up experiment_id by name (used by reconcile and resume-incomplete).
+        exp_id: uuid.UUID | None = None
+        async with session_factory() as session:
+            row = (
+                await session.execute(
+                    sa.select(Experiment.id).where(Experiment.name == base_cfg.name)
+                )
+            ).fetchone()
+            if row is not None:
+                exp_id = row[0]
+
+        # Phase A — reconcile.
+        if not no_reconcile:
+            if exp_id is None:
+                typer.echo(
+                    f"Experiment '{base_cfg.name}' has no row yet — "
+                    "skipping reconcile (no zombies possible)."
+                )
+            else:
+                from atm.experiment.reconcile import reconcile_zombies
+
+                report = await reconcile_zombies(
+                    session_factory,
+                    exp_id,
+                    allow_force_resume=force_resume,
+                )
+                typer.echo(
+                    f"Reconcile [{base_cfg.name}]: scanned={report.scanned}, "
+                    f"zombies={len(report.zombies)}, actions={len(report.actions)}"
+                )
+                for zr in report.zombies:
+                    action = report.actions.get(zr.run_id, "kept_force_resume")
+                    typer.echo(f"  zombie run {zr.run_id} ({zr.reason}) → {action}")
+
+        # Phase B — cost estimation pre-flight.
+        if not no_estimate:
+            pricing = _load_pricing()
+            grid_est = await estimate_grid(
+                configs=[base_cfg],
+                session_factory=session_factory if base_cfg.estimate.use_historical else None,
+                pricing=pricing,
+                cfg=base_cfg.estimate,
+            )
+            typer.echo(
+                f"Estimated grid cost: ${grid_est.total_cost_usd:.4f} "
+                f"(input={grid_est.total_input_tokens}, output={grid_est.total_output_tokens})"
+            )
+            threshold = base_cfg.budget.per_experiment_usd * 1.0
+            if grid_est.total_cost_usd > threshold and not yes:
+                confirmed = typer.confirm(
+                    f"Estimated cost ${grid_est.total_cost_usd:.4f} exceeds "
+                    f"per_experiment_usd budget (${base_cfg.budget.per_experiment_usd:.2f}). "
+                    "Proceed?",
+                    default=False,
+                )
+                if not confirmed:
+                    typer.echo("Aborted by user.", err=True)
+                    raise typer.Exit(3)
+
+        # Phase C — resume incomplete runs.
+        if resume_incomplete and exp_id is not None:
+            from atm.experiment.runner import resume_one
+            from atm.storage.checkpointer import build_checkpointer
+            from atm.storage.models import Run
+
+            # Idempotent setup of LangGraph checkpoint tables (saver.setup()).
+            _saver, pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
+            try:
+                async with session_factory() as session:
+                    targets = (
+                        await session.execute(
+                            sa.select(Run.id).where(
+                                Run.exp_id == exp_id,
+                                Run.status.in_(["failed", "running"]),
+                            )
+                        )
+                    ).fetchall()
+
+                resumable = []
+                async with pool.connection() as conn:
+                    for (rid,) in targets:
+                        cp = await conn.execute(
+                            "SELECT 1 FROM checkpoints WHERE thread_id = %s LIMIT 1",
+                            (str(rid),),
+                        )
+                        if (await cp.fetchone()) is not None:
+                            resumable.append(rid)
+
+                if resumable:
+                    typer.echo(
+                        f"Resuming {len(resumable)} incomplete run(s) sequentially "
+                        "before launching new cells."
+                    )
+                    for rid in resumable:
+                        try:
+                            await resume_one(rid, force=False)
+                            typer.echo(f"  resumed {rid}")
+                        except Exception as exc:
+                            typer.echo(f"  resume {rid} failed: {exc}", err=True)
+            finally:
+                await pool.close()
+    finally:
+        await engine.dispose()
 
 
 # ---------------------------------------------------------------------------
