@@ -1,0 +1,50 @@
+# Grid fixture for fail_fast integration test.
+#
+# Sweep over budget.per_run_usd: cells with 0.00001 are guaranteed to exceed
+# budget on the first LLM call; cells with 0.5 should complete normally.
+# 2 budgets × 3 seeds = 6 cells.
+name: m12_grid_failfast
+
+seed: 42
+
+task:
+  name: fibonacci_smoke
+  input: "Write a Python function fib(n) that returns the n-th Fibonacci number. Compute fib(10)."
+
+model:
+  default: "fake:scripted"
+  by_role:
+    planner: "fake:scripted"
+    executor: "fake:scripted"
+    critic: "fake:scripted"
+    researcher: "fake:scripted"
+  fake_fixtures:
+    planner: "tests/fixtures/llm/m6_star_planner.yaml"
+    executor: "tests/fixtures/llm/m6_star_executor.yaml"
+    critic: "tests/fixtures/llm/m6_star_critic.yaml"
+    researcher: "tests/fixtures/llm/m6_star_planner.yaml"
+
+agents:
+  set: canonical_4
+
+topology:
+  name: star
+  max_iterations: 4
+  extra: {}
+
+budget:
+  per_call_usd: 0.10
+  per_run_usd: 0.5
+  per_experiment_usd: 50.0
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_test}"
+  parquet_dir: "data/experiments"
+  callback_sync: true
+
+grid:
+  sweep:
+    budget.per_run_usd: [0.00001, 0.5]
+  parallelism: 2
+  fail_fast: true
+  seeds: [10, 20, 30]
