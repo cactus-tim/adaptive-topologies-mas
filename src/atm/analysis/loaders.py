@@ -12,10 +12,13 @@ Public surface (to be implemented in Steps 3-5):
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
+
+from atm.analysis.oracle import _infer_task_type
 
 
 async def load_experiment(
@@ -35,7 +38,29 @@ async def load_experiment(
     Raises:
         KeyError: If no experiment with the given exp_id exists.
     """
-    raise NotImplementedError("load_experiment — implemented in Step 3")
+    from sqlalchemy import select
+
+    from atm.storage.models import Experiment
+
+    exp_uuid = uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id
+
+    async with session_factory() as session:
+        result = await session.execute(select(Experiment).where(Experiment.id == exp_uuid))
+        row = result.scalar_one_or_none()
+
+    if row is None:
+        raise KeyError(f"No experiment found with id={exp_id!r}")
+
+    return {
+        "id": row.id,
+        "name": row.name,
+        "config_snapshot": row.config_snapshot,
+        "git_sha": row.git_sha,
+        "started_at": row.started_at,
+        "finished_at": row.finished_at,
+        "total_cost_usd": float(row.total_cost_usd) if row.total_cost_usd is not None else None,
+        "status": row.status,
+    }
 
 
 async def load_runs(
@@ -55,7 +80,58 @@ async def load_runs(
     Returns:
         DataFrame with one row per run.
     """
-    raise NotImplementedError("load_runs — implemented in Step 3")
+    from sqlalchemy import select
+
+    from atm.storage.models import Run
+
+    exp_uuid = uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id
+
+    async with session_factory() as session:
+        result = await session.execute(select(Run).where(Run.exp_id == exp_uuid))
+        run_objects: list[Run] = list(result.scalars().all())
+
+    if not run_objects:
+        return pd.DataFrame()
+
+    rows: list[dict[str, Any]] = []
+    for run in run_objects:
+        rows.append(
+            {
+                "id": str(run.id),
+                "exp_id": str(run.exp_id),
+                "topology": run.topology,
+                "task_id": run.task_id,
+                "task_type": _infer_task_type(run.task_id),
+                "agent_set": run.agent_set,
+                "human_role": run.human_role,
+                "seed": run.seed,
+                "model": run.model,
+                "models_by_role_json": run.models_by_role_json,
+                "model_version_snapshot": run.model_version_snapshot,
+                "sandbox_image_digest": run.sandbox_image_digest,
+                "status": run.status,
+                "finish_reason": run.finish_reason,
+                "budget_spent_usd": float(run.budget_spent_usd)
+                if run.budget_spent_usd is not None
+                else float("nan"),
+                "quality_score": float(run.quality_score)
+                if run.quality_score is not None
+                else float("nan"),
+                "cognitive_load_proxy": float(run.cognitive_load_proxy)
+                if run.cognitive_load_proxy is not None
+                else float("nan"),
+                "wall_time_s": run.wall_time_s,
+                "iterations": run.iterations,
+                "started_at": run.started_at,
+                "finished_at": run.finished_at,
+                "error": run.error,
+                "replay_of": str(run.replay_of) if run.replay_of is not None else None,
+                "host": run.host,
+                "process_pid": run.process_pid,
+            }
+        )
+
+    return pd.DataFrame(rows)
 
 
 def load_llm_calls(
