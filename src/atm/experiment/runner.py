@@ -862,6 +862,14 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 logger.warning("compute_quality raised unexpectedly; setting quality_score=None")
                 quality_score = None
 
+        # Write llm_calls in REPLAY_SCHEMA so replay_one(mode='deterministic') can read
+        # them back even when FakeLLM is used (FakeLLM doesn't fire on_llm_end callbacks).
+        _run_dir = parquet_root / "experiments" / str(exp_id) / "runs" / str(run_id)
+        try:
+            _write_replay_parquet(_run_dir, list(final_state.get("llm_calls") or []))
+        except Exception:
+            logger.warning("_write_replay_parquet failed — replay may not work", exc_info=True)
+
         # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
 
@@ -1368,7 +1376,7 @@ async def replay_one(
         if mode == "deterministic":
             parquet_root = Path(cfg.observability.parquet_dir)
             llm_calls_path = (
-                parquet_root / str(exp_id) / "runs" / str(original_run_id) / "llm_calls.parquet"
+                parquet_root / "experiments" / str(exp_id) / "runs" / str(original_run_id) / "llm_calls.parquet"
             )
             if not llm_calls_path.exists():
                 raise FileNotFoundError(
@@ -1436,17 +1444,94 @@ async def replay_one(
         await engine.dispose()
 
 
+def _write_replay_parquet(
+    run_dir: Path,
+    llm_responses: list[Any],
+) -> None:
+    """Write llm_calls from graph state to ``llm_calls.parquet`` using REPLAY_SCHEMA.
+
+    This ensures ``replay_one(mode='deterministic')`` can read back the calls even
+    when FakeLLM is used (FakeLLM does not fire LangChain ``on_llm_end`` callbacks,
+    so the observability parquet writer never writes the file).  Calling this after
+    graph ``ainvoke`` completes writes all ``LLMResponse`` objects from the graph
+    state into a parquet file that ``FakeLLM(mode='replay')`` can consume.
+
+    Args:
+        run_dir: Resolved path  ``{parquet_root}/experiments/{exp_id}/runs/{run_id}/``.
+        llm_responses: List of :class:`~atm.core.types.LLMResponse` objects collected
+            in the graph state under the ``llm_calls`` key.
+    """
+    if not llm_responses:
+        return
+
+    import json as _json
+
+    import pyarrow as _pa
+    import pyarrow.parquet as _pq
+
+    from atm.llm.fake import REPLAY_SCHEMA
+
+    rows: list[dict[str, Any]] = []
+    for resp in llm_responses:
+        tool_calls_json_val: str | None = None
+        if resp.tool_calls:
+            raw_tcs = [
+                {
+                    "id": str(tc.id),
+                    "name": tc.tool_name,
+                    "args": tc.args,
+                    "issued_by": getattr(tc, "issued_by", ""),
+                }
+                for tc in resp.tool_calls
+            ]
+            tool_calls_json_val = _json.dumps(raw_tcs)
+
+        rows.append(
+            {
+                "call_id": str(resp.id),
+                "model": resp.model,
+                "content": resp.text or "",
+                "usage_input": resp.usage.prompt_tokens,
+                "usage_output": resp.usage.completion_tokens,
+                "usage_total": resp.usage.total_tokens,
+                "usage_cached": resp.usage.cached_input_tokens,
+                "cost_usd": resp.cost_usd,
+                "latency_ms": resp.latency_ms,
+                "finish_reason": resp.finish_reason,
+                "started_at": resp.started_at.isoformat(),
+                "tool_calls_json": tool_calls_json_val,
+            }
+        )
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out_path = run_dir / "llm_calls.parquet"
+    table = _pa.Table.from_pylist(rows, schema=REPLAY_SCHEMA)
+    writer = _pq.ParquetWriter(out_path, REPLAY_SCHEMA)  # type: ignore[no-untyped-call]
+    writer.write_table(table)  # type: ignore[no-untyped-call]
+    writer.close()  # type: ignore[no-untyped-call]
+
+
 def create_engine_for_dsn_discovery(
     cfg: ExperimentConfig | None,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]] | None:
     """Helper: build (engine, session_factory) from cfg.observability.pg_dsn.
 
-    Returns None when ``cfg`` is None — callers must provide cfg or load it
-    earlier. In future this could fall back to ATM_PG_DSN env.
+    Falls back to the ``ATM_PG_DSN`` environment variable when ``cfg`` is None
+    (used by CLI commands such as ``atm replay`` and ``atm resume`` that do not
+    receive a config object before they can open the DB connection).
+
+    Returns None when both ``cfg`` is None and ``ATM_PG_DSN`` is unset.
     """
-    if cfg is None:
-        return None
-    engine: AsyncEngine = create_engine(cfg.observability.pg_dsn)
+    import os
+
+    if cfg is not None:
+        dsn: str = cfg.observability.pg_dsn
+    else:
+        dsn_env = os.environ.get("ATM_PG_DSN")
+        if dsn_env is None:
+            return None
+        dsn = dsn_env
+    engine: AsyncEngine = create_engine(dsn)
     session_factory = create_session_factory(engine)
     return engine, session_factory
 
@@ -1693,6 +1778,14 @@ async def _execute_existing_run(
                 )
             except Exception:
                 quality_score = None
+
+        # Write llm_calls in REPLAY_SCHEMA so replay_one(mode='deterministic') can read
+        # them back even when FakeLLM is used (FakeLLM doesn't fire on_llm_end callbacks).
+        _run_dir = parquet_root / "experiments" / str(exp_id) / "runs" / str(run_id)
+        try:
+            _write_replay_parquet(_run_dir, list(final_state.get("llm_calls") or []))
+        except Exception:
+            log.warning("_write_replay_parquet failed — replay may not work", exc_info=True)
 
         await parquet_writer.close()
 
