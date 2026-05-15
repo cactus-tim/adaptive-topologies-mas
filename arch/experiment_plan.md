@@ -13,9 +13,15 @@
 
 **Итого: 180 задач.** Для экспериментов ниже обычно берём **стратифицированную выборку 20–30 задач на тип** (т.е. ~80–120 на прогон), чтобы не взрывать бюджет. Полный прогон 180 делаем только на финальных confirmation runs.
 
-Модели: primary = `gpt-4o-mini`, judge = `gpt-4o-mini` (self-consistency 3), summarizer = `gpt-4o-mini`. На финальных confirmatory runs — апгрейд исполнителя на `gpt-4o`.
+Модели (lineup Variant B'.1, ревизия 2026-05-15 после deprecation Cerebras Llama-family):
+- **primary** (workers Planner/Researcher/Executor/Debater, Critic, Summarizer, Router, HITL-simulator) = `cerebras:gpt-oss-120b` (~3000 tok/s на Cerebras WSE; иерархия worker vs critic выражается через `reasoning_effort` и system-prompt strictness, а не размер модели — переменная модели изолирована)
+- **judge** (LLM-as-judge, self-consistency × 3, temperature 0.0) = `openai:gpt-4.1-mini` (другая семья весов — независимая оценка; ключевой аргумент для защиты)
+- **confirmation primary** (cross-family внутри Cerebras) = `cerebras:zai-glm-4.7` (preview, 355B Z.ai family — другая родословная весов от gpt-oss)
+- **confirmation cross-family** = `openai:gpt-4o` (frontier OpenAI — финальная валидация)
 
 Seeds: **3 по умолчанию, 5 для финальных confirmation**. Температура primary = 0.7; judge = 0.0.
+
+> **Note (2026-05-15):** Изначальная редакция плана опиралась на `gpt-4o-mini`/`gpt-4o`. После добавления Cerebras-провайдера и deprecation Llama-семьи в каталоге Cerebras (2026-05-27) lineup пересмотрен. Старые модели (`gpt-4o-mini` primary) сохранены в `conf/pricing.yaml` для back-compat тестов, но в `conf/experiments/*.yaml` не используются.
 
 ## 1. Этапы и воронка
 
@@ -160,9 +166,13 @@ Seeds: **3 по умолчанию, 5 для финальных confirmation**. 
 
 ## 6. Между-этапные confirmation runs
 
-После E3 и E4 — повтор champion configs на полном task-mix (180 задач) с n=5 seeds, моделью `gpt-4o` вместо `gpt-4o-mini`. Цель: убедиться, что выводы не артефакт cheap-model.
+После E3 и E4 — повтор champion configs на полном task-mix (180 задач) с n=5 seeds, на двух confirmation-моделях параллельно (cross-family валидация):
+1. **`cerebras:zai-glm-4.7`** — другая семья весов на том же провайдере (изолирует "модель" от "провайдера/инфраструктуры").
+2. **`openai:gpt-4o`** — другой провайдер + другая семья — финальная frontier-валидация.
 
-~2 configs × 180 задач × 5 seeds = 1800 runs × $0.001 ≈ **$30–50** (на `gpt-4o` дороже, ~$100–150 итого).
+Цель: убедиться, что выводы не артефакт ни конкретной семьи весов (gpt-oss), ни конкретной инфраструктуры (Cerebras).
+
+~2 configs × 180 задач × 5 seeds × 2 confirmation-моделей = **~3600 confirmation runs**. Бюджет под Cerebras zai-glm-4.7 — ~$30–40 (preview-цены `# VERIFY`); под gpt-4o — ~$80–100. Итого confirmation: **~$110–140**.
 
 ---
 
@@ -208,17 +218,22 @@ Seeds: **3 по умолчанию, 5 для финальных confirmation**. 
 
 ## 8. Сводная таблица runs и бюджета
 
-| Этап | Runs (прибл.) | Бюджет GPT-4o-mini | Что новое |
-|---|---|---|---|
-| E1 Baseline no-human | 1 500 | $20–30 | static topology Pareto |
-| E2 HITL-sim baseline | 4 000 | $60–90 | role × topology heatmap |
-| E3 Adaptive topology | 1 100 | $30–50 | static vs adaptive |
-| E4 Adaptive + adaptive-role | 900 | $30–40 | full combo |
-| Confirmation on gpt-4o | ~1 800 | $100–150 | validation on frontier |
-| E5 Real human | ~120–140 | $10–20 + человеко-часы | ecological validity |
-| **Итого** | **~9 500** | **~$250–380** | |
+Бюджет считается под актуальный lineup B'.1 (`cerebras:gpt-oss-120b` primary @ $0.35 in / $0.75 out per 1M; `openai:gpt-4.1-mini` judge × 3 self-consistency; confirmation on `cerebras:zai-glm-4.7` + `openai:gpt-4o`).
 
-+30% reserve (retries, failed runs, ablation add-ons) → **закладываемся на ~$400–500**.
+| Этап | Runs (прибл.) | Бюджет (lineup B'.1) | Что новое |
+|---|---|---|---|
+| E1 Baseline no-human | 1 500 | ~$10 (compute) + ~$5 (judge) | static topology Pareto |
+| E2 HITL-sim baseline | 4 000 | ~$25 (compute, +HITL-sim calls) + ~$15 (judge) | role × topology heatmap |
+| E3 Adaptive topology | 1 100 | ~$8 (compute, +router-cost) + ~$4 (judge) | static vs adaptive |
+| E4 Adaptive + adaptive-role | 900 | ~$7 (compute, +HITL) + ~$3 (judge) | full combo |
+| Confirmation primary (zai-glm-4.7) | ~1 800 | ~$30–40 (`# VERIFY` preview prices) | cross-family на Cerebras |
+| Confirmation cross-family (gpt-4o) | ~1 800 | ~$80–100 | frontier OpenAI validation |
+| E5 Real human | ~120–140 | ~$3–5 inference + человеко-часы | ecological validity |
+| **Итого** | **~11 300** | **~$190–230** | |
+
++30% reserve (retries, failed runs, ablation add-ons) → **закладываемся на ~$250–300**.
+
+**Wall-time оценка** на Cerebras Pay-as-You-Go (1K RPM / 1M TPM на gpt-oss-120b, 8 параллельных воркеров): E1 full ~45 мин, E2 ~2.5 ч, E3 ~45 мин, E4 ~40 мин, оба confirmation вместе ~2 ч. Итого pure compute **~6 ч**, с реальным запасом на retries/sandbox **~10–12 ч** wall-time на всю программу E1–E4 + confirmation.
 
 ## 9. Статистика и валидность
 
@@ -233,17 +248,20 @@ Seeds: **3 по умолчанию, 5 для финальных confirmation**. 
 | Риск | Митигация |
 |---|---|
 | LLM-симулятор HITL ≠ реальный человек (валидность E5) | заранее согласуем с научруком метрику "валидности симулятора"; E5 именно для этого |
-| GPT-4o-mini слишком слабый → топологии неразличимы | confirmation runs на gpt-4o; если различий мало — переключаемся на gpt-4o целиком |
+| `cerebras:gpt-oss-120b` для всех compute-ролей одной модели → потеря «worker < critic» иерархии в защите | компенсируем через `reasoning_effort: low` для workers и `high` для Critic + system-prompt strictness; явный аргумент «изолирована переменная модели» |
+| Cerebras Cloud rate-limit (1K RPM / 1M TPM на gpt-oss-120b, Pay-as-You-Go) | `asyncio.Semaphore` уже встроен; на грид-уровне 8 воркеров не доходят даже до половины лимита; при упоре — переключение на батч-режим |
+| `gpt-oss-120b` слишком слабый → топологии неразличимы | confirmation runs на `cerebras:zai-glm-4.7` + `openai:gpt-4o`; если различий мало — фиксируем в limitations |
+| Cerebras `zai-glm-4.7` — preview-модель, может уйти из каталога в ходе работ | приоритет confirmation на `openai:gpt-4o`; zai как «второй прибор»; при отзыве — fallback на одну модель |
 | Adaptive router сам ест токенов больше, чем экономит | bookkeeping отдельно для "routing cost"; включаем в total |
 | Нехватка seeds → шум больше эффекта | минимум n=3 на пилотном, n=5 на финальном; переоценить после E1 |
 | Реальные участники дают разный опыт на разных configs | Latin square, pilot, обучающий туториал |
-| Contamination (GPT-4o видел HumanEval/GSM8K) | фиксируем в limitations; добавляем LiveCodeBench-mini в sensitivity-analysis |
+| Contamination (gpt-4o, gpt-oss видели HumanEval/GSM8K) | фиксируем в limitations; добавляем LiveCodeBench-mini в sensitivity-analysis |
 
 ## 11. Что нужно решить с научруком до старта
 
 - Этическая часть E5 (IRB / информированное согласие — нужна ли у вуза процедура)
 - Порог "Adaptive выигрышно" — 5% quality или 15% cost? или оба?
-- Включать ли gpt-4o confirmation или оставить только mini с упоминанием в limitations
+- Confirmation runs: оба провайдера (Cerebras zai + OpenAI gpt-4o) или только один — балансировка бюджета и cross-family строгости
 - Минимальное N участников для E5 (стат. значимость vs доступность)
 - Сохраняем ли логи interactions для публикации датасета
 

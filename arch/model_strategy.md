@@ -1,4 +1,20 @@
-# Model strategy — сравнение вариантов (актуально на 2026-04-23)
+# Model strategy — сравнение вариантов (исторический анализ, 2026-04-23)
+
+> **⚠ STATUS — SUPERSEDED 2026-05-15.**
+> Этот документ — снимок ранних рассуждений о выборе LLM-инфраструктуры (OpenAI vs Z.ai vs DeepInfra-Qwen vs Yandex self-host). Финальное решение принято позже, после добавления Cerebras-провайдера (см. `dev/done/add-cerebras-provider/`) и анонса deprecation Llama-семьи в Cerebras Cloud (2026-05-27).
+>
+> **Актуальный lineup** см. в:
+> - `arch/experiment_plan.md` §0 («Модели») — список ролей и моделей
+> - `conf/pricing.yaml` — header c комментарием "Active experimental lineup"
+>
+> Кратко (Variant B'.1):
+> - workers / critic / summarizer / router / HITL-sim → `cerebras:gpt-oss-120b`
+> - judge (LLM-as-judge) → `openai:gpt-4.1-mini` (cross-family независимость)
+> - confirmation: `cerebras:zai-glm-4.7` + `openai:gpt-4o`
+>
+> Документ ниже сохранён как контекст для текстовой части диплома (раздел «обоснование выбора провайдера»). Числовые оценки бюджета и TCO под OpenAI/DeepInfra **устарели**, не использовать.
+
+---
 
 Сравнение трёх стратегий выбора LLM-инфраструктуры для грида ~9 500 runs × 15 LLM-calls ≈ **142 500 вызовов**. Вход ≈ 114M токенов, выход ≈ 57M токенов. Все цифры ниже — USD.
 
