@@ -23,6 +23,7 @@ from atm.analysis.oracle import (
     build_leave_one_out_oracle,
     build_loo_from_rows,
     load_oracle_table,
+    plot_oracle_vs_router,
 )
 from atm.analysis.plots import (
     plot_cognitive_load_boxplot,
@@ -55,6 +56,7 @@ __all__ = [
     "load_phases",
     "load_runs",
     "load_topology_transitions",
+    "plot_oracle_vs_router",
     "plot_cognitive_load_boxplot",
     "plot_guard_override_rate",
     "plot_oracle_gap_loo",
