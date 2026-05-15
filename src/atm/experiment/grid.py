@@ -41,6 +41,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from atm.experiment.config import ExperimentConfig
+from atm.storage.checkpointer import build_checkpointer
 from atm.storage.models import Experiment
 from atm.storage.session import create_engine, create_session_factory, session_scope
 
@@ -303,10 +304,16 @@ async def run_grid(
     # kills a subset of cells. Running setup() once serially here keeps the
     # subsequent per-worker setup() calls idempotent (IF NOT EXISTS / ON
     # CONFLICT DO NOTHING).
-    from atm.storage.checkpointer import build_checkpointer
-
-    _warm_saver, _warm_pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
-    await _warm_pool.close()
+    #
+    # Wrapped in try/except so unit tests with fake DSNs aren't broken — if
+    # the warmup fails (DSN unreachable), workers will surface the real
+    # error themselves, and the pkey race only matters when there ARE real
+    # parallel workers hitting a real DB.
+    try:
+        _warm_saver, _warm_pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
+        await _warm_pool.close()
+    except Exception as exc:
+        logger.debug("checkpointer warmup skipped (%s); workers will retry", exc)
 
     # ProcessPoolExecutor created fresh per call to ensure clean state.
     executor = ProcessPoolExecutor(max_workers=parallelism)
