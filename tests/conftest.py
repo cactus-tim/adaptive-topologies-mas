@@ -53,12 +53,24 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
 
     # Reset the public schema BEFORE create_all — defensive against state
     # leaks from prior tests whose subprocess workers (e.g. `atm grid`
-    # ProcessPoolExecutor children) may still have pending writes/types in
-    # flight during fixture teardown. Without this DROP SCHEMA, a residual
-    # row or pg_type entry triggers UniqueViolationError on the next
-    # test's `create_all` (pg_type_typname_nsp_index race).
+    # ProcessPoolExecutor children) may still have open backend connections
+    # racing DDL on the same DB. Without this hard reset, the new test's
+    # CREATE TABLE races on pg_catalog (pg_type_typname_nsp_index).
+    #
+    # Strategy:
+    #   1. Terminate ALL other backends on this DB so no concurrent DDL/DML
+    #      can race the schema reset.
+    #   2. DROP SCHEMA public CASCADE + CREATE SCHEMA public.
     reset_engine = create_engine(dsn, echo=False, pool_size=1, max_overflow=0)
     async with reset_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) "
+                "FROM pg_stat_activity "
+                "WHERE datname = current_database() "
+                "  AND pid <> pg_backend_pid()"
+            )
+        )
         await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         await conn.execute(text("CREATE SCHEMA public"))
     await reset_engine.dispose()
