@@ -61,21 +61,89 @@ _KILL_TIMEOUT_S = 60.0  # max wall-clock seconds before we SIGKILL
 _RESUME_TIMEOUT_S = 120  # subprocess.run timeout for `atm resume`
 
 
+def _write_long_fixtures(tmp_path: Path, n_iterations: int = 8) -> tuple[Path, Path, Path]:
+    """Write FakeLLM fixture files designed for a multi-iteration chain run.
+
+    Creates fixtures that make the chain run for ``n_iterations`` cycles before
+    the critic finally approves.  This gives the SIGKILL test enough wall-clock
+    time (several seconds) to poll the DB, find the 'running' row, and kill the
+    child before it completes.
+
+    Layout per iteration:
+      - planner: 1 entry (planner node runs only on the first cycle)
+      - executor: 1 "stop" entry per iteration (no tool calls — simpler fixture)
+      - critic:   (n_iterations-1) "REJECT" entries + 1 final "APPROVE" entry
+    """
+    import yaml as _yaml  # bundled in the test env via omegaconf / pyyaml
+
+    planner_entries = [
+        {
+            "agent_id": "planner",
+            "role": "planner",
+            "step_idx": 0,
+            "content": "Plan: implement fib(n).",
+            "tool_calls": [],
+            "finish_reason": "stop",
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            "model": "fake:scripted",
+        }
+    ]
+
+    executor_entries = [
+        {
+            "agent_id": "executor",
+            "role": "executor",
+            "step_idx": i,
+            "content": f"Draft answer iteration {i}: fib(10)=55.",
+            "tool_calls": [],
+            "finish_reason": "stop",
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            "model": "fake:scripted",
+        }
+        for i in range(n_iterations)
+    ]
+
+    critic_entries = [
+        {
+            "agent_id": "critic",
+            "role": "critic",
+            "step_idx": i,
+            "content": "APPROVE fib" if i == n_iterations - 1 else "REJECT — needs improvement.",
+            "tool_calls": [],
+            "finish_reason": "stop",
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            "model": "fake:scripted",
+        }
+        for i in range(n_iterations)
+    ]
+
+    def _write(name: str, entries: list) -> Path:
+        path = tmp_path / name
+        path.write_text(_yaml.dump({"version": 1, "mode": "scripted", "entries": entries}))
+        return path
+
+    planner_path = _write("sigkill_planner.yaml", planner_entries)
+    executor_path = _write("sigkill_executor.yaml", executor_entries)
+    critic_path = _write("sigkill_critic.yaml", critic_entries)
+    return planner_path, executor_path, critic_path
+
+
 def _write_run_yaml(tmp_path: Path, pg_dsn: str, parquet_dir: str) -> Path:
     """Write a standalone experiment YAML for the SIGKILL test.
 
-    Uses Chain topology with the m6 FakeLLM fixtures (planner + executor with
-    2 steps + critic) so there are ≥ 3 LLM calls total, giving LangGraph time
-    to commit at least one intermediate checkpoint before we SIGKILL.
+    Uses Chain topology with extended FakeLLM fixtures that drive 8 iterations
+    before the critic approves.  The extra wall-clock time (several seconds)
+    allows the test's polling loop to find the 'running' row and SIGKILL the
+    worker before it finishes naturally.
+
     The experiment is given a unique name to avoid ON CONFLICT issues across
     repeated local runs.
     """
     import uuid as _uuid
 
     unique_name = f"m12_sigkill_{_uuid.uuid4().hex[:8]}"
-    planner_fixture = str(_FIXTURES_DIR / "m6_chain_planner.yaml")
-    executor_fixture = str(_FIXTURES_DIR / "m6_chain_executor.yaml")
-    critic_fixture = str(_FIXTURES_DIR / "m6_chain_critic.yaml")
+
+    planner_fixture, executor_fixture, critic_fixture = _write_long_fixtures(tmp_path)
 
     yaml_content = f"""\
 name: {unique_name}
@@ -160,8 +228,23 @@ async def test_resume_after_sigkill_m12_exit_criterion(
     env["ATM_DISABLE_STRUCTLOG_BOOTSTRAP"] = "1"
 
     # ── Step 1: spawn the run subprocess ────────────────────────────────────
+    # Resolve the ``atm`` console_scripts entry-point from the active virtual
+    # environment's bin/ directory.  This avoids the 2-3s startup latency that
+    # ``uv run`` introduces (resolver + venv activation), which otherwise causes
+    # FakeLLM-based runs to complete before the test can poll the DB and SIGKILL
+    # the worker.
+    import sys as _sys
+
+    _venv_bin = Path(_sys.executable).parent
+    _atm_exe = _venv_bin / "atm"
+    if not _atm_exe.exists():
+        # Fallback to uv run (slower, but may work on some CI setups).
+        _run_cmd = ["uv", "run", "atm", "run", "--config", str(config_path)]
+    else:
+        _run_cmd = [str(_atm_exe), "run", "--config", str(config_path)]
+
     proc = subprocess.Popen(
-        ["uv", "run", "atm", "run", "--config", str(config_path)],
+        _run_cmd,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
