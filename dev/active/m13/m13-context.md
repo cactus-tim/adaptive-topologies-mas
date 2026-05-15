@@ -8,9 +8,10 @@
 - Step 3.1: Implemented `load_experiment` (PG-backed async loader returning dict; raises KeyError on missing ID) and `load_runs` (PG-backed async loader returning DataFrame with derived `task_type` column via `_infer_task_type`; casts Decimal to float). Created `tests/unit/analysis/test_loaders.py` with 8 PG-gated tests (requires_postgres marker); all 8 pass with ATM_ENABLE_PG_TESTS=1 (PG at localhost:5433); skip cleanly without the flag.
 - Step 4.1: Implemented `load_llm_calls` (glob `experiments/*/runs/{run_id}/llm_calls.parquet`, raises FileNotFoundError when missing) and `load_llm_calls_for_experiment` (glob all run dirs under experiment, concat with run_id injection from directory name). Added 7 parquet round-trip tests (no PG required); all 7 pass.
 - Step 5.1: Implemented `load_topology_transitions` (PG+parquet; parquet path decodes `*_json` columns via `json.loads()`), `load_phases` (PG+parquet), `load_human_interactions` (PG-only; `raw_tlx_score` None→NaN). Added 20 tests: 10 parquet (always-run), 8 PG-gated, 2 column-set parity. All pass (26 passed, 18 skipped without PG; 35 passed with ATM_ENABLE_PG_TESTS=1).
+- Step 6.1: Implemented all 7 metric functions in `src/atm/analysis/metrics.py` (pure functions, no side effects). Created `tests/unit/analysis/test_metrics.py` with 32 unit tests covering happy path + edge cases for all 7 functions; divergent-fixture test confirms per-task_id filtering in `compute_oracle_gap_loo`. All 32 pass + 9 oracle tests pass (41 total).
 
 ### IN PROGRESS
-- Step 6.1: Implement 7 metric-functions + tests
+- Step 7.1: Implement `plot_pareto`, `plot_topology_task_heatmap`, `plot_phase_timeline` + smoke-tests (parallel with Step 6)
 
 ### BLOCKERS
 - None

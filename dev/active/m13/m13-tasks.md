@@ -45,9 +45,9 @@
   - Files: `src/atm/analysis/loaders.py`, `tests/unit/analysis/test_loaders.py`
   - Acceptance: parquet-тесты всегда запускаются; PG-тесты гейтированы; `df["signals_snapshot"].iloc[0]` — dict; `raw_tlx_score` — float с NaN; PG и parquet дают идентичные column sets для transitions
 
-## Wave 6 — Metrics (Step 6) NOT STARTED  ← параллельно с Wave 6 Plot
+## Wave 6 — Metrics (Step 6) COMPLETE  ← параллельно с Wave 6 Plot
 
-- [ ] 6.1 Реализовать 7 metric-функций + ≥14 unit-тестов
+- [x] 6.1 Реализовать 7 metric-функций + ≥14 unit-тестов
   - Type: tdd
   - Depends On: 5.1
   - Can-Parallel-With: Step 7 (disjoint files: `metrics.py`+`test_metrics.py` vs `plots.py`+`test_plots.py`)
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 5 / 12
+- Done: 6 / 12
 
 ## How to Update
 
