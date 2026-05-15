@@ -1,0 +1,43 @@
+# Minimal valid ExperimentConfig fixture with a grid sweep block.
+# Used by test_loader_grid_expansion.py.
+#
+# Grid: 2 topologies × 2 tasks × 2 seeds = 8 cells total.
+
+name: "grid_minimal_test"
+seed: 0
+
+model:
+  default: "fake:scripted"
+  judge: "fake:scripted"
+  summarizer: "fake:scripted"
+  router: "fake:scripted"
+  prompt_cache_scope: "off"
+
+agents:
+  set: "canonical_4"
+  scratchpad:
+    policy: "window_only"
+    window_size: 3
+
+topology:
+  name: "star"
+  max_iterations: 5
+
+task:
+  name: "humaneval"
+  input: ""
+  split: "test"
+  limit: 1
+
+observability:
+  parquet_dir: "data/test_experiments"
+  pg_dsn: "postgresql://test:test@localhost:5432/test_db"
+  callback_sync: false
+
+grid:
+  parallelism: 2
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    topology.name: [star, chain]
+    task.name: [humaneval, gsm8k]

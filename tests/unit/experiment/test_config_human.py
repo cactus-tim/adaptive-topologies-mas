@@ -122,7 +122,7 @@ def test_human_cfg_llm_simulated_yaml() -> None:
     assert h.role == HumanRole.REVIEWER
     assert h.timeout_s == pytest.approx(900.0)
     assert h.timeout_policy == "llm_fallback"
-    assert h.model == "openai:gpt-4o-mini"
+    assert h.model == "cerebras:gpt-oss-120b"
 
 
 # ---------------------------------------------------------------------------
