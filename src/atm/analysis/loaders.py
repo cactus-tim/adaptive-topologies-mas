@@ -141,6 +141,10 @@ def load_llm_calls(
 ) -> pd.DataFrame:
     """Load the LLM call Parquet for a single run.
 
+    The file is located by globbing for the run_id under all experiment
+    subdirectories:
+    ``parquet_dir/experiments/*/runs/{run_id}/llm_calls.parquet``
+
     Args:
         run_id:      Run UUID string (used to locate the Parquet file).
         parquet_dir: Root directory containing per-run Parquet files.
@@ -151,7 +155,19 @@ def load_llm_calls(
     Raises:
         FileNotFoundError: If the Parquet file for ``run_id`` does not exist.
     """
-    raise NotImplementedError("load_llm_calls — implemented in Step 4")
+    import pyarrow.parquet as pq
+
+    pattern = f"experiments/*/runs/{run_id}/llm_calls.parquet"
+    matches = list(parquet_dir.glob(pattern))
+
+    if not matches:
+        raise FileNotFoundError(
+            f"No llm_calls.parquet found for run_id={run_id!r} "
+            f"under {parquet_dir!r} (pattern: {pattern!r})"
+        )
+
+    table = pq.read_table(matches[0])
+    return table.to_pandas()
 
 
 def load_llm_calls_for_experiment(
@@ -161,7 +177,12 @@ def load_llm_calls_for_experiment(
 ) -> pd.DataFrame:
     """Concatenate LLM call Parquets for all runs in an experiment.
 
-    Injects a ``run_id`` column from the filename when not already present.
+    Globs all run directories under the experiment and concatenates their
+    llm_calls.parquet files. The ``run_id`` column is injected from the
+    directory name when not already present in the parquet data.
+
+    File layout:
+        ``parquet_dir/experiments/{exp_id}/runs/{run_id}/llm_calls.parquet``
 
     Args:
         exp_id:      Experiment UUID string (used to glob matching files).
@@ -169,8 +190,28 @@ def load_llm_calls_for_experiment(
 
     Returns:
         Concatenated DataFrame with one row per LLM call across all runs.
+        Returns an empty DataFrame when no runs exist for the experiment.
     """
-    raise NotImplementedError("load_llm_calls_for_experiment — implemented in Step 4")
+    import pyarrow.parquet as pq
+
+    exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
+    pattern = "*/llm_calls.parquet"
+    parquet_files = list(exp_runs_dir.glob(pattern)) if exp_runs_dir.exists() else []
+
+    if not parquet_files:
+        return pd.DataFrame()
+
+    frames: list[pd.DataFrame] = []
+    for parquet_file in parquet_files:
+        # The run_id is the name of the parent directory (the run UUID)
+        run_id_from_path = parquet_file.parent.name
+        table = pq.read_table(parquet_file)
+        df = table.to_pandas()
+        # Ensure run_id column is present and reflects the directory-derived run_id
+        df["run_id"] = run_id_from_path
+        frames.append(df)
+
+    return pd.concat(frames, ignore_index=True)
 
 
 async def load_topology_transitions(
