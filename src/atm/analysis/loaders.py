@@ -227,8 +227,9 @@ async def load_topology_transitions(
     - ``"pg"``      : reads from Postgres (requires ``session_factory``).
     - ``"parquet"`` : reads from Parquet files (requires ``parquet_dir``).
 
-    Both sources return identical column sets. JSONB ``signals_snapshot``
-    is decoded to a Python dict (not left as a JSON string).
+    Both sources return identical column sets. JSONB/JSON-string fields
+    (``signals_snapshot``, ``considered_alternatives``, ``guards_applied``)
+    are decoded to native Python types (dict/list), never left as JSON strings.
 
     Args:
         exp_id:          Experiment UUID string.
@@ -239,7 +240,85 @@ async def load_topology_transitions(
     Returns:
         DataFrame with one row per topology transition.
     """
-    raise NotImplementedError("load_topology_transitions — implemented in Step 5")
+    import json
+
+    if source == "parquet":
+        if parquet_dir is None:
+            raise ValueError("parquet_dir is required when source='parquet'")
+        import pyarrow.parquet as pq
+
+        exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
+        parquet_files = (
+            list(exp_runs_dir.glob("*/topology_transitions.parquet"))
+            if exp_runs_dir.exists()
+            else []
+        )
+
+        if not parquet_files:
+            return pd.DataFrame()
+
+        frames: list[pd.DataFrame] = []
+        for pq_file in parquet_files:
+            table = pq.read_table(pq_file)
+            df = table.to_pandas()
+            # Decode JSON-string columns into native Python types
+            df["signals_snapshot"] = df["signals_snapshot_json"].apply(json.loads)
+            df["considered_alternatives"] = df["considered_alternatives_json"].apply(json.loads)
+            df["guards_applied"] = df["guards_applied_json"].apply(json.loads)
+            # Drop the raw _json columns
+            df = df.drop(
+                columns=["signals_snapshot_json", "considered_alternatives_json", "guards_applied_json"]
+            )
+            frames.append(df)
+
+        return pd.concat(frames, ignore_index=True)
+
+    else:  # source == "pg"
+        if session_factory is None:
+            raise ValueError("session_factory is required when source='pg'")
+
+        from sqlalchemy import select
+
+        from atm.storage.models import Run, TopologyTransition
+
+        exp_uuid = uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id
+
+        async with session_factory() as session:
+            # Join through runs to filter by experiment
+            result = await session.execute(
+                select(TopologyTransition)
+                .join(Run, TopologyTransition.run_id == Run.id)
+                .where(Run.exp_id == exp_uuid)
+            )
+            transitions = list(result.scalars().all())
+
+        if not transitions:
+            return pd.DataFrame()
+
+        rows: list[dict[str, Any]] = []
+        for t in transitions:
+            rows.append(
+                {
+                    "run_id": str(t.run_id),
+                    "from_topology": t.from_topology,
+                    "to_topology": t.to_topology,
+                    "phase_at_decision": t.phase_at_decision,
+                    "iter_within_phase": t.iter_within_phase,
+                    "iter_within_topology": t.iter_within_topology,
+                    "decided_by": t.decided_by,
+                    "reason": t.reason,
+                    # PG returns native Python types for ARRAY and JSONB
+                    "considered_alternatives": list(t.considered_alternatives),
+                    "guards_applied": list(t.guards_applied),
+                    "signals_snapshot": dict(t.signals_snapshot),
+                    "router_cost_usd": float(t.router_cost_usd)
+                    if t.router_cost_usd is not None
+                    else float("nan"),
+                    "at": t.at,
+                }
+            )
+
+        return pd.DataFrame(rows)
 
 
 async def load_phases(
@@ -262,7 +341,66 @@ async def load_phases(
     Returns:
         DataFrame with one row per phase.
     """
-    raise NotImplementedError("load_phases — implemented in Step 5")
+    if source == "parquet":
+        if parquet_dir is None:
+            raise ValueError("parquet_dir is required when source='parquet'")
+        import pyarrow.parquet as pq
+
+        exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
+        parquet_files = (
+            list(exp_runs_dir.glob("*/phases.parquet"))
+            if exp_runs_dir.exists()
+            else []
+        )
+
+        if not parquet_files:
+            return pd.DataFrame()
+
+        frames: list[pd.DataFrame] = []
+        for pq_file in parquet_files:
+            table = pq.read_table(pq_file)
+            df = table.to_pandas()
+            frames.append(df)
+
+        return pd.concat(frames, ignore_index=True)
+
+    else:  # source == "pg"
+        if session_factory is None:
+            raise ValueError("session_factory is required when source='pg'")
+
+        from sqlalchemy import select
+
+        from atm.storage.models import Phase, Run
+
+        exp_uuid = uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Phase)
+                .join(Run, Phase.run_id == Run.id)
+                .where(Run.exp_id == exp_uuid)
+            )
+            phases = list(result.scalars().all())
+
+        if not phases:
+            return pd.DataFrame()
+
+        rows: list[dict[str, Any]] = []
+        for p in phases:
+            rows.append(
+                {
+                    "run_id": str(p.run_id),
+                    "phase_name": p.phase_name,
+                    "from_phase": p.from_phase,
+                    "started_at": p.started_at,
+                    "ended_at": p.ended_at,
+                    "entry_reason": p.entry_reason,
+                    "topology_used": p.topology_used,
+                    "decided_by": p.decided_by,
+                }
+            )
+
+        return pd.DataFrame(rows)
 
 
 async def load_human_interactions(
@@ -272,13 +410,50 @@ async def load_human_interactions(
 ) -> pd.DataFrame:
     """Load HumanInteraction rows for an experiment from Postgres.
 
-    The ``raw_tlx_score`` column is cast to float; empty strings become NaN.
+    The ``raw_tlx_score`` column is cast to float; NULL values become NaN.
 
     Args:
         exp_id:          Experiment UUID string.
         session_factory: Async SQLAlchemy sessionmaker.
 
     Returns:
-        DataFrame with one row per human interaction.
+        DataFrame with columns: id, run_id, role, requested_at, answered_at,
+        raw_tlx_score, tlx_scores, request_id.
     """
-    raise NotImplementedError("load_human_interactions — implemented in Step 5")
+    from sqlalchemy import select
+
+    from atm.storage.models import HumanInteraction, Run
+
+    exp_uuid = uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(HumanInteraction)
+            .join(Run, HumanInteraction.run_id == Run.id)
+            .where(Run.exp_id == exp_uuid)
+        )
+        interactions = list(result.scalars().all())
+
+    if not interactions:
+        return pd.DataFrame()
+
+    rows: list[dict[str, Any]] = []
+    for hi in interactions:
+        raw_tlx = hi.raw_tlx_score
+        # Cast to float; None (NULL in DB) becomes NaN
+        raw_tlx_float = float("nan") if raw_tlx is None else float(raw_tlx)
+
+        rows.append(
+            {
+                "id": str(hi.id),
+                "run_id": str(hi.run_id),
+                "role": hi.role,
+                "requested_at": hi.requested_at,
+                "answered_at": hi.answered_at,
+                "raw_tlx_score": raw_tlx_float,
+                "tlx_scores": hi.tlx_scores,
+                "request_id": hi.request_id,
+            }
+        )
+
+    return pd.DataFrame(rows)
