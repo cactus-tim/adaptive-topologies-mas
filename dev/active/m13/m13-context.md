@@ -15,10 +15,10 @@
 ### COMPLETED
 - Step 9.1: Implemented `plot_cognitive_load_boxplot(runs_df, human_interactions_df, *, role=None)` in plots.py (2-panel figure: raw_tlx_score boxplot + cognitive_load_proxy boxplot using pure matplotlib ax.boxplot to avoid seaborn PendingDeprecationWarning). Implemented `plot_oracle_vs_router(runs_df, oracle_table, *, router_col="topology")` in oracle.py with `from __future__ import annotations` + `TYPE_CHECKING` guard (matplotlib imported lazily inside function body only). Added `plot_oracle_vs_router` to `__init__.py` exports. Created `test_oracle_plot.py` (12 tests) and `test_oracle_no_matplotlib_import.py` (4 tests using subprocess isolation). Added 11 cognitive load tests to `test_plots.py`. 154 passed, 18 skipped (PG-gated).
 
-- Step 10.1: Implemented `scripts/gen_analysis_notebook.py` using nbformat.v4 API with RQ1/RQ2/RQ3/RQ4 sections. RQ2 covers all 7 metric symbols. Generated and committed `notebooks/analysis_template.ipynb`. Created `test_notebook_generator.py` with 5 tests (generates, validates, drift-detection, rq2-covers-all-metrics, script-exists). All 159 tests pass (18 PG-gated skipped).
+- Step 11.1: Normalized `__all__` in `__init__.py` (28 symbols, alphabetically sorted). Fixed lint/type issues: RUF022 (sorted __all__), UP037 (remove quotes from return type in oracle.py), B905 (zip strict= in plots.py), plt.Axes→matplotlib.axes.Axes, aggfunc type ignore, int(Hashable) cast, unstack fill_value int, pyarrow no-untyped-call type ignores. Added pandas-stubs to dev deps. Added per-file-ignores for test_oracle_no_matplotlib_import.py. ruff check/format: clean; mypy: clean; pytest: 159 passed, 18 skipped (PG-gated); full suite: 1759 passed.
 
 ### IN PROGRESS
-- Step 11.1: Lint/exports normalisation (next step)
+- Step 12.1: Codebase-map update (running in parallel)
 
 ### BLOCKERS
 - None
