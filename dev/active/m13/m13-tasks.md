@@ -90,9 +90,9 @@
   - Files: `scripts/gen_analysis_notebook.py` (new), `notebooks/analysis_template.ipynb` (new), `tests/unit/analysis/test_notebook_generator.py` (new)
   - Acceptance: `pytest tests/unit/analysis/test_notebook_generator.py -v` зелёный (4 теста); `nbformat.validate()` проходит; все 8 RQ2-символов присутствуют в RQ2-ячейках; notebook идемпотентен
 
-## Wave 10 — Lint + exports (Step 11) NOT STARTED  ← параллельно с Wave 10 Docs
+## Wave 10 — Lint + exports (Step 11) COMPLETE  ← параллельно с Wave 10 Docs
 
-- [ ] 11.1 Нормализовать `__all__` (23 символа) в `__init__.py`; прогнать ruff + mypy + pytest
+- [x] 11.1 Нормализовать `__all__` (23 символа) в `__init__.py`; прогнать ruff + mypy + pytest
   - Type: simple
   - Depends On: 10.1
   - Can-Parallel-With: Step 12 (disjoint files)
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 9 / 12
+- Done: 10 / 12
 
 ## How to Update
 

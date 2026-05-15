@@ -104,9 +104,7 @@ class TestOracleModuleDoesNotImportMatplotlib:
         assert "TYPE_CHECKING" in source, (
             "oracle.py should use the TYPE_CHECKING guard for matplotlib imports"
         )
-        assert "if TYPE_CHECKING:" in source, (
-            "oracle.py should have 'if TYPE_CHECKING:' block"
-        )
+        assert "if TYPE_CHECKING:" in source, "oracle.py should have 'if TYPE_CHECKING:' block"
         assert "import matplotlib" in source, (
             "oracle.py should have 'import matplotlib' under TYPE_CHECKING guard"
         )

@@ -326,11 +326,7 @@ def compute_hurt_rate(
     # Build lookup: task_id → best static quality
     static_lookup = static.set_index("task_id")["quality_score"].to_dict()
 
-    adaptive_mean = (
-        adaptive.groupby("task_id")["quality_score"]
-        .mean()
-        .dropna()
-    )
+    adaptive_mean = adaptive.groupby("task_id")["quality_score"].mean().dropna()
 
     if adaptive_mean.empty:
         return 0.0
@@ -381,11 +377,7 @@ def compute_topology_switch_counts(
     has_from = df["from_topology"].notna() & (df["from_topology"] != "")
     is_switch = has_from & (df["to_topology"] != df["from_topology"])
 
-    switch_counts = (
-        df[is_switch]
-        .groupby("run_id")
-        .size()
-    )
+    switch_counts = df[is_switch].groupby("run_id").size()
 
     # Ensure all run_ids in the df appear (even if they have 0 switches)
     all_run_ids = df["run_id"].unique()

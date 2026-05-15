@@ -176,7 +176,7 @@ def plot_topology_task_heatmap(
     Returns:
         matplotlib Figure with one Axes (heatmap).
     """
-    import seaborn as sns  # lazy import — seaborn is optional for headless
+    import seaborn as sns  # type: ignore[import-untyped]  # lazy import — seaborn is optional for headless
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -191,7 +191,7 @@ def plot_topology_task_heatmap(
         values=value_col,
         index=topology_col,
         columns=task_type_col,
-        aggfunc=aggfunc,
+        aggfunc=aggfunc,  # type: ignore[arg-type]
     )
 
     if pivot.empty:
@@ -277,16 +277,17 @@ def plot_phase_timeline(
         start_s = (t_start - t0).total_seconds()
         duration_s = max((t_end - t_start).total_seconds(), 0.0)
 
+        row_idx = int(i)  # type: ignore[call-overload]
         ax.broken_barh(
             [(start_s, duration_s)],
-            (int(i) - 0.4, 0.8),
+            (row_idx - 0.4, 0.8),
             facecolors=phase_color.get(phase_name, "steelblue"),
             label=phase_name,
             alpha=0.8,
         )
         ax.text(
             start_s + duration_s / 2,
-            int(i),
+            row_idx,
             phase_name,
             ha="center",
             va="center",
@@ -488,7 +489,7 @@ def plot_router_cost_share(
         router_costs = [router_cost]
         worker_costs = [worker_cost]
     else:
-        run_agg = df.groupby(["run_id", "is_router"])["cost_usd"].sum().unstack(fill_value=0.0)
+        run_agg = df.groupby(["run_id", "is_router"])["cost_usd"].sum().unstack(fill_value=0)
         router_costs_series = run_agg.get(True, pd.Series(dtype=float))
         worker_costs_series = run_agg.get(False, pd.Series(dtype=float))
         labels = run_agg.index.tolist()
@@ -679,7 +680,7 @@ def plot_cognitive_load_boxplot(
     # Helper: draw a boxplot on a given axes using pure matplotlib
     # ------------------------------------------------------------------
     def _draw_boxplot(
-        ax: plt.Axes,
+        ax: matplotlib.axes.Axes,
         df: pd.DataFrame,
         group_col: str,
         value_col: str,
@@ -688,18 +689,17 @@ def plot_cognitive_load_boxplot(
     ) -> None:
         groups = sorted(df[group_col].dropna().unique())
         data = [
-            df.loc[df[group_col] == g, value_col].dropna().to_numpy(dtype=float)
-            for g in groups
+            df.loc[df[group_col] == g, value_col].dropna().to_numpy(dtype=float) for g in groups
         ]
         # Filter out empty groups
-        valid = [(g, d) for g, d in zip(groups, data) if len(d) > 0]
+        valid = [(g, d) for g, d in zip(groups, data, strict=False) if len(d) > 0]
         if not valid:
             ax.set_title(f"{title} (no data)")
             ax.set_xlabel(group_col)
             ax.set_ylabel(ylabel)
             return
 
-        valid_groups, valid_data = zip(*valid)
+        valid_groups, valid_data = zip(*valid, strict=False)
         ax.boxplot(valid_data, tick_labels=list(valid_groups), patch_artist=True)
         ax.set_title(title)
         ax.set_xlabel(group_col)
@@ -715,18 +715,20 @@ def plot_cognitive_load_boxplot(
     if role is not None and "role" in hi_df.columns:
         hi_df = hi_df[hi_df["role"] == role]
 
-    if (
-        hi_df.empty
-        or "raw_tlx_score" not in hi_df.columns
-        or "topology" not in hi_df.columns
-    ):
+    if hi_df.empty or "raw_tlx_score" not in hi_df.columns or "topology" not in hi_df.columns:
         ax_tlx.set_title("Raw TLX Score per Topology (no data)")
         ax_tlx.set_xlabel("Topology")
         ax_tlx.set_ylabel("Raw TLX Score")
     else:
         tlx_plot_df = hi_df[["topology", "raw_tlx_score"]].dropna()
-        _draw_boxplot(ax_tlx, tlx_plot_df, "topology", "raw_tlx_score",
-                      "Raw TLX Score per Topology", "Raw TLX Score")
+        _draw_boxplot(
+            ax_tlx,
+            tlx_plot_df,
+            "topology",
+            "raw_tlx_score",
+            "Raw TLX Score per Topology",
+            "Raw TLX Score",
+        )
 
     # ------------------------------------------------------------------
     # Right Axes: cognitive_load_proxy from runs_df
@@ -741,8 +743,14 @@ def plot_cognitive_load_boxplot(
         ax_proxy.set_ylabel("Cognitive Load Proxy")
     else:
         proxy_plot_df = runs_df[["topology", "cognitive_load_proxy"]].dropna()
-        _draw_boxplot(ax_proxy, proxy_plot_df, "topology", "cognitive_load_proxy",
-                      "Cognitive Load Proxy per Topology", "Cognitive Load Proxy")
+        _draw_boxplot(
+            ax_proxy,
+            proxy_plot_df,
+            "topology",
+            "cognitive_load_proxy",
+            "Cognitive Load Proxy per Topology",
+            "Cognitive Load Proxy",
+        )
 
     fig.tight_layout()
     return fig

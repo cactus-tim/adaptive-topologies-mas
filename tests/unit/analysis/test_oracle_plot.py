@@ -82,9 +82,7 @@ class TestPlotOracleVsRouter:
         fig = plot_oracle_vs_router(runs_df, oracle_table)
         assert isinstance(fig, matplotlib.figure.Figure)
 
-    def test_has_at_least_one_axes(
-        self, runs_df: pd.DataFrame, oracle_table: OracleTable
-    ) -> None:
+    def test_has_at_least_one_axes(self, runs_df: pd.DataFrame, oracle_table: OracleTable) -> None:
         from atm.analysis.oracle import plot_oracle_vs_router
 
         fig = plot_oracle_vs_router(runs_df, oracle_table)
@@ -107,9 +105,7 @@ class TestPlotOracleVsRouter:
     def test_empty_oracle_table_graceful(self, runs_df: pd.DataFrame) -> None:
         from atm.analysis.oracle import plot_oracle_vs_router
 
-        empty_oracle = OracleTable(
-            by_task_type={}, by_task_id={}, **{"_default": "linear"}
-        )
+        empty_oracle = OracleTable(by_task_type={}, by_task_id={}, **{"_default": "linear"})
         fig = plot_oracle_vs_router(runs_df, empty_oracle)
         assert isinstance(fig, matplotlib.figure.Figure)
 
@@ -120,9 +116,7 @@ class TestPlotOracleVsRouter:
         fig = plot_oracle_vs_router(df, oracle_table)
         assert isinstance(fig, matplotlib.figure.Figure)
 
-    def test_custom_router_col(
-        self, runs_df: pd.DataFrame, oracle_table: OracleTable
-    ) -> None:
+    def test_custom_router_col(self, runs_df: pd.DataFrame, oracle_table: OracleTable) -> None:
         from atm.analysis.oracle import plot_oracle_vs_router
 
         df = runs_df.rename(columns={"topology": "router_topology"})
