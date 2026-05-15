@@ -15,8 +15,11 @@
 ### COMPLETED
 - Step 9.1: Implemented `plot_cognitive_load_boxplot(runs_df, human_interactions_df, *, role=None)` in plots.py (2-panel figure: raw_tlx_score boxplot + cognitive_load_proxy boxplot using pure matplotlib ax.boxplot to avoid seaborn PendingDeprecationWarning). Implemented `plot_oracle_vs_router(runs_df, oracle_table, *, router_col="topology")` in oracle.py with `from __future__ import annotations` + `TYPE_CHECKING` guard (matplotlib imported lazily inside function body only). Added `plot_oracle_vs_router` to `__init__.py` exports. Created `test_oracle_plot.py` (12 tests) and `test_oracle_no_matplotlib_import.py` (4 tests using subprocess isolation). Added 11 cognitive load tests to `test_plots.py`. 154 passed, 18 skipped (PG-gated).
 
+- Step 10.1: Wrote `scripts/gen_analysis_notebook.py` + committed `notebooks/analysis_template.ipynb`; 4 notebook generator tests pass; all 8 RQ2 symbols present; idempotent.
+- Step 12.1: Updated `dev/codebase-map.md`: added M13 analysis surface section (loaders, metrics, plots, oracle, notebook); fixed stale Run column list (removed `created_at`, `exit_code`, `tokens_in`, `tokens_out`, `cost_usd`; added `topology`, `task_id`, `agent_set`, `human_role`, `seed`, `model`, `models_by_role_json`, `finish_reason`, `budget_spent_usd`, `quality_score`, `iterations`, `started_at`, `finished_at`, `error`); updated indices list; updated "Last updated" date to 2026-05-15.
+
 ### IN PROGRESS
-- Step 10.1: Notebook generator (next step)
+- Step 11.1: Lint + exports normalization (running in parallel)
 
 ### BLOCKERS
 - None
