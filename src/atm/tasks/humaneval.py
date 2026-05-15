@@ -34,13 +34,24 @@ _CODE_FENCE_RE = re.compile(
     re.DOTALL,
 )
 
+# Embedded fence — finds ```python ... ``` (or untagged) anywhere in the
+# text. Used as a fallback for chatty responses that surround the code with
+# explanatory prose ("Here is the solution: ```python ... ```. This works
+# because..."). When multiple fences are present, the LAST one wins — typical
+# LLM output puts revisions / final code at the end.
+_EMBEDDED_FENCE_RE = re.compile(
+    r"```(?:python|py)?[ \t]*\n(.*?)\n```",
+    re.DOTALL,
+)
+
 
 def _strip_code_fences(text: str) -> str:
     """Remove markdown code fences from ``text``.
 
     Handles:
-    - ````python\\n...\\n``` `` — language-tagged fences
-    - ````\\n...\\n``` `` — plain fences (no language tag)
+    - ````python\\n...\\n``` `` — language-tagged fences (whole-text match)
+    - ````\\n...\\n``` `` — plain fences (whole-text match)
+    - Code surrounded by prose — extracts the LAST embedded fenced block.
     - Plain text — returned unchanged.
     - Unclosed fences (opening only) — returned unchanged.
 
@@ -48,12 +59,15 @@ def _strip_code_fences(text: str) -> str:
         text: Raw text that may contain a markdown code fence.
 
     Returns:
-        The inner code content if a complete fence is found, otherwise ``text``.
+        The inner code content if a fence is found, otherwise ``text``.
     """
     stripped = text.strip()
     match = _CODE_FENCE_RE.match(stripped)
     if match:
         return match.group(1)
+    embedded = list(_EMBEDDED_FENCE_RE.finditer(stripped))
+    if embedded:
+        return embedded[-1].group(1)
     return text
 
 

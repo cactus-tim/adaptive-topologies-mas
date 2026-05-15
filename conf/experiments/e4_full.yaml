@@ -1,0 +1,114 @@
+# E4 — Adaptive topology + Adaptive role (RQ4).
+#
+# Per arch/experiment_plan.md §5:
+#   - Adaptive topology + Adaptive HumanRole (role changes per-phase)
+#   - 3 role_router strategies: fixed (baseline), rule, llm
+#   - 4 task_types × 15 tasks × 3 seeds × 3 role_router_modes = 540 cells
+#   - Champion combo: best (topology, role) per task_type from E2 + adaptive
+# Wall-time on p=12 with same caps as E3: ~5 h. Cost: ~$40 + $5 judge.
+#
+# E4 is the final adaptive-both experiment — combines runtime topology
+# switching (from E3) with runtime role switching per-phase. The hypothesis:
+# adaptive role gives extra lift on tasks where one phase benefits from a
+# different reviewer/judge stance.
+
+name: e4_full
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+# Same adaptive topology as E3.
+topology:
+  name: adaptive
+  max_iterations: 6
+  extra:
+    phase_router: rule
+    topology_router: rule    # use E3's best router (rule_based as default)
+    subgraph_max_iterations: 4
+    switch_guards: true
+    switch_guards_config:
+      min_dwell_iters: 1
+      cooldown_iters: 2
+      max_per_run: 6
+      max_per_phase: 3
+    planning_max_iter: 3
+    exec_max_iter: 3
+    verify_max_iter: 2
+    max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 3
+
+# 540 runs × ~$0.08 (HITL + adaptive) → ~$45 + judge ~$5.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 80.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL with adaptive role-router. Role switches per phase based on rule
+# table or LLM decision (compared to fixed baseline).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer             # initial role; router may override per phase
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  # role_router swept by grid: {fixed, rule, llm}.
+  role_router: rule
+
+# 4 task × 15 shuffle × 3 seed × 3 role_router = 540 cells.
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    human.role_router:
+      - fixed
+      - rule
+      - llm
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: true

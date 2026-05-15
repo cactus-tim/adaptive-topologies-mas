@@ -220,20 +220,74 @@ Seeds: **3 по умолчанию, 5 для финальных confirmation**. 
 
 Бюджет считается под актуальный lineup B'.1 (`cerebras:gpt-oss-120b` primary @ $0.35 in / $0.75 out per 1M; `openai:gpt-4.1-mini` judge × 3 self-consistency; confirmation on `cerebras:zai-glm-4.7` + `openai:gpt-4o`).
 
-| Этап | Runs (прибл.) | Бюджет (lineup B'.1) | Что новое |
-|---|---|---|---|
-| E1 Baseline no-human | 1 500 | ~$10 (compute) + ~$5 (judge) | static topology Pareto |
-| E2 HITL-sim baseline | 4 000 | ~$25 (compute, +HITL-sim calls) + ~$15 (judge) | role × topology heatmap |
-| E3 Adaptive topology | 1 100 | ~$8 (compute, +router-cost) + ~$4 (judge) | static vs adaptive |
-| E4 Adaptive + adaptive-role | 900 | ~$7 (compute, +HITL) + ~$3 (judge) | full combo |
-| Confirmation primary (zai-glm-4.7) | ~1 800 | ~$30–40 (`# VERIFY` preview prices) | cross-family на Cerebras |
-| Confirmation cross-family (gpt-4o) | ~1 800 | ~$80–100 | frontier OpenAI validation |
-| E5 Real human | ~120–140 | ~$3–5 inference + человеко-часы | ecological validity |
-| **Итого** | **~11 300** | **~$190–230** | |
+### 11.1 Изначальные оценки (deprecated, оставлены для трасировки)
 
-+30% reserve (retries, failed runs, ablation add-ons) → **закладываемся на ~$250–300**.
+Изначальный план оценивал ~5 LLM-вызовов/cell × ~1 сек/вызов и обещал
+~6 ч pure compute на всё E1–E4. После M13 sanity-runs на реальном
+Cerebras gpt-oss-120b с tool-calling эмпирические наблюдения дали
+30–80 calls/cell × 3–8 sec/call. Цифры ниже пересчитаны на актуальной
+телеметрии и применённых smart-cuts.
 
-**Wall-time оценка** на Cerebras Pay-as-You-Go (1K RPM / 1M TPM на gpt-oss-120b, 8 параллельных воркеров): E1 full ~45 мин, E2 ~2.5 ч, E3 ~45 мин, E4 ~40 мин, оба confirmation вместе ~2 ч. Итого pure compute **~6 ч**, с реальным запасом на retries/sandbox **~10–12 ч** wall-time на всю программу E1–E4 + confirmation.
+### 11.2 Smart-cuts (применены к финальным конфигам)
+
+1. **N = 15 задач × 3 seeds** вместо 25×3 (плановых) — статистически
+   приемлемо для ANOVA per-task-type (n=45 точек на ячейку), даёт
+   −40% времени и стоимости.
+2. **E2 top-3 топологии per task_type** (берутся из E1) вместо всех 5 —
+   −45% объёма E2 без потери качества: E1 уже отбраковывает аутсайдеров.
+3. **Iter-cap'ы** под фактическую сходимость:
+   - `chain.max_iterations: 6` (было 12) — chain в 95% случаев approve'ит
+     за 1–3 итерации; 12 был запасом.
+   - `star.extra.exec_max_iter: 3, verify_max_iter: 2` (было 5/3).
+   - `debate.extra.max_rounds: 2` (было 4).
+   - `hierarchical.extra.max_rounds: 2` (было 4).
+   - `adaptive.max_iterations: 6 + subgraph_max_iterations: 4` (было 12+10).
+4. **Skip mesh × programming-tasks** (HumanEval/CommonGen) — мы знаем что
+   mesh там даёт 0 (voting на строках, не на коде). Mesh остаётся в E1
+   на GSM8K/DABench (численные ответы — voting работает).
+5. **`parallelism: 12`** на 6-core box (2× I/O-oversub под Cerebras
+   латентностью). См. §11.4 для p=8/p=16 трейд-офф.
+
+### 11.3 Финальные оценки (lineup B'.1, после smart-cuts)
+
+| Этап | Конфиг | Runs | Wall-time @ p=12 | Compute $ | Judge $ |
+|---|---|---|---|---|---|
+| **Sanity** (4 topo × 2 task) | `e1_pilot_sanity.yaml` | 8 | ~6 мин | ~$0.5 | — |
+| **E1-mini** (5 × 4 × 5 × 1) — pre-flight | `e1_mini.yaml` | 100 | ~15 мин | ~$8 | ~$1 |
+| **E1 full** (5 × 4 × 15 × 3) | `e1_full.yaml` | 900 | ~2.5 ч | ~$45 | ~$5 |
+| **E2 full** (3 × 5 × 4 × 15 × 3, минус bad combos) | `e2_full.yaml` | ~2 160 | ~10 ч | ~$130 | ~$15 |
+| **E3 full** (4 × 15 × 3 × 3 router + baseline) | `e3_full.yaml` | 720 | ~4 ч | ~$50 | ~$5 |
+| **E4 full** (4 × 15 × 3 × 3 role_router) | `e4_full.yaml` | 540 | ~5 ч | ~$45 | ~$5 |
+| Confirmation primary (zai-glm-4.7) | TBD | ~1 100 | ~6 ч | ~$25 (preview) | — |
+| Confirmation cross-family (gpt-4o) | TBD | ~1 100 | ~5 ч | ~$60 | — |
+| E5 Real human | TBD | ~120 | manual | ~$3 + ч/часы | — |
+| **Итого E1–E4** | | **~4 320** | **~22 ч** | **~$270** | **~$30** |
+| **Итого (всё вкл. confirmation + E5)** | | **~6 640** | **~33 ч** | **~$360** | **~$30** |
+
++25% reserve (retries, failed runs, ablation) → **закладываемся на ~$450**.
+
+### 11.4 Trade-off параллелизма
+
+| Parallelism | E1–E4 wall-time | Требования |
+|---|---|---|
+| p=4 | ~50 ч (~2 дня) | дефолт, без донастройки |
+| **p=12 (рекомендуемо)** | **~22 ч (≈ ночь)** | PG max_conn ≥ 100 (default), RAM ≥ 8 ГБ |
+| p=16 (агрессивно) | ~17 ч | поднять PG `max_connections=200` (`docker exec atm-postgres psql -U postgres -c "ALTER SYSTEM SET max_connections=200;" && docker restart atm-postgres`); RAM ≥ 12 ГБ |
+
+### 11.5 Sanity / pilot story
+
+После M13 расширенный sanity (`e1_pilot_sanity.yaml`) и e1-mini вместе
+покрывают всё что должен был валидировать old `e1_pilot.yaml`:
+- writers (PG + parquet) — ✓ DB заполняется на каждом sanity
+- budget guards — ✓ тестируется на каждом cell
+- LLM wiring (в т.ч. `provider_opts` для Cerebras) — ✓ Bug-2 fix покрыт sanity
+- судьи self-consistency × 3 — НЕ покрывается sanity (HumanEval детерминистичен),
+  ПОКРЫВАЕТСЯ в E1-mini (4 task_types включая судейские CommonGen/DABench)
+- M13 analysis path — прогоняется отдельно на собранных runs
+
+`e1_pilot.yaml` оставлен для обратной совместимости (300 cells star+chain
+на HumanEval), но в актуальном пайплайне deprecated в пользу
+sanity → e1-mini → e1_full.
 
 ## 9. Статистика и валидность
 
@@ -265,10 +319,23 @@ Seeds: **3 по умолчанию, 5 для финальных confirmation**. 
 - Минимальное N участников для E5 (стат. значимость vs доступность)
 - Сохраняем ли логи interactions для публикации датасета
 
-## 12. Следующие шаги (после утверждения плана)
+## 12. Следующие шаги (актуальная последовательность запуска)
 
-1. Реализовать M0–M6 из PLAN.md (фреймворк + Star/Chain)
-2. **Pilot E1** на Star+Chain + HumanEval только (50 задач × 3 seed = 300 runs, ~$3) → проверить pipeline, writers, budget-гварды, анализ
-3. Если pilot ОК → расширить до полного E1 после M7 (остальные топологии)
-4. Параллельно M9 (human gateway + sim) чтобы быть готовым к E2
-5. **Pre-registration** hypotheses → `dev/preregistration.md`
+1. ✓ M0–M13 закрыты (фреймворк + все 5 топологий + analysis tooling)
+2. ✓ **Sanity** (`conf/experiments/e1_pilot_sanity.yaml`) — отлавливает
+   живых багов в pipeline (Bug #1–10), быстрый цикл итерации
+3. **E1-mini** (`conf/experiments/e1_mini.yaml`) — pre-flight 100 cells,
+   ~15 мин: валидирует judge, multi-task, новые task types
+4. Если E1-mini зелёный → **E1 full** (`e1_full.yaml`, 900 cells, ~2.5 ч)
+5. Анализ E1: `analysis/winners.py` → `data/winners_e1.json` (top-3 топологии
+   per task_type) → подставить в `e2_full.yaml::topology.name.sweep`
+6. **E2 full** (`e2_full.yaml`, ~2160 cells, ~10 ч)
+7. Анализ E2 + построить leave-one-out oracle: `analysis/oracle.py
+   build_leave_one_out_oracle(e1_exp_id)` → `data/oracle/e1_loo.json`
+8. **E3 full** (`e3_full.yaml`, 720 cells, ~4 ч) — гнать 3 раза с разным
+   `topology.extra.topology_router={rule, llm, oracle}` или объединить
+   через post-hoc анализ
+9. **E4 full** (`e4_full.yaml`, 540 cells, ~5 ч)
+10. Confirmation runs (zai-glm-4.7 + gpt-4o) — отдельные конфиги после E1–E4
+11. **Pre-registration** hypotheses перед E3 → `dev/preregistration.md`
+12. E5 (real human) — после успеха E1–E4 + IRB approval

@@ -1,0 +1,33 @@
+# E1 Pilot — sanity sub-grid for first real-LLM smoke test.
+#
+# Inherits the full e1_pilot.yaml and overrides only the sweep range so the
+# first run on real Cerebras + judge stays cheap (~$0.30). Once green, run
+# the full 300-cell pilot with conf/experiments/e1_pilot.yaml.
+#
+# 5 topologies × 2 tasks (shuffle_seed) × 1 seed = 10 runs.
+# Covers star, chain, adaptive, hierarchical, debate — exercises every
+# topology that produces a code artifact for HumanEval. Bug-9 fix:
+# _build_agents now synthesises hierarchical workers (executor_a*/b*)
+# and debate roles (debater_pro/contra/judge) from topology.extra.
+# Excluded:
+#   - mesh: voting/consensus topology — final_answer is the winner string
+#     from broadcast_bus voting, not a code artifact; not appropriate
+#     for HumanEval (would need GSM8K-style numeric answers).
+
+include: e1_pilot.yaml
+
+name: e1_pilot_sanity
+
+grid:
+  parallelism: 12       # 6-core box, I/O-bound on Cerebras → 2x oversub OK
+  fail_fast: false      # collect failures across all topologies
+  seeds: [42]
+  sweep:
+    topology.name:
+      - star
+      - chain
+      - hierarchical
+      - debate
+    task.shuffle_seed:
+      - 0
+      - 1

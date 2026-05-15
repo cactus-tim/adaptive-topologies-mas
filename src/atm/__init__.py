@@ -1,5 +1,15 @@
 __version__ = "0.1.0"
 
+# Auto-load .env from the nearest project root so `uv run atm ...` and
+# `uv run alembic ...` pick up PG_DSN / *_API_KEY without an explicit
+# `source .env`. Existing environment variables are NOT overridden.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+
+    _load_dotenv(override=False)
+except Exception:
+    pass
+
 from atm.tasks import EVALUATORS, TASKS
 
 __all__ = [

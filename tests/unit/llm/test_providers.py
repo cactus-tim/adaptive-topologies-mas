@@ -317,10 +317,11 @@ class TestBuildCerebras:
         model = build_cerebras("cerebras:llama3.1-8b", {})
         assert model is not None
 
-    def test_api_key_is_empty_by_default(self) -> None:
-        """Default api_key is 'EMPTY' so construction works without CEREBRAS_API_KEY env var."""
+    def test_api_key_is_empty_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When CEREBRAS_API_KEY is unset, build_cerebras falls back to dummy 'EMPTY'."""
         from langchain_cerebras import ChatCerebras
 
+        monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
         model = build_cerebras("cerebras:llama3.1-8b", {})
         assert isinstance(model, ChatCerebras)
         secret = model.cerebras_api_key
@@ -328,6 +329,34 @@ class TestBuildCerebras:
             secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
         )
         assert key_value == "EMPTY"
+
+    def test_api_key_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When CEREBRAS_API_KEY env var is set, it wins over the dummy fallback."""
+        from langchain_cerebras import ChatCerebras
+
+        monkeypatch.setenv("CEREBRAS_API_KEY", "real-key-from-env")
+        model = build_cerebras("cerebras:llama3.1-8b", {})
+        assert isinstance(model, ChatCerebras)
+        secret = model.cerebras_api_key
+        key_value = (
+            secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+        )
+        assert key_value == "real-key-from-env"
+
+    def test_explicit_api_key_in_opts_wins_over_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Caller-provided api_key in opts beats both env and dummy fallback."""
+        from langchain_cerebras import ChatCerebras
+
+        monkeypatch.setenv("CEREBRAS_API_KEY", "env-key")
+        model = build_cerebras("cerebras:llama3.1-8b", {"api_key": "opts-key"})
+        assert isinstance(model, ChatCerebras)
+        secret = model.cerebras_api_key
+        key_value = (
+            secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
+        )
+        assert key_value == "opts-key"
 
     @pytest.mark.parametrize("model_id", ["cerebras:llama3.1-8b", "cerebras:gpt-oss-120b"])
     def test_supports_active_models(self, model_id: str) -> None:

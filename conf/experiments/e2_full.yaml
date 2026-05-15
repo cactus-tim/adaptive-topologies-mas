@@ -1,0 +1,118 @@
+# E2 — HITL-simulated baseline (RQ3).
+#
+# Per arch/experiment_plan.md §3:
+#   - top-3 topologies (PER-task-type from E1, see "topology.name" sweep
+#     below; placeholders here, replace after E1 produces winners)
+#   - 5 human roles: Coordinator, Reviewer, Judge, Peer, Monitor
+#   - 4 task types
+#   - N = 15 tasks × 3 seeds (smart-cut #2)
+#   - HITL: llm_simulated gateway, fixed persona-seed
+#
+# Smart-cut #1: top-3 topologies instead of full 5 → ~12 (topo, role) pairs
+# (after excluding non-sensical combos: Debate×Coordinator, Chain×Peer,
+# Hierarchical×Peer) → ~2160 cells (was ~4000 in plan).
+# Wall-time on p=12: ~10 h. Cost: ~$130 compute + ~$15 judge.
+#
+# IMPORTANT: replace the topology.name sweep below with the actual top-3
+# winners from E1 (see analysis/winners_e1.json after running E1).
+
+name: e2_full
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+topology:
+  name: star
+  max_iterations: 8
+  extra:
+    exec_max_iter: 3
+    verify_max_iter: 2
+    max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 3
+
+# 2160 cells × ~$0.06 (HITL adds calls) → ~$130 + judge ~$15.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 200.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL via LLM simulator. Persona seed pinned for reproducibility.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer       # placeholder; sweep overrides per cell
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed   # E2 = static role per cell (E4 sweeps role_router)
+
+# 3 topo (TBD from E1) × 5 roles × 4 task × 15 × 3 = 2700 (raw) — minus
+# excluded combos via post-hoc filter or split into multiple runs:
+#   - Debate × Coordinator (judge ≡ coordinator)
+#   - Chain × Peer (no slot)
+#   - Hierarchical × Peer (breaks hierarchy)
+# Apply via separate sweep blocks if needed; here we keep all 5 roles
+# and rely on plan-level analysis to drop bad combos.
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    topology.name:
+      # REPLACE WITH TOP-3 FROM E1 (placeholder values):
+      - star
+      - chain
+      - hierarchical
+    human.role:
+      - coordinator
+      - reviewer
+      - judge
+      - peer
+      - monitor
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4   # HITL adds ~1 call/iter
+  use_historical: true
