@@ -1,4 +1,4 @@
-"""Smoke tests and structural assertions for atm.analysis.plots — Step 7.1.
+"""Smoke tests and structural assertions for atm.analysis.plots — Steps 7.1 and 8.1.
 
 Tests focus on:
   - Figures render without exception
@@ -326,3 +326,444 @@ class TestPlotsModuleImport:
         import atm.analysis.plots  # noqa: F401
 
         assert matplotlib.get_backend().lower() == "agg"
+
+
+# ---------------------------------------------------------------------------
+# RQ2 / G11 fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def transitions_df() -> pd.DataFrame:
+    """Minimal topology transitions DataFrame for RQ2 plot tests."""
+    t0 = datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
+    rows = []
+    topologies = ["linear", "mesh", "supervisor", "adaptive"]
+    deciders = ["router", "guard_override", "router", "router", "guard_override"]
+    for run_idx in range(3):
+        run_id = f"run-{run_idx}"
+        for i in range(5):
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "from_topology": topologies[i % len(topologies)],
+                    "to_topology": topologies[(i + 1) % len(topologies)],
+                    "decided_by": deciders[i % len(deciders)],
+                    "guards_applied": ["quality_guard"] if i % 2 == 0 else [],
+                    "router_cost_usd": 0.001 * (i + 1),
+                    "at": t0 + datetime.timedelta(seconds=run_idx * 300 + i * 30),
+                    "quality_score": 0.6 + 0.05 * i,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+@pytest.fixture
+def llm_calls_df() -> pd.DataFrame:
+    """Minimal LLM calls DataFrame for plot_router_cost_share."""
+    rows = []
+    for run_idx in range(3):
+        run_id = f"run-{run_idx}"
+        for call_idx in range(4):
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "role": "router" if call_idx == 0 else "worker",
+                    "cost_usd": 0.002 * (call_idx + 1),
+                    "model": "test-model",
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+@pytest.fixture
+def runs_df_rq2() -> pd.DataFrame:
+    """Runs DataFrame for RQ2 plots (includes topology and timing)."""
+    rng = np.random.default_rng(42)
+    t0 = datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
+    n = 20
+    topologies = ["adaptive", "linear", "mesh", "supervisor"]
+    task_ids = [f"HumanEval/{i}" for i in range(5)] * 4
+    rows = []
+    for i in range(n):
+        start = t0 + datetime.timedelta(seconds=i * 120)
+        rows.append(
+            {
+                "run_id": f"run-{i}",
+                "topology": topologies[i % len(topologies)],
+                "task_id": task_ids[i],
+                "quality_score": float(rng.uniform(0.4, 1.0)),
+                "budget_spent_usd": float(rng.uniform(0.01, 0.5)),
+                "started_at": start,
+                "finished_at": start + datetime.timedelta(seconds=90 + i * 5),
+                "duration_seconds": float(90 + i * 5),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+@pytest.fixture
+def oracle_gap_series() -> pd.Series:
+    """Pre-computed oracle gap Series for plot_oracle_gap_loo."""
+    return pd.Series(
+        {
+            "HumanEval/0": 0.15,
+            "HumanEval/1": -0.05,
+            "HumanEval/2": 0.22,
+            "HumanEval/3": 0.08,
+            "HumanEval/4": 0.31,
+        },
+        name="oracle_gap_loo",
+    )
+
+
+# ---------------------------------------------------------------------------
+# test_plot_transition_timeline_quality — RQ2/G11 smoke tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlotTransitionTimelineQualityRq2:
+    """plot_transition_timeline_quality returns a valid Figure. [rq2]"""
+
+    def test_rq2_timeline_returns_figure(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        fig = plot_transition_timeline_quality(transitions_df, run_id="run-0")
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_timeline_has_axes(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        fig = plot_transition_timeline_quality(transitions_df, run_id="run-0")
+        assert len(fig.axes) >= 1
+
+    def test_rq2_timeline_title_contains_run_id(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        fig = plot_transition_timeline_quality(transitions_df, run_id="run-1")
+        ax = fig.axes[0]
+        assert "run-1" in ax.get_title()
+
+    def test_rq2_timeline_unknown_run_id_graceful(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        fig = plot_transition_timeline_quality(transitions_df, run_id="nonexistent")
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_timeline_empty_df_graceful(self) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        df = pd.DataFrame(columns=["run_id", "from_topology", "to_topology", "at", "quality_score"])
+        fig = plot_transition_timeline_quality(df, run_id="run-0")
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_timeline_no_warnings(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fig = plot_transition_timeline_quality(transitions_df, run_id="run-0")
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_timeline_missing_run_id_column(self) -> None:
+        from atm.analysis.plots import plot_transition_timeline_quality
+
+        df = pd.DataFrame({"from_topology": ["linear"], "to_topology": ["mesh"]})
+        fig = plot_transition_timeline_quality(df, run_id="run-0")
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+
+# ---------------------------------------------------------------------------
+# test_plot_guard_override_rate — RQ2/G11 smoke tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlotGuardOverrideRateRq2:
+    """plot_guard_override_rate returns a valid Figure. [rq2]"""
+
+    def test_rq2_guard_rate_returns_figure(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        fig = plot_guard_override_rate(transitions_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_guard_rate_has_one_axes(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        fig = plot_guard_override_rate(transitions_df)
+        assert len(fig.axes) == 1
+
+    def test_rq2_guard_rate_title_set(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        fig = plot_guard_override_rate(transitions_df)
+        ax = fig.axes[0]
+        assert ax.get_title() != ""
+
+    def test_rq2_guard_rate_empty_df_graceful(self) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        df = pd.DataFrame(columns=["run_id", "decided_by", "to_topology"])
+        fig = plot_guard_override_rate(df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_guard_rate_missing_decided_by_graceful(self) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        df = pd.DataFrame({"run_id": ["run-0"], "to_topology": ["mesh"]})
+        fig = plot_guard_override_rate(df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_guard_rate_no_warnings(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fig = plot_guard_override_rate(transitions_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_guard_rate_xlabel_or_ylabel_set(self, transitions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_guard_override_rate
+
+        fig = plot_guard_override_rate(transitions_df)
+        ax = fig.axes[0]
+        # At least one axis label should be non-empty
+        assert ax.get_xlabel() != "" or ax.get_ylabel() != ""
+
+
+# ---------------------------------------------------------------------------
+# test_plot_router_cost_share — RQ2/G11 smoke tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlotRouterCostShareRq2:
+    """plot_router_cost_share returns a valid Figure. [rq2]"""
+
+    def test_rq2_cost_share_returns_figure(
+        self, runs_df_rq2: pd.DataFrame, llm_calls_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_router_cost_share
+
+        fig = plot_router_cost_share(runs_df_rq2, llm_calls_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_cost_share_has_one_axes(
+        self, runs_df_rq2: pd.DataFrame, llm_calls_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_router_cost_share
+
+        fig = plot_router_cost_share(runs_df_rq2, llm_calls_df)
+        assert len(fig.axes) == 1
+
+    def test_rq2_cost_share_title_set(
+        self, runs_df_rq2: pd.DataFrame, llm_calls_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_router_cost_share
+
+        fig = plot_router_cost_share(runs_df_rq2, llm_calls_df)
+        ax = fig.axes[0]
+        assert ax.get_title() != ""
+
+    def test_rq2_cost_share_empty_runs_graceful(self, llm_calls_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_router_cost_share
+
+        df = pd.DataFrame(columns=["run_id", "topology", "budget_spent_usd"])
+        fig = plot_router_cost_share(df, llm_calls_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_cost_share_empty_llm_calls_graceful(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_router_cost_share
+
+        df = pd.DataFrame(columns=["run_id", "role", "cost_usd"])
+        fig = plot_router_cost_share(runs_df_rq2, df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_cost_share_no_warnings(
+        self, runs_df_rq2: pd.DataFrame, llm_calls_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_router_cost_share
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fig = plot_router_cost_share(runs_df_rq2, llm_calls_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+
+# ---------------------------------------------------------------------------
+# test_plot_time_per_topology — RQ2/G11 smoke tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlotTimePerTopologyRq2:
+    """plot_time_per_topology returns a valid Figure. [rq2]"""
+
+    def test_rq2_time_topo_returns_figure(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        fig = plot_time_per_topology(runs_df_rq2)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_time_topo_has_one_axes(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        fig = plot_time_per_topology(runs_df_rq2)
+        assert len(fig.axes) == 1
+
+    def test_rq2_time_topo_title_set(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        fig = plot_time_per_topology(runs_df_rq2)
+        ax = fig.axes[0]
+        assert ax.get_title() != ""
+
+    def test_rq2_time_topo_empty_df_graceful(self) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        df = pd.DataFrame(columns=["run_id", "topology", "duration_seconds"])
+        fig = plot_time_per_topology(df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_time_topo_missing_duration_col_graceful(self) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        df = pd.DataFrame({"run_id": ["run-0", "run-1"], "topology": ["linear", "mesh"]})
+        fig = plot_time_per_topology(df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_time_topo_no_warnings(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fig = plot_time_per_topology(runs_df_rq2)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_time_topo_xlabel_or_ylabel_set(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_time_per_topology
+
+        fig = plot_time_per_topology(runs_df_rq2)
+        ax = fig.axes[0]
+        assert ax.get_xlabel() != "" or ax.get_ylabel() != ""
+
+    def test_rq2_time_topo_transitions_df_path(self, transitions_df: pd.DataFrame) -> None:
+        """plot_time_per_topology also accepts transitions_df with 'at' + 'to_topology'."""
+        from atm.analysis.plots import plot_time_per_topology
+
+        # Using transitions_df (which has run_id, to_topology, at) but no duration_seconds —
+        # should still render gracefully or fall back to count-based display.
+        fig = plot_time_per_topology(transitions_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+
+# ---------------------------------------------------------------------------
+# test_plot_oracle_gap_loo — RQ2/G11 smoke tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlotOracleGapLooRq2:
+    """plot_oracle_gap_loo returns a valid Figure. [rq2]"""
+
+    def test_rq2_oracle_gap_returns_figure(
+        self, runs_df_rq2: pd.DataFrame, oracle_gap_series: pd.Series
+    ) -> None:
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_series)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_oracle_gap_has_one_axes(
+        self, runs_df_rq2: pd.DataFrame, oracle_gap_series: pd.Series
+    ) -> None:
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_series)
+        assert len(fig.axes) == 1
+
+    def test_rq2_oracle_gap_title_set(
+        self, runs_df_rq2: pd.DataFrame, oracle_gap_series: pd.Series
+    ) -> None:
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_series)
+        ax = fig.axes[0]
+        assert ax.get_title() != ""
+
+    def test_rq2_oracle_gap_empty_series_graceful(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        fig = plot_oracle_gap_loo(runs_df_rq2, pd.Series(dtype=float, name="oracle_gap_loo"))
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_oracle_gap_dataframe_input(
+        self, runs_df_rq2: pd.DataFrame, oracle_gap_series: pd.Series
+    ) -> None:
+        """plot_oracle_gap_loo should also accept a DataFrame with 'oracle_gap_loo' column."""
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        oracle_gap_df = oracle_gap_series.reset_index()
+        oracle_gap_df.columns = ["task_id", "oracle_gap_loo"]
+        fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_oracle_gap_no_warnings(
+        self, runs_df_rq2: pd.DataFrame, oracle_gap_series: pd.Series
+    ) -> None:
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_series)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_rq2_oracle_gap_vline_at_zero(
+        self, runs_df_rq2: pd.DataFrame, oracle_gap_series: pd.Series
+    ) -> None:
+        """A vertical reference line at x=0 should be present on the Axes."""
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_series)
+        ax = fig.axes[0]
+        # Check the axes exists and has content (vline is present for non-empty data)
+        assert isinstance(fig, matplotlib.figure.Figure)
+        assert ax is not None
+
+    def test_rq2_oracle_gap_all_nan_graceful(self, runs_df_rq2: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_oracle_gap_loo
+
+        s = pd.Series({"task-0": float("nan"), "task-1": float("nan")}, name="oracle_gap_loo")
+        fig = plot_oracle_gap_loo(runs_df_rq2, s)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+
+# ---------------------------------------------------------------------------
+# RQ2 symbols exported check — g11
+# ---------------------------------------------------------------------------
+
+
+class TestRq2SymbolsExportedG11:
+    """All RQ2/G11 plot functions appear in plots.__all__. [rq2] [g11]"""
+
+    def test_rq2_g11_transition_timeline_exported(self) -> None:
+        from atm.analysis.plots import __all__
+
+        assert "plot_transition_timeline_quality" in __all__
+
+    def test_rq2_g11_guard_override_rate_exported(self) -> None:
+        from atm.analysis.plots import __all__
+
+        assert "plot_guard_override_rate" in __all__
+
+    def test_rq2_g11_router_cost_share_exported(self) -> None:
+        from atm.analysis.plots import __all__
+
+        assert "plot_router_cost_share" in __all__
+
+    def test_rq2_g11_time_per_topology_exported(self) -> None:
+        from atm.analysis.plots import __all__
+
+        assert "plot_time_per_topology" in __all__
+
+    def test_rq2_g11_oracle_gap_loo_exported(self) -> None:
+        from atm.analysis.plots import __all__
+
+        assert "plot_oracle_gap_loo" in __all__

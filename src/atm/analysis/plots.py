@@ -302,7 +302,7 @@ def plot_phase_timeline(
 
 
 # ---------------------------------------------------------------------------
-# RQ2 plots (stubs for Steps 8+; implemented here as NotImplementedError)
+# RQ2 / G11 plots
 # ---------------------------------------------------------------------------
 
 
@@ -314,18 +314,78 @@ def plot_transition_timeline_quality(
 ) -> matplotlib.figure.Figure:
     """Plot quality-weighted topology transition timeline for a single run.
 
+    Renders a step plot of topology transitions over time, with quality score
+    overlaid as a secondary line (if ``quality_score`` column is present).
+
     Args:
-        transitions_df: DataFrame with topology transition records.
+        transitions_df: DataFrame with topology transition records including
+                        ``run_id``, ``at`` (datetime), ``to_topology``, and
+                        optionally ``quality_score`` columns.
         run_id:         Filter to this run_id value.
         figsize:        Figure (width, height) in inches.
 
     Returns:
-        matplotlib Figure with one Axes.
-
-    Raises:
-        NotImplementedError: This function is implemented in Step 8.
+        matplotlib Figure with one Axes showing the timeline.
     """
-    raise NotImplementedError("plot_transition_timeline_quality: implemented in Step 8")
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if "run_id" not in transitions_df.columns:
+        ax.set_title(f"plot_transition_timeline_quality: 'run_id' column missing — {run_id}")
+        return fig
+
+    run_df = transitions_df[transitions_df["run_id"] == run_id].copy()
+
+    if run_df.empty:
+        ax.set_title(f"No transitions found for run_id={run_id!r}")
+        return fig
+
+    if "at" not in run_df.columns or "to_topology" not in run_df.columns:
+        ax.set_title(f"Transition Timeline — run {run_id} (missing columns)")
+        return fig
+
+    run_df["at"] = pd.to_datetime(run_df["at"], utc=True, errors="coerce")
+    run_df = run_df.dropna(subset=["at"]).sort_values("at").reset_index(drop=True)
+
+    if run_df.empty:
+        ax.set_title(f"Transition Timeline — run {run_id} (no valid timestamps)")
+        return fig
+
+    t0 = run_df["at"].min()
+    times_s = [(t - t0).total_seconds() for t in run_df["at"]]
+
+    # Encode topology as integer y-axis for step plot
+    topos = run_df["to_topology"].tolist()
+    unique_topos = sorted(set(topos))
+    topo_idx = {t: i for i, t in enumerate(unique_topos)}
+    y_vals = [topo_idx[t] for t in topos]
+
+    ax.step(times_s, y_vals, where="post", linewidth=2, label="topology")
+    ax.set_yticks(list(topo_idx.values()))
+    ax.set_yticklabels(list(topo_idx.keys()))
+    ax.set_xlabel("Time (seconds from start)")
+    ax.set_ylabel("Topology")
+
+    # Overlay quality score if available
+    if "quality_score" in run_df.columns:
+        q_vals = pd.to_numeric(run_df["quality_score"], errors="coerce")
+        if q_vals.notna().any():
+            ax2 = ax.twinx()
+            ax2.plot(
+                times_s,
+                q_vals.tolist(),
+                color="orange",
+                linestyle="--",
+                marker="o",
+                markersize=4,
+                label="quality",
+                alpha=0.7,
+            )
+            ax2.set_ylabel("Quality Score", color="orange")
+            ax2.tick_params(axis="y", labelcolor="orange")
+
+    ax.set_title(f"Transition Timeline — run {run_id}")
+    fig.tight_layout()
+    return fig
 
 
 def plot_guard_override_rate(
@@ -333,19 +393,55 @@ def plot_guard_override_rate(
     *,
     figsize: tuple[float, float] = (7, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot guard override rate per topology.
+    """Plot guard override rate per destination topology as a bar chart.
+
+    Computes fraction of transitions decided by ``"guard_override"`` for each
+    ``to_topology``.  An empty ``transitions_df`` or missing ``decided_by``
+    column returns a graceful empty figure.
 
     Args:
-        transitions_df: DataFrame with topology transition records.
+        transitions_df: DataFrame with at least ``decided_by`` and
+                        ``to_topology`` columns.
         figsize:        Figure (width, height) in inches.
 
     Returns:
-        matplotlib Figure with one Axes.
-
-    Raises:
-        NotImplementedError: This function is implemented in Step 8.
+        matplotlib Figure with one Axes (horizontal bar chart).
     """
-    raise NotImplementedError("plot_guard_override_rate: implemented in Step 8")
+    fig, ax = plt.subplots(figsize=figsize)
+
+    required = {"decided_by", "to_topology"}
+    if transitions_df.empty or not required.issubset(transitions_df.columns):
+        ax.set_title("Guard Override Rate per Topology (no data)")
+        ax.set_xlabel("Override Rate")
+        ax.set_ylabel("Topology")
+        fig.tight_layout()
+        return fig
+
+    df = transitions_df.copy()
+    df["is_override"] = df["decided_by"] == "guard_override"
+
+    rates = (
+        df.groupby("to_topology")["is_override"]
+        .agg(["sum", "count"])
+        .rename(columns={"sum": "n_overrides", "count": "n_total"})
+    )
+    rates["rate"] = rates["n_overrides"] / rates["n_total"].clip(lower=1)
+    rates = rates.sort_values("rate", ascending=True)
+
+    if rates.empty:
+        ax.set_title("Guard Override Rate per Topology (no data)")
+        ax.set_xlabel("Override Rate")
+        ax.set_ylabel("Topology")
+        fig.tight_layout()
+        return fig
+
+    ax.barh(rates.index.tolist(), rates["rate"].tolist(), color="steelblue", alpha=0.8)
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("Override Rate")
+    ax.set_ylabel("Topology")
+    ax.set_title("Guard Override Rate per Topology")
+    fig.tight_layout()
+    return fig
 
 
 def plot_router_cost_share(
@@ -354,62 +450,194 @@ def plot_router_cost_share(
     *,
     figsize: tuple[float, float] = (7, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot router LLM cost as share of total cost per experiment.
+    """Plot router LLM cost share vs worker cost share as a stacked bar chart.
+
+    Router calls are identified by ``role == "router"`` in ``llm_calls_df``.
+    Total cost per run comes from ``llm_calls_df["cost_usd"]``; fallback is
+    ``runs_df["budget_spent_usd"]``.
+
+    An empty input returns a graceful empty figure.
 
     Args:
-        runs_df:      DataFrame with run-level records.
-        llm_calls_df: DataFrame with LLM call records.
+        runs_df:      DataFrame with run-level records (used for fallback cost).
+        llm_calls_df: DataFrame with LLM call records including ``role`` and
+                      ``cost_usd`` columns.
         figsize:      Figure (width, height) in inches.
 
     Returns:
-        matplotlib Figure with one Axes.
-
-    Raises:
-        NotImplementedError: This function is implemented in Step 8.
+        matplotlib Figure with one Axes (stacked bar chart).
     """
-    raise NotImplementedError("plot_router_cost_share: implemented in Step 8")
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if llm_calls_df.empty or "cost_usd" not in llm_calls_df.columns:
+        ax.set_title("Router Cost Share (no data)")
+        ax.set_xlabel("Run")
+        ax.set_ylabel("Cost (USD)")
+        fig.tight_layout()
+        return fig
+
+    df = llm_calls_df.copy()
+    df["cost_usd"] = pd.to_numeric(df["cost_usd"], errors="coerce").fillna(0.0)
+    df["is_router"] = df.get("role", pd.Series(dtype=str)) == "router"
+
+    if "run_id" not in df.columns:
+        # No run_id column — aggregate globally
+        router_cost = float(df.loc[df["is_router"], "cost_usd"].sum())
+        worker_cost = float(df.loc[~df["is_router"], "cost_usd"].sum())
+        labels = ["all_runs"]
+        router_costs = [router_cost]
+        worker_costs = [worker_cost]
+    else:
+        run_agg = df.groupby(["run_id", "is_router"])["cost_usd"].sum().unstack(fill_value=0.0)
+        router_costs_series = run_agg.get(True, pd.Series(dtype=float))
+        worker_costs_series = run_agg.get(False, pd.Series(dtype=float))
+        labels = run_agg.index.tolist()
+        router_costs = router_costs_series.reindex(labels, fill_value=0.0).tolist()
+        worker_costs = worker_costs_series.reindex(labels, fill_value=0.0).tolist()
+
+    x = list(range(len(labels)))
+    ax.bar(x, router_costs, label="Router", color="steelblue", alpha=0.8)
+    ax.bar(x, worker_costs, bottom=router_costs, label="Worker", color="coral", alpha=0.8)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
+    ax.set_xlabel("Run")
+    ax.set_ylabel("Cost (USD)")
+    ax.set_title("Router vs Worker LLM Cost per Run")
+    handles, _labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(loc="best")
+    fig.tight_layout()
+    return fig
 
 
 def plot_time_per_topology(
     runs_df: pd.DataFrame,
     *,
+    topology_col: str = "topology",
+    duration_col: str = "duration_seconds",
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot distribution of wall-clock time per topology.
+    """Plot mean wall-clock time per topology as a bar chart.
+
+    Uses ``duration_seconds`` (or ``duration_col``) from ``runs_df``.
+    If neither column is present, falls back to counting the number of
+    rows per topology (i.e., number of runs).
+
+    Works with both a ``runs_df`` (one row per run with topology + duration)
+    and a ``transitions_df`` (one row per transition event with ``to_topology``),
+    as long as ``topology_col`` resolves.
 
     Args:
-        runs_df: DataFrame with run-level records including timing columns.
-        figsize: Figure (width, height) in inches.
+        runs_df:       DataFrame with topology and optional duration column.
+        topology_col:  Column for topology name. Default: "topology".
+        duration_col:  Column for duration in seconds. Default: "duration_seconds".
+        figsize:       Figure (width, height) in inches.
 
     Returns:
-        matplotlib Figure with one Axes.
-
-    Raises:
-        NotImplementedError: This function is implemented in Step 8.
+        matplotlib Figure with one Axes (bar chart).
     """
-    raise NotImplementedError("plot_time_per_topology: implemented in Step 8")
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Support transitions_df path: use to_topology if topology col is missing
+    if topology_col not in runs_df.columns and "to_topology" in runs_df.columns:
+        topology_col = "to_topology"
+
+    if runs_df.empty or topology_col not in runs_df.columns:
+        ax.set_title("Time per Topology (no data)")
+        ax.set_xlabel("Topology")
+        ax.set_ylabel("Mean Duration (s)")
+        fig.tight_layout()
+        return fig
+
+    df = runs_df.copy()
+
+    if duration_col in df.columns:
+        df[duration_col] = pd.to_numeric(df[duration_col], errors="coerce")
+        agg = df.groupby(topology_col)[duration_col].mean().dropna().sort_values(ascending=False)
+        ylabel = "Mean Duration (s)"
+    else:
+        # Fallback: count rows per topology
+        agg = df.groupby(topology_col).size().sort_values(ascending=False).astype(float)
+        ylabel = "Run Count"
+
+    if agg.empty:
+        ax.set_title("Time per Topology (no data)")
+        ax.set_xlabel("Topology")
+        ax.set_ylabel(ylabel)
+        fig.tight_layout()
+        return fig
+
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    bar_colors = [colors[i % len(colors)] for i in range(len(agg))]
+
+    ax.bar(agg.index.tolist(), agg.tolist(), color=bar_colors, alpha=0.8)
+    ax.set_xlabel("Topology")
+    ax.set_ylabel(ylabel)
+    ax.set_title("Mean Time per Topology")
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+    fig.tight_layout()
+    return fig
 
 
 def plot_oracle_gap_loo(
     runs_df: pd.DataFrame,
-    oracle_gap_df: pd.DataFrame,
+    oracle_gap: pd.Series | pd.DataFrame,
     *,
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot oracle gap (LOO) distribution: adaptive vs static topologies.
+    """Plot oracle gap (LOO) distribution as a histogram with a reference line at 0.
+
+    Positive values mean the oracle topology beats the router; negative means
+    the router outperforms the leave-one-out oracle for that task.
 
     Args:
-        runs_df:       DataFrame with run-level records.
-        oracle_gap_df: DataFrame with pre-computed oracle gap values.
-        figsize:       Figure (width, height) in inches.
+        runs_df:     DataFrame with run-level records (used for context; not
+                     directly plotted, but kept for API symmetry with the
+                     metrics function).
+        oracle_gap:  Pre-computed oracle gap values.  Either:
+                     - ``pd.Series`` (indexed by task_id, values are float), or
+                     - ``pd.DataFrame`` with an ``oracle_gap_loo`` column.
+        figsize:     Figure (width, height) in inches.
 
     Returns:
-        matplotlib Figure with one Axes.
-
-    Raises:
-        NotImplementedError: This function is implemented in Step 8.
+        matplotlib Figure with one Axes (histogram + vline at 0).
     """
-    raise NotImplementedError("plot_oracle_gap_loo: implemented in Step 8")
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Normalise input to a Series of float gap values
+    if isinstance(oracle_gap, pd.DataFrame):
+        if "oracle_gap_loo" in oracle_gap.columns:
+            gap_series = pd.to_numeric(oracle_gap["oracle_gap_loo"], errors="coerce")
+        else:
+            # Try the first numeric column
+            numeric_cols = oracle_gap.select_dtypes(include="number").columns
+            if len(numeric_cols) == 0:
+                gap_series = pd.Series(dtype=float)
+            else:
+                gap_series = pd.to_numeric(oracle_gap[numeric_cols[0]], errors="coerce")
+    else:
+        gap_series = pd.to_numeric(oracle_gap, errors="coerce")
+
+    gap_values = gap_series.dropna()
+
+    if gap_values.empty:
+        ax.set_title("Oracle Gap LOO Distribution (no data)")
+        ax.set_xlabel("Oracle Gap (oracle - router quality)")
+        ax.set_ylabel("Count")
+        ax.axvline(0.0, color="red", linestyle="--", linewidth=1.5, label="zero gap")
+        fig.tight_layout()
+        return fig
+
+    ax.hist(gap_values.tolist(), bins="auto", color="steelblue", alpha=0.75, edgecolor="white")
+    ax.axvline(0.0, color="red", linestyle="--", linewidth=1.5, label="zero gap")
+    ax.set_xlabel("Oracle Gap (oracle - router quality)")
+    ax.set_ylabel("Count")
+    ax.set_title("Oracle Gap LOO Distribution")
+    handles, _labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(loc="best")
+    fig.tight_layout()
+    return fig
 
 
 # ---------------------------------------------------------------------------

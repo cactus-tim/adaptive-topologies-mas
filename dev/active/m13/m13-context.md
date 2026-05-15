@@ -10,9 +10,10 @@
 - Step 5.1: Implemented `load_topology_transitions` (PG+parquet; parquet path decodes `*_json` columns via `json.loads()`), `load_phases` (PG+parquet), `load_human_interactions` (PG-only; `raw_tlx_score` None→NaN). Added 20 tests: 10 parquet (always-run), 8 PG-gated, 2 column-set parity. All pass (26 passed, 18 skipped without PG; 35 passed with ATM_ENABLE_PG_TESTS=1).
 - Step 6.1: Implemented all 7 metric functions in `src/atm/analysis/metrics.py` (pure functions, no side effects). Created `tests/unit/analysis/test_metrics.py` with 32 unit tests covering happy path + edge cases for all 7 functions; divergent-fixture test confirms per-task_id filtering in `compute_oracle_gap_loo`. All 32 pass + 9 oracle tests pass (41 total).
 - Step 7.1: Implemented `plot_pareto` (quality vs cost scatter with numpy bootstrap 95% CI error bars, adaptive highlighted with star marker), `plot_topology_task_heatmap` (seaborn heatmap with lazy import), `plot_phase_timeline` (broken_barh Gantt chart per run_id) in `src/atm/analysis/plots.py`. Created `tests/unit/analysis/test_plots.py` with 28 smoke tests (figure returns, Axes counts, labels, edge cases for empty/missing columns). `matplotlib.use("Agg")` is first call. autouse fixture closes all figures after each test. All 28 pass; ruff clean.
+- Step 8.1: Implemented 5 RQ2/G11 plot functions in `src/atm/analysis/plots.py`: `plot_transition_timeline_quality` (step plot + twinx quality overlay per run), `plot_guard_override_rate` (horizontal barh, override rate per to_topology), `plot_router_cost_share` (stacked bar router vs worker cost per run), `plot_time_per_topology` (mean duration barh per topology; fallback to count when no duration column), `plot_oracle_gap_loo` (histogram + axvline at 0; accepts Series or DataFrame). Added 41 RQ2/G11 smoke tests to `test_plots.py` (7-8 per function + 5 exports checks); all 69 tests pass; ruff clean.
 
 ### IN PROGRESS
-- Step 8.1: Implement RQ2 plots (`plot_transition_timeline_quality`, `plot_guard_override_rate`, `plot_router_cost_share`, `plot_time_per_topology`, `plot_oracle_gap_loo`)
+- Step 9.1: Implement `plot_cognitive_load_boxplot` (plots.py) + `plot_oracle_vs_router` (oracle.py) + TYPE_CHECKING + import-bloat regression test
 
 ### BLOCKERS
 - None
