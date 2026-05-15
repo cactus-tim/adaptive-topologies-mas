@@ -296,6 +296,18 @@ async def run_grid(
     started_monotonic = time.monotonic()
     loop = asyncio.get_running_loop()
 
+    # Pre-warm LangGraph PG checkpointer schema BEFORE spawning workers.
+    # AsyncPostgresSaver.setup() inserts into ``checkpoint_migrations``; when
+    # N workers call it concurrently they race on the pkey constraint, which
+    # surfaces as ``UniqueViolationError: checkpoint_migrations_pkey`` and
+    # kills a subset of cells. Running setup() once serially here keeps the
+    # subsequent per-worker setup() calls idempotent (IF NOT EXISTS / ON
+    # CONFLICT DO NOTHING).
+    from atm.storage.checkpointer import build_checkpointer
+
+    _warm_saver, _warm_pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
+    await _warm_pool.close()
+
     # ProcessPoolExecutor created fresh per call to ensure clean state.
     executor = ProcessPoolExecutor(max_workers=parallelism)
     cancelled = False

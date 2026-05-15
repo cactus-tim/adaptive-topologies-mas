@@ -487,6 +487,21 @@ async def _grid_preflight(
                             typer.echo(f"  resume {rid} failed: {exc}", err=True)
             finally:
                 await pool.close()
+
+        # Phase D — checkpointer schema warmup (always).
+        #
+        # LangGraph's AsyncPostgresSaver.setup() inserts a row into
+        # ``checkpoint_migrations`` on first call. When N grid cells launch
+        # in parallel (ProcessPoolExecutor workers), they all invoke setup()
+        # concurrently → race on ``checkpoint_migrations_pkey`` →
+        # UniqueViolationError, killing some cells. Running setup() once
+        # here, before workers spawn, makes the per-worker setup() a no-op
+        # (CREATE TABLE IF NOT EXISTS + INSERT … ON CONFLICT DO NOTHING).
+        if not resume_incomplete:  # Phase C already ran setup() if it executed.
+            from atm.storage.checkpointer import build_checkpointer
+
+            _warm_saver, _warm_pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
+            await _warm_pool.close()
     finally:
         await engine.dispose()
 
