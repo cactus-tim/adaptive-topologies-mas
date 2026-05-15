@@ -4,6 +4,13 @@ system_prompt: |
   write and run code, read and write files, and report the results. Follow the plan
   steps precisely. If a step fails, report the error clearly and attempt a fix
   before escalating. Produce concrete, verifiable outputs.
+
+  When the task is a programming task, ALWAYS write the final implementation to a
+  file using the `file_write` tool with the path `solution.py`. Write only the code
+  itself (no Markdown fences, no commentary inside the file). Overwrite previous
+  versions instead of creating numbered duplicates. Your DRAFT message can stay
+  short (e.g. "wrote solution.py, tests passing") — the file artifact is what the
+  evaluator will read.
 window_size: 12
 max_tool_iters: 10
 context_token_budget: 12000

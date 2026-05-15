@@ -169,6 +169,25 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
     from atm.experiment.config import ExperimentConfig
     from atm.experiment.runner import run_one
 
+    # Silence ``RuntimeError: Event loop is closed`` noise from late httpx
+    # ``AsyncClient.aclose()`` Tasks that fire after the worker's event loop
+    # is already closed. They originate inside langchain-cerebras /
+    # langchain-openai's pooled httpx clients and are harmless (the run has
+    # already returned its result by then) but flood stderr otherwise.
+    # Routed through asyncio's logger via ``Task.__del__ ->
+    # call_exception_handler -> default_exception_handler -> logger.error``.
+    # Scope: child process only — does not affect the parent or tests.
+    class _HttpxAcloseFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            msg = record.getMessage()
+            if "Event loop is closed" in msg:
+                return False
+            if "Task exception was never retrieved" in msg and "aclose" in msg:
+                return False
+            return True
+
+    logging.getLogger("asyncio").addFilter(_HttpxAcloseFilter())
+
     try:
         cfg = ExperimentConfig.model_validate(cfg_dict)
     except Exception as exc:
@@ -183,19 +202,50 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
             "error": f"config validation failed: {exc}",
         }
 
+    # Manage the event loop manually instead of using ``asyncio.run`` so we can
+    # drain pending Tasks (notably ``httpx.AsyncClient.aclose`` scheduled by
+    # langchain-cerebras / langchain-openai during model GC) BEFORE closing the
+    # loop. Otherwise those late aclose() coroutines fire after the loop is
+    # already closed and spam ``RuntimeError: Event loop is closed`` to stderr.
+    loop = asyncio.new_event_loop()
     try:
-        result = asyncio.run(run_one(cfg))
-    except Exception:
-        return {
-            "run_id": None,
-            "exp_id": None,
-            "status": "failed",
-            "quality_score": None,
-            "cost_usd": 0.0,
-            "iters": 0,
-            "final_answer": "",
-            "error": traceback.format_exc()[:4000],
-        }
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(run_one(cfg))
+        except Exception:
+            return {
+                "run_id": None,
+                "exp_id": None,
+                "status": "failed",
+                "quality_score": None,
+                "cost_usd": 0.0,
+                "iters": 0,
+                "final_answer": "",
+                "error": traceback.format_exc()[:4000],
+            }
+        # Drain any background Tasks (httpx aclose, etc.) that were scheduled
+        # during run_one but not awaited. Use a short timeout so a stuck task
+        # cannot wedge the worker.
+        try:
+            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+            if pending:
+                loop.run_until_complete(
+                    asyncio.wait_for(
+                        asyncio.gather(*pending, return_exceptions=True),
+                        timeout=5.0,
+                    )
+                )
+        except (TimeoutError, asyncio.TimeoutError):
+            pass
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            pass
+    finally:
+        try:
+            asyncio.set_event_loop(None)
+        finally:
+            loop.close()
 
     metrics = result.metrics or {}
     return {

@@ -263,14 +263,24 @@ class TestCriticPostprocessRejected:
         delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is False
 
-    def test_rejected_does_not_set_final_answer(self) -> None:
-        """When approved=False, final_answer is NOT populated (stays None)."""
+    def test_rejected_with_no_executor_output_yields_incomplete(self) -> None:
+        """When approved=False and executor produced nothing, final_answer
+        falls back to "<incomplete>" rather than None.
+
+        Contract change: ChainTopology now ALWAYS populates final_answer
+        (extracted from the executor's best artifact) so the evaluator can
+        score work even when the critic never approves before max_iterations
+        kicks in. Previously rejection left final_answer as None and made
+        every never-approved run silently score 0 even when solution.py was
+        on disk. critic_approved is still surfaced via shared.signals for
+        any downstream policy that needs the verdict.
+        """
         state = _make_state(
             critic_outbox=[_make_decision_msg(approved=False)],
         )
         delta = asyncio.run(_critic_postprocess(state))
-        # final_answer should be None — not set on rejection
-        assert delta["shared"].get("final_answer") is None
+        assert delta["shared"]["final_answer"] == "<incomplete>"
+        assert delta["shared"]["signals"]["critic_approved"] is False
 
 
 # ---------------------------------------------------------------------------

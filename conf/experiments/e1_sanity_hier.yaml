@@ -1,0 +1,16 @@
+# Focused sanity — only hierarchical (the topology still failing in v10).
+# 2 task_seeds × 1 run-seed = 2 cells. Wall-time on p=12: <2 min.
+include: e1_pilot.yaml
+
+name: e1_sanity_hier
+
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    topology.name:
+      - hierarchical
+    task.shuffle_seed:
+      - 0
+      - 1

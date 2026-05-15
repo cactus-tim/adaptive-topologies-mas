@@ -337,21 +337,55 @@ async def _critic_postprocess(state: dict[str, Any]) -> dict[str, Any]:
     # --- Step 3: Write signals ---
     signals["critic_approved"] = approved
 
-    # --- Step 4: Populate final_answer if approved ---
-    final_answer: str | None = None
-    if approved:
-        executor_state = agents.get("executor", {})
-        executor_outbox: list[Any] = list(executor_state.get("outbox", []))
+    # --- Step 4: Populate final_answer ALWAYS (regardless of approval). ---
+    # Setting final_answer only on approval was the original behaviour, but it
+    # leaves shared.final_answer empty whenever Chain hits max_iterations
+    # without the critic ever approving. The evaluator then receives an empty
+    # string and scores 0 even when the executor produced correct code. We
+    # always extract the executor's best artifact so the evaluator can score
+    # whatever work was done; the critic's approval status is independently
+    # surfaced via shared.signals["critic_approved"] for downstream policy.
+    executor_state = agents.get("executor", {})
 
-        draft_text: str | None = None
-        for msg in reversed(executor_outbox):
-            if getattr(msg, "kind", None) == MessageKind.DRAFT:
-                # Prefer payload["draft"], fallback to msg.content
-                raw_payload = getattr(msg, "payload", {}) or {}
-                draft_text = raw_payload.get("draft") or getattr(msg, "content", None)
-                break
+    # 4a. Most recent SUCCESSFUL file_write to a .py path.
+    #     Filtering by ToolResult.ok avoids returning the payload of a
+    #     rejected overwrite (file_write defaults to overwrite=False, so a
+    #     duplicate write on the same path silently fails — and the stale
+    #     file on disk still holds the first, correct, content).
+    executor_tool_calls: list[Any] = list(executor_state.get("tool_calls", []))
+    executor_tool_results: list[Any] = list(executor_state.get("tool_results", []))
+    ok_call_ids: set[Any] = {
+        getattr(r, "call_id", None)
+        for r in executor_tool_results
+        if getattr(r, "ok", False)
+    }
+    file_artifact: str | None = None
+    for tc in reversed(executor_tool_calls):
+        if getattr(tc, "tool_name", None) != "file_write":
+            continue
+        if executor_tool_results and getattr(tc, "id", None) not in ok_call_ids:
+            continue
+        args = getattr(tc, "args", None) or {}
+        content = args.get("content") if isinstance(args, dict) else None
+        path = args.get("path") if isinstance(args, dict) else None
+        if not content:
+            continue
+        if isinstance(path, str) and path.endswith(".py"):
+            file_artifact = str(content)
+            break
+        if file_artifact is None:
+            file_artifact = str(content)  # last-resort non-py artifact
 
-        final_answer = draft_text if draft_text is not None else "<incomplete>"
+    # 4b. Fall back to DRAFT text (text-only executors, no tool use).
+    executor_outbox: list[Any] = list(executor_state.get("outbox", []))
+    draft_text: str | None = None
+    for msg in reversed(executor_outbox):
+        if getattr(msg, "kind", None) == MessageKind.DRAFT:
+            raw_payload = getattr(msg, "payload", {}) or {}
+            draft_text = raw_payload.get("draft") or getattr(msg, "content", None)
+            break
+
+    final_answer = file_artifact or draft_text or "<incomplete>"
 
     # --- Step 5: Pin phase to "execution" ---
     shared["phase"] = "execution"

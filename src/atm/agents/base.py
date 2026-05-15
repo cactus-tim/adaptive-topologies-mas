@@ -88,6 +88,10 @@ class AgentView:
     inbox: tuple[Message, ...]
     scratchpad: tuple[dict[str, Any], ...]
     summary_before_window: str | None
+    # Most recent peer message per (sender, kind) from state["messages"], used
+    # by chain/star/etc. topologies that don't (yet) populate inbox via an
+    # explicit routing node. Empty tuple when no peers have spoken yet.
+    peer_messages: tuple[Message, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +157,22 @@ class Agent:
         summary_before_window: str | None = self_state.get("summary_before_window") or None
         step_count: int = int(self_state.get("step_count") or 0) + 1
 
+        # Collect the most recent peer message per (sender, kind) from the
+        # global messages channel. Required for chain/star/mesh/debate where
+        # no routing node copies outbox→inbox: without this, every agent runs
+        # blind and never sees the previous agent's draft/decision.
+        # Self-emitted messages are excluded; the agent already has its own
+        # context via scratchpad. Order: chronological (oldest first).
+        global_messages: list[Any] = list(state.get("messages") or [])
+        latest_per_key: dict[tuple[str, Any], Message] = {}
+        for _m in global_messages:
+            _sender = getattr(_m, "sender", "")
+            if not _sender or _sender == self.agent_id:
+                continue
+            _kind = getattr(_m, "kind", None)
+            latest_per_key[(_sender, _kind)] = _m
+        peer_messages_tuple = tuple(latest_per_key.values())
+
         view = AgentView(
             agent_id=self.agent_id,
             self_state=self_state,
@@ -160,6 +180,7 @@ class Agent:
             inbox=tuple(inbox_raw),
             scratchpad=tuple(scratchpad_raw),
             summary_before_window=summary_before_window,
+            peer_messages=peer_messages_tuple,
         )
 
         # Optional pre-loop summarization (policy C)
@@ -261,9 +282,21 @@ class Agent:
                 )
             )
 
-        # 4. Inbox messages
+        # 4. Inbox messages (explicitly routed by topology — empty for
+        #    chain/star/mesh which rely on the peer_messages fallback below).
         for msg in view.inbox:
             messages.append(msg)
+
+        # 4b. Peer fallback: most recent message from each peer agent. Provides
+        #     critic↔executor↔planner visibility in chain/star where no
+        #     routing node populates inbox. Skipped if inbox already contains
+        #     an explicit delivery from that sender (avoids double-prompting).
+        if view.peer_messages:
+            seen_inbox_senders = {getattr(m, "sender", "") for m in view.inbox}
+            for msg in view.peer_messages:
+                if getattr(msg, "sender", "") in seen_inbox_senders:
+                    continue
+                messages.append(msg)
 
         # 5. Scratchpad window tail (read-only slice — does not mutate)
         window: tuple[dict[str, Any], ...] = view.scratchpad[-self.cfg.window_size :]
@@ -378,6 +411,7 @@ class Agent:
             # Prompt-building view only has window events; full scratchpad returned in delta
             scratchpad=window_events,
             summary_before_window=new_summary,
+            peer_messages=view.peer_messages,
         )
 
     # ------------------------------------------------------------------

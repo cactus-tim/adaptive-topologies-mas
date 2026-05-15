@@ -7,6 +7,16 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# Auto-load .env so PG_DSN is available without `source .env` first.
+# atm.__init__ already does this for atm.* imports, but alembic env.py is
+# loaded by alembic before any atm import runs — so we load explicitly here.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+
+    _load_dotenv(override=False)
+except Exception:
+    pass
+
 from atm.storage.models import Base
 
 # this is the Alembic Config object, which provides

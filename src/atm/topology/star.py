@@ -278,6 +278,19 @@ class StarTopology:
                     final_answer = _extract_final_answer(state)
                     shared["final_answer"] = final_answer
 
+            # Always populate final_answer with whatever the executor has
+            # produced so far. The coordinator runs every tick, so this keeps
+            # shared.final_answer current right up to the moment _should_stop
+            # cuts the run off (global iter cap, budget exceeded). Without
+            # this, hitting the cap before the verification→done branch
+            # leaves the field empty and the evaluator scores 0 even on
+            # otherwise-correct work. The verification→done branch above is
+            # still authoritative for "approved" runs.
+            if not shared.get("final_answer"):
+                _provisional = _extract_final_answer(state)
+                if _provisional and _provisional != "<incomplete>":
+                    shared["final_answer"] = _provisional
+
             shared["signals"] = signals
             return {"shared": shared}
 
@@ -487,24 +500,70 @@ class StarTopology:
 
 
 def _extract_final_answer(state: GraphState) -> str:
-    """Extract final_answer from the last Executor DRAFT message in state.
+    """Extract final_answer from the executor's output in state.
 
-    Searches:
-      1. state["agents"]["executor"]["outbox"] for last DRAFT message
-      2. state["messages"] for last DRAFT message from executor
-      3. Fallback: "<incomplete>"
+    Tool-using executors typically emit short DRAFT messages ("Solution
+    written to solution.py") while the actual artifact lives inside a
+    ``file_write`` tool call's ``args["content"]``. Strategy order
+    therefore prefers concrete file artifacts over chatty DRAFT text:
 
-    Args:
-        state: Current GraphState dict.
-
-    Returns:
-        The extracted content string or "<incomplete>".
+      1. state["agents"]["executor"]["tool_calls"] — last ``file_write``
+         (preferring solution.py / main.py, then any ``.py`` path).
+      2. state["agents"]["executor"]["outbox"] for last DRAFT message
+         (text-only executors, no tool use).
+      3. state["messages"] for last DRAFT message from executor.
+      4. Any non-python file artifact (last resort).
+      5. Fallback: "<incomplete>".
     """
-    # Strategy 1: check executor outbox
     agents: dict[str, Any] = dict(state.get("agents") or {})
     executor_state: dict[str, Any] = dict(agents.get("executor") or {})
-    outbox: list[Any] = list(executor_state.get("outbox") or [])
 
+    # Strategy 1: prefer a written file artifact (most accurate for tool-using
+    # executors). Walk tool_calls in REVERSE so the most recent write wins;
+    # within ties, prefer paths ending in solution.py / main.py / .py.
+    # IMPORTANT: only consider writes whose ``ToolResult.ok`` is True. The
+    # ``file_write`` tool defaults ``overwrite=False``, so a model that calls
+    # it twice on the same path gets the SECOND call rejected — taking the
+    # latest call blindly would return the rejected (often degenerate, e.g.
+    # "# test") payload while the file on disk still holds the first write.
+    tool_calls: list[Any] = list(executor_state.get("tool_calls") or [])
+    tool_results: list[Any] = list(executor_state.get("tool_results") or [])
+    ok_call_ids: set[Any] = {
+        getattr(r, "call_id", None) for r in tool_results if getattr(r, "ok", False)
+    }
+    py_solution: str | None = None
+    py_any: str | None = None
+    any_file: str | None = None
+    for tc in reversed(tool_calls):
+        if getattr(tc, "tool_name", None) != "file_write":
+            continue
+        # Skip writes that the tool layer rejected (e.g. overwrite=False).
+        # If tool_results is empty (e.g. older runs without result tracking)
+        # treat absence as success to preserve back-compat.
+        if tool_results and getattr(tc, "id", None) not in ok_call_ids:
+            continue
+        args = getattr(tc, "args", None) or {}
+        content = args.get("content") if isinstance(args, dict) else None
+        path = args.get("path") if isinstance(args, dict) else None
+        if not content:
+            continue
+        if any_file is None:
+            any_file = str(content)
+        if isinstance(path, str) and path.endswith(".py"):
+            if py_any is None:
+                py_any = str(content)
+            if py_solution is None and (
+                path.endswith("solution.py") or path.endswith("main.py")
+            ):
+                py_solution = str(content)
+                break  # best-quality match — stop early
+    if py_solution is not None:
+        return py_solution
+    if py_any is not None:
+        return py_any
+
+    # Strategy 2: check executor outbox for DRAFT
+    outbox: list[Any] = list(executor_state.get("outbox") or [])
     for msg in reversed(outbox):
         kind = getattr(msg, "kind", None)
         if kind == MessageKind.DRAFT or str(kind) == "draft":
@@ -512,7 +571,7 @@ def _extract_final_answer(state: GraphState) -> str:
             if content:
                 return str(content)
 
-    # Strategy 2: search global messages
+    # Strategy 3: search global messages
     messages: list[Any] = list(state.get("messages") or [])
     for msg in reversed(messages):
         sender = getattr(msg, "sender", "")
@@ -521,5 +580,9 @@ def _extract_final_answer(state: GraphState) -> str:
             content = getattr(msg, "content", None)
             if content:
                 return str(content)
+
+    # Strategy 4: any non-python file artifact (last resort)
+    if any_file is not None:
+        return any_file
 
     return "<incomplete>"

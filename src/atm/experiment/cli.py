@@ -39,7 +39,7 @@ from pydantic import ValidationError
 from sqlalchemy import Integer, case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from atm.experiment.config import load_config
+from atm.experiment.config import EstimateCfg, ExperimentConfig, load_config
 from atm.experiment.estimator import GridEstimate, estimate_grid
 from atm.experiment.loader import load_grid_configs
 from atm.experiment.runner import _load_pricing, replay_one, resume_one, run_one
@@ -92,19 +92,19 @@ def run(
     # Optional pre-flight estimate + confirm gate
     if estimate:
         pricing = _load_pricing()
-        engine, session_factory = _maybe_open_session(cfg.observability.pg_dsn)
-        try:
-            grid_est = asyncio.run(
-                estimate_grid(
-                    configs=[cfg],
-                    session_factory=session_factory if cfg.estimate.use_historical else None,
-                    pricing=pricing,
-                    cfg=cfg.estimate,
-                )
+        engine: AsyncEngine | None = None
+        session_factory: async_sessionmaker[Any] | None = None
+        if cfg.estimate.use_historical:
+            engine, session_factory = _maybe_open_session(cfg.observability.pg_dsn)
+        grid_est = asyncio.run(
+            _estimate_with_dispose(
+                configs=[cfg],
+                engine=engine,
+                session_factory=session_factory,
+                pricing=pricing,
+                cfg=cfg.estimate,
             )
-        finally:
-            if engine is not None:
-                asyncio.run(engine.dispose())
+        )
 
         typer.echo(
             f"Estimate: ${grid_est.total_cost_usd:.4f} "
@@ -182,18 +182,15 @@ def estimate_cmd(
     if use_hist:
         engine, session_factory = _maybe_open_session(base_cfg.observability.pg_dsn)
 
-    try:
-        grid_est = asyncio.run(
-            estimate_grid(
-                configs=configs,
-                session_factory=session_factory,
-                pricing=pricing,
-                cfg=base_cfg.estimate,
-            )
+    grid_est = asyncio.run(
+        _estimate_with_dispose(
+            configs=configs,
+            engine=engine,
+            session_factory=session_factory,
+            pricing=pricing,
+            cfg=base_cfg.estimate,
         )
-    finally:
-        if engine is not None:
-            asyncio.run(engine.dispose())
+    )
 
     _print_estimate_table(grid_est)
     raise typer.Exit(0)
@@ -819,6 +816,33 @@ def _maybe_open_session(
         return engine, factory
     except Exception:  # pragma: no cover — defensive
         return None, None
+
+
+async def _estimate_with_dispose(
+    *,
+    configs: list[ExperimentConfig],
+    engine: AsyncEngine | None,
+    session_factory: async_sessionmaker[Any] | None,
+    pricing: Pricing,
+    cfg: EstimateCfg,
+) -> GridEstimate:
+    """Run estimate_grid and dispose the engine in the SAME event loop.
+
+    Calling ``engine.dispose()`` from a fresh ``asyncio.run()`` after the
+    one that opened the asyncpg connections triggers cross-loop cleanup
+    warnings ("Event loop is closed", "got Future attached to a different
+    loop"). Keeping both phases inside one coroutine prevents that.
+    """
+    try:
+        return await estimate_grid(
+            configs=configs,
+            session_factory=session_factory,
+            pricing=pricing,
+            cfg=cfg,
+        )
+    finally:
+        if engine is not None:
+            await engine.dispose()
 
 
 async def _query_status(

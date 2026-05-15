@@ -21,6 +21,7 @@ Using removed model IDs will result in a 404 / model-not-found error at runtime.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from langchain_cerebras import ChatCerebras
@@ -42,8 +43,11 @@ def build_cerebras(model_id: str, opts: dict[str, Any]) -> BaseChatModel:
     """
     _, bare_model = model_id.split(":", 1)
     kwargs = dict(opts)
-    # Provide a dummy API key so construction does not raise when CEREBRAS_API_KEY
-    # is not set in the environment (e.g. in unit tests).  Real callers must set
-    # the env-var or pass ``api_key`` in opts — the setdefault lets them override.
-    kwargs.setdefault("api_key", "EMPTY")
+    # Resolution order for api_key:
+    #   1. explicit `api_key` in opts (caller wins)
+    #   2. CEREBRAS_API_KEY env var (production)
+    #   3. dummy "EMPTY" so construction does not raise in unit tests where
+    #      no env var is set
+    if "api_key" not in kwargs:
+        kwargs["api_key"] = os.environ.get("CEREBRAS_API_KEY") or "EMPTY"
     return ChatCerebras(model=bare_model, **kwargs)

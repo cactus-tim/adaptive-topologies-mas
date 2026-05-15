@@ -76,15 +76,34 @@ class Critic(Agent):
         new_outbox: list[Message] = []
         new_messages: list[Message] = []
 
-        # Determine approval from the first outbox message
+        # Determine approval from the first outbox message.
+        # Heuristic order:
+        #   1. Final non-empty line is exactly "APPROVE" (case-insensitive)
+        #      → approved=True. This is the contract documented in the
+        #      critic's system prompt and is the only reliable signal.
+        #   2. Final non-empty line is exactly "REJECT" → approved=False.
+        #   3. Fallback (legacy / off-prompt models): substring "approve"
+        #      anywhere in content → True. Loose, but no worse than the
+        #      previous behaviour and a safety net for old fixtures.
+        def _verdict(content: str) -> bool:
+            for line in reversed((content or "").splitlines()):
+                tok = line.strip().rstrip(".!?:").upper()
+                if tok == "APPROVE":
+                    return True
+                if tok == "REJECT":
+                    return False
+                if tok:  # first non-empty line decides under the contract
+                    break
+            return "approve" in (content or "").lower()
+
         approved: bool = False
         if outbox:
             first_content: str = getattr(outbox[0], "content", "") or ""
-            approved = "approve" in first_content.lower()
+            approved = _verdict(first_content)
 
         for msg in outbox:
             content: str = getattr(msg, "content", "") or ""
-            msg_approved: bool = "approve" in content.lower()
+            msg_approved: bool = _verdict(content)
             decision_msg = Message(
                 sender=self.agent_id,
                 kind=MessageKind.DECISION,
@@ -95,7 +114,7 @@ class Critic(Agent):
 
         for msg in messages:
             content = getattr(msg, "content", "") or ""
-            msg_approved = "approve" in content.lower()
+            msg_approved = _verdict(content)
             decision_msg = Message(
                 sender=self.agent_id,
                 kind=MessageKind.DECISION,

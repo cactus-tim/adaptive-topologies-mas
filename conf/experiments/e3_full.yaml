@@ -1,0 +1,126 @@
+# E3 — Adaptive topology, simulated HITL (RQ2).
+#
+# Per arch/experiment_plan.md §4:
+#   - Topology = adaptive (L2 meta-graph, intra-phase + phase-bound switching)
+#   - 3 router modes: rule_based, llm_router, oracle (leave-one-out from E1)
+#   - Baseline: best static per task_type (from E1)
+#   - 4 task_types × 15 tasks × 3 seeds × (3 router + 1 baseline) = 720 cells
+#     (smart-cut: 15 instead of plan's 25)
+# Wall-time on p=12 with adaptive max_iter=6: ~4 h. Cost: ~$30 + $5 judge.
+#
+# Adaptive smart-cuts: max_iterations=6 + subgraph_max_iterations=4 (was 12+10).
+# Saves ~50% wall-time on adaptive cells without losing the runtime-switching
+# behaviour (subgraphs converge in <4 inner steps when working).
+#
+# Oracle source: data/oracle/e1_leave_one_out.json (built post-E1 by
+# analysis/oracle.py::build_leave_one_out_oracle).
+
+name: e3_full
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+# Adaptive topology. extra controls subgraph caps and router behaviour.
+# topology_router defaults to "rule"; sweep overrides it via topology.extra.*
+# is not allowed (untyped dict), so we run 4 separate grids by editing this
+# file or by running with override `+topology.extra.topology_router=...`.
+topology:
+  name: adaptive
+  max_iterations: 6
+  extra:
+    # Phase router and topology router selection (default = rule_based for
+    # this run; rerun with topology_router=llm_router and =oracle).
+    phase_router: rule
+    topology_router: rule
+    # Subgraph caps (per-tick budget for the active sub-topology).
+    subgraph_max_iterations: 4
+    # SwitchGuards prevent thrashing.
+    switch_guards: true
+    switch_guards_config:
+      min_dwell_iters: 1
+      cooldown_iters: 2
+      max_per_run: 6
+      max_per_phase: 3
+    # Per-phase iter caps used by the dispatched sub-topology.
+    planning_max_iter: 3
+    exec_max_iter: 3
+    verify_max_iter: 2
+    # Same smart-cut keys read by sub-topologies (chain/star/etc).
+    max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 3
+
+# 720 runs × ~$0.07 (adaptive heavier) → ~$50 + judge ~$5.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 80.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL with the role chosen as winner-per-task_type from E2 results.
+# Single role for E3 (E4 sweeps role_router).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer       # placeholder — set to E2-winner per task_type
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+# 4 task × 15 shuffle × 3 seed = 180 cells per router_mode.
+# Run this file 3 times with topology_router={rule,llm,oracle}, OR add a
+# 4th sweep over a sentinel topology name to differentiate static-baseline.
+# The cleanest path: sweep `task.name` here and run 4 separate adaptive
+# grids (one per router mode) + 1 static-baseline grid (e1_full subset on
+# best topology per task_type).
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4   # adaptive runs slightly heavier
+  use_historical: true

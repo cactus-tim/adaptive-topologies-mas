@@ -1,0 +1,108 @@
+# E1-mini — pre-flight before full E1.
+#
+# Purpose: catch judge-integration / multi-task-type bugs that the HumanEval-
+# only sanity grid cannot expose. Runs every static topology against every
+# task type at very small N (5 tasks × 1 seed) so a green E1-mini gives high
+# confidence that the FULL E1 grid will not waste compute on a hidden bug.
+#
+# Scope: 5 topologies × 4 task types × 5 tasks × 1 seed = 100 cells.
+# Wall-time on p=12: ~15 min. Cost: ~$8 compute + ~$1 judge.
+#
+# Promote to full E1 by switching to e1_full.yaml (25 tasks × 3 seeds).
+
+name: e1_mini
+seed: 42
+
+# ---- task ----------------------------------------------------------------
+# task.name + task.shuffle_seed swept by grid below; this is the placeholder.
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+# ---- agents --------------------------------------------------------------
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+# ---- topology ------------------------------------------------------------
+# `name` overridden by sweep. `extra` carries smart-cut caps for every
+# topology — each reads only its own keys.
+topology:
+  name: star
+  max_iterations: 8
+  extra:
+    exec_max_iter: 3      # star
+    verify_max_iter: 2    # star
+    max_rounds: 2         # debate / hierarchical
+
+# ---- model lineup (Variant B'.1) -----------------------------------------
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+# ---- evaluation ----------------------------------------------------------
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 3
+
+# ---- budget --------------------------------------------------------------
+# 100 runs × ~$0.05 compute + ~$0.01 judge → ~$6 + headroom.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 15.0
+  warn_ratio: 0.8
+
+# ---- observability -------------------------------------------------------
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# ---- HITL ----------------------------------------------------------------
+human:
+  enabled: false
+
+# ---- grid sweep ----------------------------------------------------------
+# 5 topologies × 4 task_types × 5 tasks × 1 seed = 100 runs.
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    topology.name:
+      - star
+      - chain
+      - mesh
+      - debate
+      - hierarchical
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4]
+
+# ---- estimate ------------------------------------------------------------
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 3
+  use_historical: false

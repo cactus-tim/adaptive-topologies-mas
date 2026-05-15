@@ -96,7 +96,25 @@ def build_llm(
             llm=fake_llm,
         )
 
-    # Real provider — LLMWrapper will call init_chat_model internally
+    # Providers whose prefix LangChain's `init_chat_model` does NOT recognise
+    # natively (cerebras, vllm) must be built via our own factories and
+    # injected as `llm=` so LLMWrapper skips its `init_chat_model` fallback.
+    # openai / anthropic are recognised natively, so we leave them on the
+    # default path for back-compat.
+    if provider in ("cerebras", "vllm"):
+        from atm.llm.providers import build_cerebras, build_vllm
+
+        provider_builders = {"cerebras": build_cerebras, "vllm": build_vllm}
+        chat_model = provider_builders[provider](model_id, cfg or {})
+        return LLMWrapper(
+            model_id=model_id,
+            pricing=pricing,
+            budget=budget,
+            cfg=cfg,
+            llm=chat_model,
+        )
+
+    # openai / anthropic / unknown — LLMWrapper calls init_chat_model internally.
     return LLMWrapper(
         model_id=model_id,
         pricing=pricing,
