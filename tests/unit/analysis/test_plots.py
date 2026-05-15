@@ -767,3 +767,148 @@ class TestRq2SymbolsExportedG11:
         from atm.analysis.plots import __all__
 
         assert "plot_oracle_gap_loo" in __all__
+
+
+# ---------------------------------------------------------------------------
+# RQ3/RQ4 fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def human_interactions_df() -> pd.DataFrame:
+    """Minimal human interactions DataFrame for plot_cognitive_load_boxplot."""
+    rng = np.random.default_rng(99)
+    n = 30
+    topologies = ["adaptive", "linear", "mesh"]
+    return pd.DataFrame(
+        {
+            "run_id": [f"run-{i}" for i in range(n)],
+            "topology": [topologies[i % len(topologies)] for i in range(n)],
+            "raw_tlx_score": rng.uniform(20.0, 90.0, n),
+            "cognitive_load_proxy": rng.uniform(0.2, 0.9, n),
+        }
+    )
+
+
+@pytest.fixture
+def runs_df_cognitive() -> pd.DataFrame:
+    """Minimal runs DataFrame for plot_cognitive_load_boxplot."""
+    rng = np.random.default_rng(42)
+    n = 30
+    topologies = ["adaptive", "linear", "mesh"]
+    return pd.DataFrame(
+        {
+            "run_id": [f"run-{i}" for i in range(n)],
+            "topology": [topologies[i % len(topologies)] for i in range(n)],
+            "cognitive_load_proxy": rng.uniform(0.2, 0.9, n),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# test_plot_cognitive_load_boxplot — RQ3/RQ4 smoke tests
+# ---------------------------------------------------------------------------
+
+
+class TestPlotCognitiveLoadBoxplot:
+    """plot_cognitive_load_boxplot returns a valid Figure with 2 Axes."""
+
+    def test_returns_figure(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_has_two_axes(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
+        assert len(fig.axes) == 2
+
+    def test_title_set(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
+        # At least one axes should have a title
+        titles = [ax.get_title() for ax in fig.axes]
+        assert any(t != "" for t in titles)
+
+    def test_empty_human_interactions_graceful(
+        self, runs_df_cognitive: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        df = pd.DataFrame(columns=["run_id", "topology", "raw_tlx_score", "cognitive_load_proxy"])
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_empty_runs_df_graceful(self, human_interactions_df: pd.DataFrame) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        df = pd.DataFrame(columns=["run_id", "topology", "cognitive_load_proxy"])
+        fig = plot_cognitive_load_boxplot(df, human_interactions_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_role_filter_none(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df, role=None)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_role_filter_string(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        # Non-existent role — should produce graceful figure, not crash
+        fig = plot_cognitive_load_boxplot(
+            runs_df_cognitive, human_interactions_df, role="reviewer"
+        )
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_missing_raw_tlx_score_graceful(
+        self, runs_df_cognitive: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        df = pd.DataFrame(
+            {
+                "run_id": ["run-0", "run-1"],
+                "topology": ["linear", "mesh"],
+                "cognitive_load_proxy": [0.4, 0.6],
+            }
+        )
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_no_warnings(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
+        assert isinstance(fig, matplotlib.figure.Figure)
+
+    def test_returns_new_figure_each_call(
+        self, runs_df_cognitive: pd.DataFrame, human_interactions_df: pd.DataFrame
+    ) -> None:
+        from atm.analysis.plots import plot_cognitive_load_boxplot
+
+        fig1 = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
+        fig2 = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
+        assert fig1 is not fig2
+
+    def test_cognitive_load_exported(self) -> None:
+        from atm.analysis.plots import __all__
+
+        assert "plot_cognitive_load_boxplot" in __all__

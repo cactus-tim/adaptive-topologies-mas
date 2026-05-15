@@ -72,9 +72,9 @@
   - Files: `src/atm/analysis/plots.py`, `tests/unit/analysis/test_plots.py`
   - Acceptance: `pytest tests/unit/analysis/test_plots.py -k "rq2 or g11" -v` зелёный; twinx legend имеет ≥2 entries
 
-## Wave 8 — Cognitive-load + oracle plot + import guard (Step 9) NOT STARTED
+## Wave 8 — Cognitive-load + oracle plot + import guard (Step 9) COMPLETE
 
-- [ ] 9.1 Реализовать `plot_cognitive_load_boxplot` (plots.py) + `plot_oracle_vs_router` (oracle.py) + TYPE_CHECKING + import-bloat regression test
+- [x] 9.1 Реализовать `plot_cognitive_load_boxplot` (plots.py) + `plot_oracle_vs_router` (oracle.py) + TYPE_CHECKING + import-bloat regression test
   - Type: tdd
   - Depends On: 8.1
   - Can-Parallel-With: —
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 8 / 12
+- Done: 9 / 12
 
 ## How to Update
 
