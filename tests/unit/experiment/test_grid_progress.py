@@ -244,6 +244,20 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(grid_mod, "_update_experiment_status", fake_update)
     monkeypatch.setattr(grid_mod, "_resolve_exp_id", fake_resolve)
 
+    # Stub LangGraph checkpointer pre-warmup so it doesn't try to connect to
+    # the fake DSN (`postgresql+asyncpg://x:y@localhost:5432/nowhere`) and
+    # hang for 30 s on PoolTimeout.
+    async def fake_build_checkpointer(
+        dsn: str, *, max_size: int = 1, min_size: int = 1
+    ) -> tuple[Any, Any]:
+        class _NoopPool:
+            async def close(self) -> None:
+                return None
+
+        return (None, _NoopPool())
+
+    monkeypatch.setattr(grid_mod, "build_checkpointer", fake_build_checkpointer)
+
     return state
 
 
