@@ -1,8 +1,12 @@
 """PG-gated integration test for ``atm status --json``.
 
 Seeds an experiment with mixed run statuses and invokes the CLI via
-``typer.testing.CliRunner``. The CLI reads the same PG DSN supplied to the
-``pg_engine_fast`` fixture (via the ``--pg-dsn`` flag).
+``subprocess.run`` (real OS process, not CliRunner) to avoid the
+``RuntimeError: asyncio.run() cannot be called from a running event loop``
+that occurs when ``atm status`` (which calls ``asyncio.run`` internally)
+is invoked from inside a pytest-asyncio test via CliRunner.
+
+Pattern mirrors ``tests/integration/experiment/test_m12_exit_grid_parallel.py``.
 
 Skipped unless ``ATM_ENABLE_PG_TESTS=1``.
 """
@@ -11,17 +15,18 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import uuid
 from decimal import Decimal
 
 import pytest
-from typer.testing import CliRunner
 
-from atm.experiment.cli import app
 from atm.storage.models import Experiment, Run
 
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 pytestmark = pytest.mark.requires_postgres
+
+_SUBPROCESS_TIMEOUT_S = 30
 
 
 @pytest.mark.asyncio
@@ -88,21 +93,34 @@ async def test_status_cli_json_aggregates(  # type: ignore[no-untyped-def]
         )
         await session.commit()
 
-    runner = CliRunner()
-    result = runner.invoke(
-        app,
+    # Invoke CLI via subprocess to avoid asyncio.run() conflict with
+    # the running pytest-asyncio event loop.
+    env = os.environ.copy()
+    env["ATM_PG_DSN"] = pg_dsn
+
+    result = subprocess.run(
         [
+            "uv",
+            "run",
+            "atm",
             "status",
-            "--pg-dsn",
-            pg_dsn,
             "--exp-name",
             "status_test",
             "--json",
         ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=_SUBPROCESS_TIMEOUT_S,
     )
-    assert result.exit_code == 0, result.output
 
-    parsed = json.loads(result.output.strip())
+    assert result.returncode == 0, (
+        f"``atm status`` exited with code {result.returncode} (expected 0).\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+    parsed = json.loads(result.stdout.strip())
     assert parsed["name"] == "status_test"
     assert parsed["total"] == 4
     assert parsed["completed"] == 2
@@ -119,12 +137,26 @@ async def test_status_cli_no_match(  # type: ignore[no-untyped-def]
     session_factory_fast,
 ) -> None:
     """Unknown experiment name → exit 1."""
-    runner = CliRunner()
-    result = runner.invoke(
-        app,
-        ["status", "--pg-dsn", pg_dsn, "--exp-name", "nonexistent_xyz", "--json"],
+    env = os.environ.copy()
+    env["ATM_PG_DSN"] = pg_dsn
+
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "atm",
+            "status",
+            "--exp-name",
+            "nonexistent_xyz",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=_SUBPROCESS_TIMEOUT_S,
     )
-    assert result.exit_code == 1
+
+    assert result.returncode == 1
 
 
 @pytest.mark.asyncio
@@ -140,10 +172,24 @@ async def test_status_cli_latest_experiment(  # type: ignore[no-untyped-def]
         session.add(Experiment(id=uuid.uuid4(), name="newer", status="running"))
         await session.commit()
 
-    runner = CliRunner()
-    result = runner.invoke(app, ["status", "--pg-dsn", pg_dsn, "--json"])
-    assert result.exit_code == 0, result.output
-    parsed = json.loads(result.output.strip())
+    env = os.environ.copy()
+    env["ATM_PG_DSN"] = pg_dsn
+
+    result = subprocess.run(
+        ["uv", "run", "atm", "status", "--json"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=_SUBPROCESS_TIMEOUT_S,
+    )
+
+    assert result.returncode == 0, (
+        f"``atm status`` exited with code {result.returncode} (expected 0).\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+    parsed = json.loads(result.stdout.strip())
     # Either is fine if started_at is identical at clock resolution; the test
     # just asserts the CLI returns _some_ experiment with valid counts.
     assert parsed["name"] in {"older", "newer"}
