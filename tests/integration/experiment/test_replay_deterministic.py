@@ -70,7 +70,12 @@ async def test_replay_deterministic_round_trip(
 
     # The original llm_calls.parquet must have been written before replay.
     original_parquet = (
-        parquet_dir / "experiments" / str(original.exp_id) / "runs" / str(original.run_id) / "llm_calls.parquet"
+        parquet_dir
+        / "experiments"
+        / str(original.exp_id)
+        / "runs"
+        / str(original.run_id)
+        / "llm_calls.parquet"
     )
     assert original_parquet.exists(), f"expected llm_calls.parquet at {original_parquet}"
 

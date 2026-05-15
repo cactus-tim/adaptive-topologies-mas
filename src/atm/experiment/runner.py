@@ -1376,7 +1376,12 @@ async def replay_one(
         if mode == "deterministic":
             parquet_root = Path(cfg.observability.parquet_dir)
             llm_calls_path = (
-                parquet_root / "experiments" / str(exp_id) / "runs" / str(original_run_id) / "llm_calls.parquet"
+                parquet_root
+                / "experiments"
+                / str(exp_id)
+                / "runs"
+                / str(original_run_id)
+                / "llm_calls.parquet"
             )
             if not llm_calls_path.exists():
                 raise FileNotFoundError(
