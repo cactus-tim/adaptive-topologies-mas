@@ -12,10 +12,14 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
+
+if TYPE_CHECKING:
+    import matplotlib.figure
 
 _log = logging.getLogger(__name__)
 
@@ -442,3 +446,114 @@ async def build_leave_one_out_oracle(
         )
 
     return build_loo_from_rows(rows)
+
+
+# ---------------------------------------------------------------------------
+# Plot — oracle vs router (TYPE_CHECKING guard: matplotlib imported lazily)
+# ---------------------------------------------------------------------------
+
+
+def plot_oracle_vs_router(
+    runs_df: pd.DataFrame,
+    oracle_table: OracleTable,
+    *,
+    router_col: str = "topology",
+    figsize: tuple[float, float] = (8, 5),
+) -> "matplotlib.figure.Figure":
+    """Plot oracle topology recommendation vs actual router choice per task.
+
+    For each run (identified by ``task_id``), computes the oracle-recommended
+    topology via ``oracle_table.lookup(task_id=...)`` and compares it to the
+    actual topology chosen by the router (``router_col`` column).
+
+    Produces a grouped bar chart: for each unique topology, shows how often
+    the oracle recommended it vs how often the router actually chose it.
+
+    Args:
+        runs_df:      DataFrame with at minimum ``task_id``, ``router_col``, and
+                      optionally ``quality_score`` columns.
+        oracle_table: Pre-built OracleTable mapping task_id → oracle topology.
+        router_col:   Column in ``runs_df`` holding the router's topology choice.
+                      Default: ``"topology"``.
+        figsize:      Figure (width, height) in inches.
+
+    Returns:
+        matplotlib Figure with one Axes (grouped bar chart).
+    """
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    matplotlib.use("Agg")  # no-op if already set; safe to call again
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Validate required columns
+    required_cols = {router_col}
+    if runs_df.empty or not required_cols.issubset(runs_df.columns):
+        ax.set_title("Oracle vs Router Topology Choice (no data)")
+        ax.set_xlabel("Topology")
+        ax.set_ylabel("Count")
+        fig.tight_layout()
+        return fig
+
+    df = runs_df.copy()
+
+    # Compute oracle recommendation per row (using task_id if available)
+    if "task_id" in df.columns:
+        df["oracle_topology"] = df["task_id"].apply(
+            lambda tid: oracle_table.lookup(task_id=str(tid))
+        )
+    else:
+        # No task_id: use the table's default for all rows
+        default_topo = oracle_table.default_topology
+        df["oracle_topology"] = default_topo
+
+    # Aggregate counts
+    router_counts = df[router_col].value_counts().rename("router")
+    oracle_counts = df["oracle_topology"].value_counts().rename("oracle")
+
+    counts_df = pd.concat([router_counts, oracle_counts], axis=1).fillna(0).astype(int)
+    counts_df = counts_df.sort_index()
+
+    if counts_df.empty:
+        ax.set_title("Oracle vs Router Topology Choice (no data)")
+        ax.set_xlabel("Topology")
+        ax.set_ylabel("Count")
+        fig.tight_layout()
+        return fig
+
+    topologies = counts_df.index.tolist()
+    n = len(topologies)
+    x = list(range(n))
+    bar_width = 0.35
+
+    router_vals = counts_df.get("router", pd.Series(0, index=counts_df.index)).tolist()
+    oracle_vals = counts_df.get("oracle", pd.Series(0, index=counts_df.index)).tolist()
+
+    ax.bar(
+        [xi - bar_width / 2 for xi in x],
+        router_vals,
+        width=bar_width,
+        label="Router",
+        color="steelblue",
+        alpha=0.8,
+    )
+    ax.bar(
+        [xi + bar_width / 2 for xi in x],
+        oracle_vals,
+        width=bar_width,
+        label="Oracle",
+        color="coral",
+        alpha=0.8,
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(topologies, rotation=30, ha="right")
+    ax.set_xlabel("Topology")
+    ax.set_ylabel("Count")
+    ax.set_title("Oracle vs Router Topology Choice")
+    handles, _labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(loc="best")
+    fig.tight_layout()
+    return fig
