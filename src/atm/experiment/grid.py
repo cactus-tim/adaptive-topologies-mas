@@ -31,7 +31,8 @@ import contextlib
 import logging
 import time
 from collections.abc import Callable
-from concurrent.futures import CancelledError as FuturesCancelledError, ProcessPoolExecutor
+from concurrent.futures import CancelledError as FuturesCancelledError
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID

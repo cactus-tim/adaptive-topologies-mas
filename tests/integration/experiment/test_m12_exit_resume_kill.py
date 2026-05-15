@@ -61,7 +61,7 @@ _KILL_TIMEOUT_S = 60.0  # max wall-clock seconds before we SIGKILL
 _RESUME_TIMEOUT_S = 120  # subprocess.run timeout for `atm resume`
 
 
-def _write_long_fixtures(tmp_path: Path, n_iterations: int = 8) -> tuple[Path, Path, Path]:
+def _write_long_fixtures(tmp_path: Path, n_iterations: int = 30) -> tuple[Path, Path, Path]:
     """Write FakeLLM fixture files designed for a multi-iteration chain run.
 
     Creates fixtures that make the chain run for ``n_iterations`` cycles before
@@ -171,7 +171,7 @@ agents:
 
 topology:
   name: chain
-  max_iterations: 12
+  max_iterations: 40
   extra: {{}}
 
 budget:
