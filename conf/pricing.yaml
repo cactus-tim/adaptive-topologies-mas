@@ -62,9 +62,12 @@ models:
     cache_write_per_1k: 0.0
 
   fake:scripted:
-    # FakeLLM scripted mode — used in M6 E2E and runner integration tests
-    input_per_1k: 0.0
-    output_per_1k: 0.0
+    # FakeLLM scripted mode — used in M6 E2E and runner integration tests.
+    # Non-zero rates allow budget-exceed tests (e.g. grid_fail_fast) to trigger
+    # BudgetExceededError on per-call cost estimates; rates are low enough that
+    # normal test budgets (per_run_usd >= 0.1) are never reached.
+    input_per_1k: 0.01
+    output_per_1k: 0.01
     cached_input_per_1k: 0.0
     cache_read_per_1k: 0.0
     cache_write_per_1k: 0.0
