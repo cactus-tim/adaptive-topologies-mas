@@ -46,12 +46,25 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
 
     dsn = os.environ.get("ATM_PG_DSN", _DEFAULT_PG_DSN)
 
+    from sqlalchemy import text
+
     from atm.storage.models import Base
     from atm.storage.session import create_engine
 
+    # Reset the public schema BEFORE create_all — defensive against state
+    # leaks from prior tests whose subprocess workers (e.g. `atm grid`
+    # ProcessPoolExecutor children) may still have pending writes/types in
+    # flight during fixture teardown. Without this DROP SCHEMA, a residual
+    # row or pg_type entry triggers UniqueViolationError on the next
+    # test's `create_all` (pg_type_typname_nsp_index race).
+    reset_engine = create_engine(dsn, echo=False, pool_size=1, max_overflow=0)
+    async with reset_engine.begin() as conn:
+        await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    await reset_engine.dispose()
+
     engine = create_engine(dsn, echo=False, pool_size=2, max_overflow=1)
 
-    # Create all tables (idempotent — create_all uses IF NOT EXISTS)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
