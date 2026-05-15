@@ -482,6 +482,58 @@ class TestLoadLlmCallsForExperiment:
 
 
 # ===========================================================================
+# Security — path traversal validation
+# ===========================================================================
+
+
+class TestPathTraversalValidation:
+    """Verify that exp_id is validated as a UUID before path concatenation.
+
+    Any non-UUID value (including path-traversal payloads) must raise ValueError.
+    """
+
+    def test_load_llm_calls_for_experiment_rejects_path_traversal(self, tmp_path: Path) -> None:
+        """exp_id='../../../etc/passwd' must raise ValueError, not access the filesystem."""
+        from atm.analysis.loaders import load_llm_calls_for_experiment
+
+        with pytest.raises(ValueError):
+            load_llm_calls_for_experiment("../../../etc/passwd", parquet_dir=tmp_path)
+
+    def test_load_topology_transitions_parquet_rejects_path_traversal(self, tmp_path: Path) -> None:
+        """exp_id='../../../etc/passwd' must raise ValueError (parquet path)."""
+        import asyncio
+
+        from atm.analysis.loaders import load_topology_transitions
+
+        with pytest.raises(ValueError):
+            asyncio.get_event_loop().run_until_complete(
+                load_topology_transitions(
+                    "../../../etc/passwd", source="parquet", parquet_dir=tmp_path
+                )
+            )
+
+    def test_load_phases_parquet_rejects_path_traversal(self, tmp_path: Path) -> None:
+        """exp_id='../../../etc/passwd' must raise ValueError (parquet path)."""
+        import asyncio
+
+        from atm.analysis.loaders import load_phases
+
+        with pytest.raises(ValueError):
+            asyncio.get_event_loop().run_until_complete(
+                load_phases("../../../etc/passwd", source="parquet", parquet_dir=tmp_path)
+            )
+
+    def test_load_llm_calls_for_experiment_accepts_valid_uuid_string(self, tmp_path: Path) -> None:
+        """A well-formed UUID string must not raise ValueError."""
+        from atm.analysis.loaders import load_llm_calls_for_experiment
+
+        valid_exp_id = str(uuid.uuid4())
+        # No parquet files → returns empty DataFrame, but should not raise
+        df = load_llm_calls_for_experiment(valid_exp_id, parquet_dir=tmp_path)
+        assert isinstance(df, pd.DataFrame)
+
+
+# ===========================================================================
 # Helpers — write topology_transitions and phases via ParquetWriter
 # ===========================================================================
 

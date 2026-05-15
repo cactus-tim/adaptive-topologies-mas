@@ -195,7 +195,9 @@ def load_llm_calls_for_experiment(
     """
     import pyarrow.parquet as pq
 
-    exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
+    # Validate exp_id as a UUID to prevent path traversal attacks.
+    exp_uuid_str = str(uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id)
+    exp_runs_dir = parquet_dir / "experiments" / exp_uuid_str / "runs"
     pattern = "*/llm_calls.parquet"
     parquet_files = list(exp_runs_dir.glob(pattern)) if exp_runs_dir.exists() else []
 
@@ -248,7 +250,9 @@ async def load_topology_transitions(
             raise ValueError("parquet_dir is required when source='parquet'")
         import pyarrow.parquet as pq
 
-        exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
+        # Validate exp_id as a UUID to prevent path traversal attacks.
+        exp_uuid_str = str(uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id)
+        exp_runs_dir = parquet_dir / "experiments" / exp_uuid_str / "runs"
         parquet_files = (
             list(exp_runs_dir.glob("*/topology_transitions.parquet"))
             if exp_runs_dir.exists()
@@ -351,7 +355,9 @@ async def load_phases(
             raise ValueError("parquet_dir is required when source='parquet'")
         import pyarrow.parquet as pq
 
-        exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
+        # Validate exp_id as a UUID to prevent path traversal attacks.
+        exp_uuid_str = str(uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id)
+        exp_runs_dir = parquet_dir / "experiments" / exp_uuid_str / "runs"
         parquet_files = list(exp_runs_dir.glob("*/phases.parquet")) if exp_runs_dir.exists() else []
 
         if not parquet_files:

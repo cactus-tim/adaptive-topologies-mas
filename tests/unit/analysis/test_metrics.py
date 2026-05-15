@@ -77,10 +77,14 @@ def runs_basic() -> pd.DataFrame:
 
 
 class TestComputeGuardOverrideRate:
-    """Tests for compute_guard_override_rate."""
+    """Tests for compute_guard_override_rate.
+
+    The formula (experiment_plan.md §4) is:
+        guard_override_rate = |guards_applied is non-empty| / |all decisions|
+    """
 
     def test_basic_rate(self, transitions_basic: pd.DataFrame) -> None:
-        """2 guard_overrides out of 5 total → 0.40."""
+        """2 rows have non-empty guards_applied out of 5 total → 0.40."""
         from atm.analysis.metrics import compute_guard_override_rate
 
         rate = compute_guard_override_rate(transitions_basic)
@@ -90,22 +94,30 @@ class TestComputeGuardOverrideRate:
         """Empty transitions_df → 0.0."""
         from atm.analysis.metrics import compute_guard_override_rate
 
-        empty = pd.DataFrame(columns=["decided_by"])
+        empty = pd.DataFrame(columns=["guards_applied"])
         assert compute_guard_override_rate(empty) == 0.0
 
-    def test_no_overrides(self) -> None:
-        """No guard_override rows → 0.0."""
+    def test_no_guards_applied(self) -> None:
+        """All rows have empty guards_applied → 0.0."""
         from atm.analysis.metrics import compute_guard_override_rate
 
-        df = pd.DataFrame({"decided_by": ["initial", "rule", "llm_router", "oracle"]})
+        df = pd.DataFrame({"guards_applied": [[], [], [], []]})
         assert compute_guard_override_rate(df) == 0.0
 
-    def test_all_overrides(self) -> None:
-        """All rows are guard_override → 1.0."""
+    def test_all_guards_applied(self) -> None:
+        """All rows have non-empty guards_applied → 1.0."""
         from atm.analysis.metrics import compute_guard_override_rate
 
-        df = pd.DataFrame({"decided_by": ["guard_override"] * 3})
+        df = pd.DataFrame({"guards_applied": [["budget"], ["time"], ["quality"]]})
         assert compute_guard_override_rate(df) == 1.0
+
+    def test_partial_guards_applied(self) -> None:
+        """3 out of 4 rows have non-empty guards_applied → 0.75."""
+        from atm.analysis.metrics import compute_guard_override_rate
+
+        df = pd.DataFrame({"guards_applied": [["budget"], [], ["time"], ["quality"]]})
+        rate = compute_guard_override_rate(df)
+        assert math.isclose(rate, 3 / 4, rel_tol=1e-9)
 
 
 # ---------------------------------------------------------------------------

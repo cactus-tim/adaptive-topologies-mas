@@ -37,15 +37,27 @@ if TYPE_CHECKING:
 
 
 def compute_guard_override_rate(transitions_df: pd.DataFrame) -> float:
-    """Compute the fraction of router decisions that were guard overrides.
+    """Compute the fraction of router decisions where at least one guard fired.
 
     Formula (experiment_plan.md §4):
-        guard_override_rate = |decided_by == "guard_override"| / |all decisions|
+        guard_override_rate = |guards_applied is non-empty| / |all decisions|
+
+    A row counts as a guard override when its ``guards_applied`` value is a
+    non-empty list/array (i.e., at least one guard was applied).
+
+    # Note: an alternative implementation counts rows where
+    # ``decided_by == "guard_override"``.  That metric captures only the
+    # subset of decisions that were *fully decided* by a guard, whereas the
+    # spec asks for decisions where a guard *was applied* (possibly alongside
+    # other routing logic).  The ``guards_applied`` formula is the authoritative
+    # one per experiment_plan.md §4.
 
     An empty ``transitions_df`` returns 0.0 (no decisions → no overrides).
 
     Args:
-        transitions_df: DataFrame with at least a ``decided_by`` column.
+        transitions_df: DataFrame with at least a ``guards_applied`` column
+                        (each value should be a list or array; empty list means
+                        no guard fired for that decision).
 
     Returns:
         Float in [0.0, 1.0].
@@ -57,7 +69,9 @@ def compute_guard_override_rate(transitions_df: pd.DataFrame) -> float:
     if total == 0:
         return 0.0
 
-    overrides = (transitions_df["decided_by"] == "guard_override").sum()
+    overrides = (
+        transitions_df["guards_applied"].apply(lambda x: bool(x) if x is not None else False).sum()
+    )
     return float(overrides) / float(total)
 
 
