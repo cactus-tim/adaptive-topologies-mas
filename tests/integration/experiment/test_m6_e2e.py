@@ -207,9 +207,9 @@ async def test_e2e_star_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
             exp_row = await session.get(Experiment, result.exp_id)
             assert exp_row is not None, f"Experiment row not found for exp_id={result.exp_id}"
             config_snapshot = exp_row.config_snapshot or {}
-            # config_snapshot has "task_name" key (set in _ensure_experiment)
-            assert config_snapshot.get("task_name") == "fibonacci_smoke", (
-                f"config_snapshot.task_name mismatch: {config_snapshot}"
+            # config_snapshot is full cfg.model_dump() (widened in M12 for resume/replay)
+            assert config_snapshot.get("task", {}).get("name") == "fibonacci_smoke", (
+                f"config_snapshot task.name mismatch: {config_snapshot}"
             )
 
         # Assertion 9: topology_transitions — M8 scope, skip
@@ -424,8 +424,8 @@ async def test_e2e_chain_topology(ephemeral_pg_dsn: str, tmp_path: Path) -> None
             exp_row = await session.get(Experiment, result.exp_id)
             assert exp_row is not None, f"Experiment row not found for exp_id={result.exp_id}"
             config_snapshot = exp_row.config_snapshot or {}
-            assert config_snapshot.get("task_name") == "fibonacci_smoke", (
-                f"config_snapshot.task_name mismatch: {config_snapshot}"
+            assert config_snapshot.get("task", {}).get("name") == "fibonacci_smoke", (
+                f"config_snapshot task.name mismatch: {config_snapshot}"
             )
 
         # Assertion 9: topology_transitions — M8 scope, skip

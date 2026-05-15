@@ -31,7 +31,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Callable
-from concurrent.futures import CancelledError, ProcessPoolExecutor
+from concurrent.futures import CancelledError as FuturesCancelledError, ProcessPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -308,7 +308,7 @@ async def run_grid(
         for fut in asyncio.as_completed(futures):
             try:
                 result = await fut
-            except CancelledError:
+            except (asyncio.CancelledError, FuturesCancelledError):
                 # fail_fast cancellation — skip; do not count.
                 continue
             except Exception as exc:
