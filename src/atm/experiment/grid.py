@@ -394,8 +394,11 @@ async def run_grid(
                         pass
                 executor.shutdown(wait=False, cancel_futures=True)
     finally:
-        # If we exited without explicit shutdown, do it now.
-        executor.shutdown(wait=not cancelled)
+        # Always wait for in-flight workers to actually exit before returning.
+        # fail_fast's purpose is to stop submitting NEW work, not to abandon
+        # running cells — letting them complete prevents leaked subprocess PG
+        # connections from polluting downstream tests / next grid run.
+        executor.shutdown(wait=True)
 
     # Resolve exp_id by looking up the experiment row by name.
     exp_id = await _resolve_exp_id(pg_dsn, exp_name)
