@@ -34,6 +34,12 @@ atm = "atm.experiment.cli:app"
 
 [project.optional-dependencies]
 faiss = ["faiss-cpu>=1.11"]
+analysis = [
+    "matplotlib>=3.9",
+    "nbformat>=5.10",
+    "pandas>=2.2",
+    "seaborn>=0.13",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -48,9 +54,13 @@ dev = [
     "aiosqlite>=0.22.1",
     "alembic>=1.13",
     "langgraph>=0.3,<1",
+    "matplotlib>=3.9",
     "mypy>=1.14",
+    "nbformat>=5.10",
     "pandas>=2.2",
+    "pandas-stubs>=2.2",
     "ruff>=0.9,<1",
+    "seaborn>=0.13",
     "types-pyyaml>=6.0.12.20260408",
 ]
 test = [
@@ -77,6 +87,7 @@ ignore = ["E501"]  # line length is controlled by the formatter
 "tests/unit/tools/test_retry.py" = ["N818"]
 "tests/unit/tools/test_sandbox_base.py" = ["I001"]
 "tests/unit/tools/test_subprocess_sandbox.py" = ["I001", "F401"]
+"tests/unit/analysis/test_oracle_no_matplotlib_import.py" = ["I001", "UP032", "RUF100"]
 
 [tool.ruff.format]
 # defaults
