@@ -459,7 +459,7 @@ def plot_oracle_vs_router(
     *,
     router_col: str = "topology",
     figsize: tuple[float, float] = (8, 5),
-) -> "matplotlib.figure.Figure":
+) -> matplotlib.figure.Figure:
     """Plot oracle topology recommendation vs actual router choice per task.
 
     For each run (identified by ``task_id``), computes the oracle-recommended

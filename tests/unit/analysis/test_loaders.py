@@ -630,9 +630,7 @@ class TestLoadTopologyTransitionsParquet:
         assert isinstance(val, list), f"Expected list, got {type(val)}: {val!r}"
         assert "chain" in val
 
-    def test_load_topology_transitions_parquet_guards_applied_is_list(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_topology_transitions_parquet_guards_applied_is_list(self, tmp_path: Path) -> None:
         """guards_applied column must be a Python list, not a JSON string."""
         from atm.analysis.loaders import load_topology_transitions
 
@@ -890,8 +888,16 @@ class TestLoadPhasesParquet:
             load_phases(str(exp_id), source="parquet", parquet_dir=tmp_path)
         )
 
-        required_cols = {"run_id", "phase_name", "from_phase", "started_at", "ended_at",
-                         "entry_reason", "topology_used", "decided_by"}
+        required_cols = {
+            "run_id",
+            "phase_name",
+            "from_phase",
+            "started_at",
+            "ended_at",
+            "entry_reason",
+            "topology_used",
+            "decided_by",
+        }
         missing = required_cols - set(df.columns)
         assert not missing, f"Missing columns: {missing}"
 
@@ -1091,8 +1097,16 @@ class TestLoadHumanInteractions:
 
         # Columns from plan spec: id, run_id, role, requested_at, answered_at,
         # raw_tlx_score, tlx_scores, request_id
-        required = {"id", "run_id", "role", "requested_at", "answered_at",
-                    "raw_tlx_score", "tlx_scores", "request_id"}
+        required = {
+            "id",
+            "run_id",
+            "role",
+            "requested_at",
+            "answered_at",
+            "raw_tlx_score",
+            "tlx_scores",
+            "request_id",
+        }
         missing = required - set(df.columns)
         assert not missing, f"Missing required columns: {missing}"
 

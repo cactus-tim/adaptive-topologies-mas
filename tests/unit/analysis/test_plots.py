@@ -839,9 +839,7 @@ class TestPlotCognitiveLoadBoxplot:
         titles = [ax.get_title() for ax in fig.axes]
         assert any(t != "" for t in titles)
 
-    def test_empty_human_interactions_graceful(
-        self, runs_df_cognitive: pd.DataFrame
-    ) -> None:
+    def test_empty_human_interactions_graceful(self, runs_df_cognitive: pd.DataFrame) -> None:
         from atm.analysis.plots import plot_cognitive_load_boxplot
 
         df = pd.DataFrame(columns=["run_id", "topology", "raw_tlx_score", "cognitive_load_proxy"])
@@ -869,14 +867,10 @@ class TestPlotCognitiveLoadBoxplot:
         from atm.analysis.plots import plot_cognitive_load_boxplot
 
         # Non-existent role — should produce graceful figure, not crash
-        fig = plot_cognitive_load_boxplot(
-            runs_df_cognitive, human_interactions_df, role="reviewer"
-        )
+        fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df, role="reviewer")
         assert isinstance(fig, matplotlib.figure.Figure)
 
-    def test_missing_raw_tlx_score_graceful(
-        self, runs_df_cognitive: pd.DataFrame
-    ) -> None:
+    def test_missing_raw_tlx_score_graceful(self, runs_df_cognitive: pd.DataFrame) -> None:
         from atm.analysis.plots import plot_cognitive_load_boxplot
 
         df = pd.DataFrame(
