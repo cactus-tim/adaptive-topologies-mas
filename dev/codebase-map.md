@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-05-14 (post-m12-config-schema)*
+*Auto-generated. Last updated: 2026-05-15 (post-m13-analysis-tooling)*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -28,7 +28,7 @@
   - `tasks/` — TaskSpec base, HumanEval/GSM8K/CommonGen/DABench loaders + evaluators (M10-resync)
   - `evaluation/` — LLM-as-judge, ground truth runners (dispatches via EVALUATORS.get), metrics, NASA-TLX persistence (M11 complete; M11-resync: _DEPS table dispatch pattern); human_sim_cognitive_load_proxy metric (M9.2)
   - `experiment/` — Pydantic config schemas + grid/estimate (M12), OmegaConf loader split into `loader.py`, single-run runner (`run_one` with HITL wiring), Typer CLI (`atm run`); wall_time_s and cognitive_load_proxy capture
-  - `analysis/` — Loaders, plots (M13); Oracle pipeline: OracleTable, build_leave_one_out_oracle, build_loo_from_rows, load_oracle_table (M8.7)
+  - `analysis/` — Full M13 surface: `loaders.py` (load_experiment, load_runs, load_llm_calls, load_llm_calls_for_experiment, load_topology_transitions, load_phases, load_human_interactions), `metrics.py` (7 RQ2 derived-metric helpers), `plots.py` (9 RQ1/RQ2/RQ4 plot functions), `oracle.py` (OracleTable, build_leave_one_out_oracle, build_loo_from_rows, load_oracle_table, plot_oracle_vs_router — M8.7 + M13)
 - `tests/` — unit, integration, fixtures
   - `unit/experiment/` — test_config.py, test_smoke_yaml_loads.py, test_config_grid.py (M12), test_loader_grid_expansion.py (M12)
   - `integration/storage/` — test_smoke_run.py + test_migration_0004.py (M12)
@@ -36,7 +36,17 @@
 - `.github/workflows/` — CI/CD pipelines (M11-resync: ci.yml with lint/unit/integration matrix)
 - `dev/` — documentation (PLAN.md, arch.md) and task tracking
 
-## Recent Updates (2026-05-14)
+## Recent Updates (2026-05-15)
+
+### M13: Analysis Tooling (m13 — complete)
+- **`src/atm/analysis/loaders.py`** (new): 7 async/sync loaders — `load_experiment`, `load_runs` (PG-backed); `load_llm_calls`, `load_llm_calls_for_experiment` (Parquet); `load_topology_transitions`, `load_phases`, `load_human_interactions` (PG + Parquet dual-source). JSONB fields decoded to dict; `raw_tlx_score` cast to float with NaN for empty strings.
+- **`src/atm/analysis/metrics.py`** (new): 7 derived-metric helpers — `compute_hurt_rate`, `compute_guard_override_rate`, `compute_router_cost_share`, `compute_time_per_topology`, `compute_topology_switch_counts`, `compute_oracle_gap_manual`, `compute_oracle_gap_loo`. Pure functions, no side effects.
+- **`src/atm/analysis/plots.py`** (new): 9 plot functions — RQ1: `plot_pareto`, `plot_topology_task_heatmap`, `plot_phase_timeline`; RQ2/G11: `plot_transition_timeline_quality`, `plot_guard_override_rate`, `plot_router_cost_share`, `plot_time_per_topology`, `plot_oracle_gap_loo`; RQ4: `plot_cognitive_load_boxplot`. matplotlib Agg backend forced at module top; seaborn imported lazily inside function bodies.
+- **`src/atm/analysis/oracle.py`** (extended M8.7): Added `plot_oracle_vs_router` via `TYPE_CHECKING` pattern to keep oracle.py import-light; regression test `test_oracle_module_does_not_import_matplotlib` guards this.
+- **`src/atm/analysis/__init__.py`** (updated): 29 public symbols in `__all__` covering all loaders, metrics, oracle, and plot functions.
+- **`scripts/gen_analysis_notebook.py`** (new): Reproducible notebook generator; all 8 RQ2 symbols verified in generated cells.
+- **`notebooks/analysis_template.ipynb`** (new): Committed template notebook (6 sections: setup, RQ1, RQ2/G11, RQ3, RQ4, export); passes `nbformat.validate()`.
+- **Tests:** `test_loaders.py`, `test_metrics.py`, `test_plots.py`, `test_oracle_plot.py`, `test_oracle_no_matplotlib_import.py`, `test_notebook_generator.py`.
 
 ### M12: Config Schema & Grid Sweep (m12-config-schema — done)
 - **`src/atm/experiment/config.py`:** Added `GridCfg` (dotpath-keyed sweep spec + parallelism + seeds + fail_fast), `EstimateCfg` (heuristic_tokens_per_call, calls_per_iter, use_historical), `_resolve_dotpath` validator (restricts sweep keys to typed scalar fields; handles both `typing.Union` AND Python 3.10+ `types.UnionType`), and `grid`/`estimate` fields to `ExperimentConfig`.
@@ -62,9 +72,16 @@
 ## Key Modules
 
 ### Storage Layer (`storage/`) — M3 complete + M12
-- **Run model columns:** `id`, `exp_id`, `created_at`, `status`, `exit_code`, `error_message`, `tokens_in`, `tokens_out`, `cost_usd`, `model_version_snapshot`, `sandbox_image_digest`, `wall_time_s`, `cognitive_load_proxy`, **`replay_of` (self-FK)**, **`host`**, **`process_pid`**.
-- **Indices:** `runs_created_idx(created_at)`, **`runs_exp_status_idx(exp_id, status)` (M12)**.
+- **Run model columns:** `id`, `exp_id`, `topology`, `task_id`, `agent_set`, `human_role`, `seed`, `model`, `models_by_role_json` (JSONB), `model_version_snapshot` (JSONB), `sandbox_image_digest`, `status`, `finish_reason`, `budget_spent_usd`, `quality_score`, `cognitive_load_proxy`, `wall_time_s`, `iterations`, `started_at`, `finished_at`, `error`, `replay_of` (self-FK), `host`, `process_pid`.
+- **Indices:** `runs_exp_id_idx(exp_id)`, `runs_topology_idx(topology)`, `runs_task_id_idx(task_id)`, `runs_status_idx(status)`, `runs_started_idx(started_at)`, `runs_exp_status_idx(exp_id, status)` (M12).
 - **Alembic:** Head = `0004_m12_runs_replay_and_pid`.
+
+### Analysis Layer (`analysis/`) — M13 complete
+- **Loaders:** `load_experiment(dsn, exp_id)` → `Experiment`; `load_runs(dsn, exp_id)` → `DataFrame`; `load_llm_calls(parquet_dir, run_id)` → `DataFrame`; `load_llm_calls_for_experiment(parquet_dir, run_ids)` → `DataFrame`; `load_topology_transitions(dsn, parquet_dir, run_id)` → `DataFrame`; `load_phases(dsn, parquet_dir, run_id)` → `DataFrame`; `load_human_interactions(dsn, run_id)` → `DataFrame`.
+- **Metrics (7):** `compute_hurt_rate`, `compute_guard_override_rate`, `compute_router_cost_share`, `compute_time_per_topology`, `compute_topology_switch_counts`, `compute_oracle_gap_manual`, `compute_oracle_gap_loo`.
+- **Plots (9 + oracle):** `plot_pareto`, `plot_topology_task_heatmap`, `plot_phase_timeline`, `plot_transition_timeline_quality`, `plot_guard_override_rate`, `plot_router_cost_share`, `plot_time_per_topology`, `plot_oracle_gap_loo`, `plot_cognitive_load_boxplot`; `plot_oracle_vs_router` in `oracle.py`.
+- **Oracle:** `OracleTable`, `build_leave_one_out_oracle`, `build_loo_from_rows`, `load_oracle_table`; config `conf/oracle/type_level_manual.yaml`.
+- **Notebook:** `scripts/gen_analysis_notebook.py` generates `notebooks/analysis_template.ipynb` (6 sections; idempotent).
 
 ### Experiment Runner & Config (`experiment/`) — M12 partial (config-schema done)
 - **GridCfg (M12):** `sweep: dict[str, list[scalar]]` (dotpath-validated) + `parallelism: int` + `seeds: list[int]` + `fail_fast: bool`.
