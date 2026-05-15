@@ -81,9 +81,9 @@
   - Files: `src/atm/analysis/plots.py`, `src/atm/analysis/oracle.py`, `src/atm/analysis/__init__.py`, `tests/unit/analysis/test_plots.py`, `tests/unit/analysis/test_oracle_plot.py` (new), `tests/unit/analysis/test_oracle_no_matplotlib_import.py` (new)
   - Acceptance: `test_oracle_module_does_not_import_matplotlib` зелёный; `plot_cognitive_load_boxplot` — Figure с 2 Axes; NaN-строки фильтруются без ошибок
 
-## Wave 9 — Notebook generator (Step 10) NOT STARTED
+## Wave 9 — Notebook generator (Step 10) COMPLETE
 
-- [ ] 10.1 Написать `scripts/gen_analysis_notebook.py` + сгенерировать и скоммитить `notebooks/analysis_template.ipynb` + тесты
+- [x] 10.1 Написать `scripts/gen_analysis_notebook.py` + сгенерировать и скоммитить `notebooks/analysis_template.ipynb` + тесты
   - Type: tdd
   - Depends On: 9.1
   - Can-Parallel-With: —
@@ -99,9 +99,9 @@
   - File: `src/atm/analysis/__init__.py`
   - Acceptance: `uv run ruff check src/atm/analysis tests/unit/analysis` exit 0; `uv run mypy src/atm/analysis` exit 0; `uv run pytest tests/unit/analysis -v` exit 0; `uv run pytest -q` (весь suite) exit 0
 
-## Wave 10 — Codebase-map update (Step 12) NOT STARTED  ← параллельно с Wave 10 Lint
+## Wave 10 — Codebase-map update (Step 12) COMPLETE  ← параллельно с Wave 10 Lint
 
-- [ ] 12.1 Обновить `dev/codebase-map.md`: M13 analysis surface + исправить колонки Run
+- [x] 12.1 Обновить `dev/codebase-map.md`: M13 analysis surface + исправить колонки Run
   - Type: simple
   - Depends On: 10.1
   - Can-Parallel-With: Step 11 (disjoint file)
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 9 / 12
+- Done: 11 / 12
 
 ## How to Update
 
