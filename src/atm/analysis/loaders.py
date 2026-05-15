@@ -166,8 +166,9 @@ def load_llm_calls(
             f"under {parquet_dir!r} (pattern: {pattern!r})"
         )
 
-    table = pq.read_table(matches[0])
-    return table.to_pandas()
+    table = pq.read_table(matches[0])  # type: ignore[no-untyped-call]
+    result: pd.DataFrame = table.to_pandas()
+    return result
 
 
 def load_llm_calls_for_experiment(
@@ -205,8 +206,8 @@ def load_llm_calls_for_experiment(
     for parquet_file in parquet_files:
         # The run_id is the name of the parent directory (the run UUID)
         run_id_from_path = parquet_file.parent.name
-        table = pq.read_table(parquet_file)
-        df = table.to_pandas()
+        table = pq.read_table(parquet_file)  # type: ignore[no-untyped-call]
+        df: pd.DataFrame = table.to_pandas()
         # Ensure run_id column is present and reflects the directory-derived run_id
         df["run_id"] = run_id_from_path
         frames.append(df)
@@ -259,15 +260,19 @@ async def load_topology_transitions(
 
         frames: list[pd.DataFrame] = []
         for pq_file in parquet_files:
-            table = pq.read_table(pq_file)
-            df = table.to_pandas()
+            table = pq.read_table(pq_file)  # type: ignore[no-untyped-call]
+            df: pd.DataFrame = table.to_pandas()
             # Decode JSON-string columns into native Python types
             df["signals_snapshot"] = df["signals_snapshot_json"].apply(json.loads)
             df["considered_alternatives"] = df["considered_alternatives_json"].apply(json.loads)
             df["guards_applied"] = df["guards_applied_json"].apply(json.loads)
             # Drop the raw _json columns
             df = df.drop(
-                columns=["signals_snapshot_json", "considered_alternatives_json", "guards_applied_json"]
+                columns=[
+                    "signals_snapshot_json",
+                    "considered_alternatives_json",
+                    "guards_applied_json",
+                ]
             )
             frames.append(df)
 
@@ -347,19 +352,15 @@ async def load_phases(
         import pyarrow.parquet as pq
 
         exp_runs_dir = parquet_dir / "experiments" / exp_id / "runs"
-        parquet_files = (
-            list(exp_runs_dir.glob("*/phases.parquet"))
-            if exp_runs_dir.exists()
-            else []
-        )
+        parquet_files = list(exp_runs_dir.glob("*/phases.parquet")) if exp_runs_dir.exists() else []
 
         if not parquet_files:
             return pd.DataFrame()
 
         frames: list[pd.DataFrame] = []
         for pq_file in parquet_files:
-            table = pq.read_table(pq_file)
-            df = table.to_pandas()
+            table = pq.read_table(pq_file)  # type: ignore[no-untyped-call]
+            df: pd.DataFrame = table.to_pandas()
             frames.append(df)
 
         return pd.concat(frames, ignore_index=True)
@@ -376,9 +377,7 @@ async def load_phases(
 
         async with session_factory() as session:
             result = await session.execute(
-                select(Phase)
-                .join(Run, Phase.run_id == Run.id)
-                .where(Run.exp_id == exp_uuid)
+                select(Phase).join(Run, Phase.run_id == Run.id).where(Run.exp_id == exp_uuid)
             )
             phases = list(result.scalars().all())
 

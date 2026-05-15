@@ -97,9 +97,7 @@ class TestComputeGuardOverrideRate:
         """No guard_override rows → 0.0."""
         from atm.analysis.metrics import compute_guard_override_rate
 
-        df = pd.DataFrame(
-            {"decided_by": ["initial", "rule", "llm_router", "oracle"]}
-        )
+        df = pd.DataFrame({"decided_by": ["initial", "rule", "llm_router", "oracle"]})
         assert compute_guard_override_rate(df) == 0.0
 
     def test_all_overrides(self) -> None:
@@ -118,9 +116,7 @@ class TestComputeGuardOverrideRate:
 class TestComputeRouterCostShare:
     """Tests for compute_router_cost_share."""
 
-    def test_basic_share(
-        self, transitions_basic: pd.DataFrame, runs_basic: pd.DataFrame
-    ) -> None:
+    def test_basic_share(self, transitions_basic: pd.DataFrame, runs_basic: pd.DataFrame) -> None:
         """router total = 0.035; run total = 0.45 → share ≈ 0.0778."""
         from atm.analysis.metrics import compute_router_cost_share
 
@@ -135,18 +131,14 @@ class TestComputeRouterCostShare:
         empty = pd.DataFrame(columns=["router_cost_usd"])
         assert compute_router_cost_share(empty, runs_basic) == 0.0
 
-    def test_empty_runs_returns_zero(
-        self, transitions_basic: pd.DataFrame
-    ) -> None:
+    def test_empty_runs_returns_zero(self, transitions_basic: pd.DataFrame) -> None:
         """Empty runs_df → 0.0 (denominator is zero)."""
         from atm.analysis.metrics import compute_router_cost_share
 
         empty = pd.DataFrame(columns=["budget_spent_usd"])
         assert compute_router_cost_share(transitions_basic, empty) == 0.0
 
-    def test_zero_run_cost_returns_zero(
-        self, transitions_basic: pd.DataFrame
-    ) -> None:
+    def test_zero_run_cost_returns_zero(self, transitions_basic: pd.DataFrame) -> None:
         """All run costs zero → 0.0 (avoid division by zero)."""
         from atm.analysis.metrics import compute_router_cost_share
 
@@ -208,9 +200,7 @@ class TestComputeTimePerTopology:
             {
                 "run_id": ["r1", "r2"],
                 "to_topology": ["linear", "mesh"],
-                "at": pd.to_datetime(
-                    ["2024-01-01 10:00:00+00:00", "2024-01-01 11:00:00+00:00"]
-                ),
+                "at": pd.to_datetime(["2024-01-01 10:00:00+00:00", "2024-01-01 11:00:00+00:00"]),
             }
         )
         assert compute_time_per_topology(df) == {}
@@ -258,17 +248,13 @@ class TestComputeOracleGapLoo:
         """task HumanEval/0: oracle=mesh (quality=0.80), router_mean=(0.60+0.80)/2=0.70 → gap=0.10."""
         from atm.analysis.metrics import compute_oracle_gap_loo
 
-        oracle = self._make_oracle(
-            {"HumanEval/0": "mesh", "HumanEval/1": "mesh"}
-        )
+        oracle = self._make_oracle({"HumanEval/0": "mesh", "HumanEval/1": "mesh"})
         gaps = compute_oracle_gap_loo(runs_basic, oracle)
 
         assert "HumanEval/0" in gaps.index
         assert math.isclose(gaps["HumanEval/0"], 0.80 - 0.70, rel_tol=1e-9)
 
-    def test_oracle_topology_not_in_runs_gives_nan(
-        self, runs_basic: pd.DataFrame
-    ) -> None:
+    def test_oracle_topology_not_in_runs_gives_nan(self, runs_basic: pd.DataFrame) -> None:
         """Oracle says 'debate' but no debate runs → NaN."""
         from atm.analysis.metrics import compute_oracle_gap_loo
 
@@ -309,8 +295,8 @@ class TestComputeOracleGapLoo:
         )
         oracle = self._make_oracle(
             {
-                "HumanEval/0": "mesh",   # oracle_quality = 0.90
-                "HumanEval/1": "linear", # oracle_quality = 0.70
+                "HumanEval/0": "mesh",  # oracle_quality = 0.90
+                "HumanEval/1": "linear",  # oracle_quality = 0.70
             }
         )
         gaps = compute_oracle_gap_loo(runs, oracle)
@@ -341,9 +327,7 @@ class TestComputeOracleGapManual:
         """Manual oracle per task_id works identically to LOO variant."""
         from atm.analysis.metrics import compute_oracle_gap_manual
 
-        oracle = self._make_oracle(
-            {"HumanEval/0": "mesh", "HumanEval/1": "mesh"}
-        )
+        oracle = self._make_oracle({"HumanEval/0": "mesh", "HumanEval/1": "mesh"})
         gaps = compute_oracle_gap_manual(runs_basic, oracle)
 
         assert "HumanEval/0" in gaps.index
@@ -362,9 +346,7 @@ class TestComputeOracleGapManual:
             }
         )
         # by_task_id is empty, but by_task_type has programming → mesh
-        oracle = self._make_oracle(
-            by_task_id={}, by_task_type={"programming": "mesh"}
-        )
+        oracle = self._make_oracle(by_task_id={}, by_task_type={"programming": "mesh"})
         gaps = compute_oracle_gap_manual(runs, oracle)
 
         # oracle_quality = 0.80 (mesh), router_mean = 0.70 → gap = 0.10
