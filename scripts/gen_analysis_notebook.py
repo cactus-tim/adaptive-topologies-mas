@@ -35,12 +35,12 @@ _OUTPUT_PATH = _REPO_ROOT / "notebooks" / "analysis_template.ipynb"
 
 def _md(text: str) -> nbformat.NotebookNode:
     """Create a markdown cell."""
-    return nbv4.new_markdown_cell(text.strip())
+    return nbv4.new_markdown_cell(text.strip())  # type: ignore[no-untyped-call,no-any-return]
 
 
 def _code(text: str) -> nbformat.NotebookNode:
     """Create a code cell with stripped source."""
-    return nbv4.new_code_cell(text.strip())
+    return nbv4.new_code_cell(text.strip())  # type: ignore[no-untyped-call,no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +292,7 @@ def generate_notebook() -> nbformat.NotebookNode:
     cells.extend(_rq3_cells())
     cells.extend(_rq4_cells())
 
-    nb = nbv4.new_notebook(cells=cells)
+    nb = nbv4.new_notebook(cells=cells)  # type: ignore[no-untyped-call]
 
     # Set kernel metadata so nbformat.validate() is satisfied
     nb.metadata["kernelspec"] = {
@@ -305,7 +305,7 @@ def generate_notebook() -> nbformat.NotebookNode:
         "version": "3.11.0",
     }
 
-    return nb
+    return nb  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +316,7 @@ def generate_notebook() -> nbformat.NotebookNode:
 def _write_notebook(nb: nbformat.NotebookNode, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
-        nbformat.write(nb, fh)
+        nbformat.write(nb, fh)  # type: ignore[no-untyped-call]
 
 
 def _cell_sources(nb: nbformat.NotebookNode) -> list[str]:
@@ -324,9 +324,7 @@ def _cell_sources(nb: nbformat.NotebookNode) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Generate notebooks/analysis_template.ipynb"
-    )
+    parser = argparse.ArgumentParser(description="Generate notebooks/analysis_template.ipynb")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -351,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        committed_nb = nbformat.read(str(committed_path), as_version=4)
+        committed_nb = nbformat.read(str(committed_path), as_version=4)  # type: ignore[no-untyped-call]
         if _cell_sources(nb) != _cell_sources(committed_nb):
             print(
                 "ERROR: committed notebook differs from generator output.\n"
