@@ -81,9 +81,9 @@
   - Files: `src/atm/analysis/plots.py`, `src/atm/analysis/oracle.py`, `src/atm/analysis/__init__.py`, `tests/unit/analysis/test_plots.py`, `tests/unit/analysis/test_oracle_plot.py` (new), `tests/unit/analysis/test_oracle_no_matplotlib_import.py` (new)
   - Acceptance: `test_oracle_module_does_not_import_matplotlib` зелёный; `plot_cognitive_load_boxplot` — Figure с 2 Axes; NaN-строки фильтруются без ошибок
 
-## Wave 9 — Notebook generator (Step 10) NOT STARTED
+## Wave 9 — Notebook generator (Step 10) COMPLETE
 
-- [ ] 10.1 Написать `scripts/gen_analysis_notebook.py` + сгенерировать и скоммитить `notebooks/analysis_template.ipynb` + тесты
+- [x] 10.1 Написать `scripts/gen_analysis_notebook.py` + сгенерировать и скоммитить `notebooks/analysis_template.ipynb` + тесты
   - Type: tdd
   - Depends On: 9.1
   - Can-Parallel-With: —
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 9 / 12
+- Done: 10 / 12
 
 ## How to Update
 
