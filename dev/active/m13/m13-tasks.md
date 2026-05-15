@@ -54,9 +54,9 @@
   - Files: `src/atm/analysis/metrics.py`, `tests/unit/analysis/test_metrics.py` (new)
   - Acceptance: `pytest tests/unit/analysis/test_metrics.py -v` зелёный; divergent-fixture тест для `compute_oracle_gap_loo` проходит (per-task_id != per-task_type); docstring `compute_time_per_topology` явно описывает non-contiguous суммирование
 
-## Wave 6 — RQ1 Plots (Step 7) NOT STARTED  ← параллельно с Wave 6 Metrics
+## Wave 6 — RQ1 Plots (Step 7) COMPLETE  ← параллельно с Wave 6 Metrics
 
-- [ ] 7.1 Реализовать `plot_pareto`, `plot_topology_task_heatmap`, `plot_phase_timeline` + smoke-тесты
+- [x] 7.1 Реализовать `plot_pareto`, `plot_topology_task_heatmap`, `plot_phase_timeline` + smoke-тесты
   - Type: tdd
   - Depends On: 2.1
   - Can-Parallel-With: Step 6 (disjoint files)
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 6 / 12
+- Done: 7 / 12
 
 ## How to Update
 
