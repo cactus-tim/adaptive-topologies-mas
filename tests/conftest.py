@@ -46,6 +46,8 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
 
     dsn = os.environ.get("ATM_PG_DSN", _DEFAULT_PG_DSN)
 
+    import asyncio as _asyncio
+
     from sqlalchemy import text
 
     from atm.storage.models import Base
@@ -61,8 +63,6 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
     #   1. Terminate ALL other backends on this DB so no concurrent DDL/DML
     #      can race the schema reset.
     #   2. DROP SCHEMA public CASCADE + CREATE SCHEMA public.
-    import asyncio as _asyncio
-
     reset_engine = create_engine(dsn, echo=False, pool_size=1, max_overflow=0)
     async with reset_engine.begin() as conn:
         # 1) Send SIGTERM to all other backends on this DB.
