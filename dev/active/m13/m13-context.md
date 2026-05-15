@@ -12,8 +12,11 @@
 - Step 7.1: Implemented `plot_pareto` (quality vs cost scatter with numpy bootstrap 95% CI error bars, adaptive highlighted with star marker), `plot_topology_task_heatmap` (seaborn heatmap with lazy import), `plot_phase_timeline` (broken_barh Gantt chart per run_id) in `src/atm/analysis/plots.py`. Created `tests/unit/analysis/test_plots.py` with 28 smoke tests (figure returns, Axes counts, labels, edge cases for empty/missing columns). `matplotlib.use("Agg")` is first call. autouse fixture closes all figures after each test. All 28 pass; ruff clean.
 - Step 8.1: Implemented 5 RQ2/G11 plot functions in `src/atm/analysis/plots.py`: `plot_transition_timeline_quality` (step plot + twinx quality overlay per run), `plot_guard_override_rate` (horizontal barh, override rate per to_topology), `plot_router_cost_share` (stacked bar router vs worker cost per run), `plot_time_per_topology` (mean duration barh per topology; fallback to count when no duration column), `plot_oracle_gap_loo` (histogram + axvline at 0; accepts Series or DataFrame). Added 41 RQ2/G11 smoke tests to `test_plots.py` (7-8 per function + 5 exports checks); all 69 tests pass; ruff clean.
 
+### COMPLETED
+- Step 9.1: Implemented `plot_cognitive_load_boxplot(runs_df, human_interactions_df, *, role=None)` in plots.py (2-panel figure: raw_tlx_score boxplot + cognitive_load_proxy boxplot using pure matplotlib ax.boxplot to avoid seaborn PendingDeprecationWarning). Implemented `plot_oracle_vs_router(runs_df, oracle_table, *, router_col="topology")` in oracle.py with `from __future__ import annotations` + `TYPE_CHECKING` guard (matplotlib imported lazily inside function body only). Added `plot_oracle_vs_router` to `__init__.py` exports. Created `test_oracle_plot.py` (12 tests) and `test_oracle_no_matplotlib_import.py` (4 tests using subprocess isolation). Added 11 cognitive load tests to `test_plots.py`. 154 passed, 18 skipped (PG-gated).
+
 ### IN PROGRESS
-- Step 9.1: Implement `plot_cognitive_load_boxplot` (plots.py) + `plot_oracle_vs_router` (oracle.py) + TYPE_CHECKING + import-bloat regression test
+- Step 10.1: Notebook generator (next step)
 
 ### BLOCKERS
 - None

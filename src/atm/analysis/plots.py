@@ -646,21 +646,103 @@ def plot_oracle_gap_loo(
 
 
 def plot_cognitive_load_boxplot(
+    runs_df: pd.DataFrame,
     human_interactions_df: pd.DataFrame,
     *,
+    role: str | None = None,
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
     """Plot cognitive load (TLX proxy) boxplot per topology.
 
+    Produces a two-panel figure:
+    - Left Axes: boxplot of ``raw_tlx_score`` from ``human_interactions_df``
+      grouped by topology.
+    - Right Axes: boxplot of ``cognitive_load_proxy`` from ``runs_df``
+      grouped by topology.
+
     Args:
+        runs_df:               DataFrame with run-level records including
+                               ``topology`` and ``cognitive_load_proxy`` columns.
         human_interactions_df: DataFrame with human interaction records including
                                ``raw_tlx_score`` and ``topology`` columns.
+        role:                  If given, filter ``human_interactions_df`` to rows
+                               where ``role == role`` before plotting.  ``None``
+                               means all rows are included.
         figsize:               Figure (width, height) in inches.
 
     Returns:
-        matplotlib Figure with two Axes (boxplot + swarm overlay).
-
-    Raises:
-        NotImplementedError: This function is implemented in Step 9.
+        matplotlib Figure with two Axes (TLX boxplot | cognitive_load_proxy boxplot).
     """
-    raise NotImplementedError("plot_cognitive_load_boxplot: implemented in Step 9")
+    fig, (ax_tlx, ax_proxy) = plt.subplots(1, 2, figsize=figsize)
+
+    # ------------------------------------------------------------------
+    # Helper: draw a boxplot on a given axes using pure matplotlib
+    # ------------------------------------------------------------------
+    def _draw_boxplot(
+        ax: plt.Axes,
+        df: pd.DataFrame,
+        group_col: str,
+        value_col: str,
+        title: str,
+        ylabel: str,
+    ) -> None:
+        groups = sorted(df[group_col].dropna().unique())
+        data = [
+            df.loc[df[group_col] == g, value_col].dropna().to_numpy(dtype=float)
+            for g in groups
+        ]
+        # Filter out empty groups
+        valid = [(g, d) for g, d in zip(groups, data) if len(d) > 0]
+        if not valid:
+            ax.set_title(f"{title} (no data)")
+            ax.set_xlabel(group_col)
+            ax.set_ylabel(ylabel)
+            return
+
+        valid_groups, valid_data = zip(*valid)
+        ax.boxplot(valid_data, tick_labels=list(valid_groups), patch_artist=True)
+        ax.set_title(title)
+        ax.set_xlabel(group_col)
+        ax.set_ylabel(ylabel)
+        plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+
+    # ------------------------------------------------------------------
+    # Left Axes: raw_tlx_score from human_interactions_df
+    # ------------------------------------------------------------------
+    hi_df = human_interactions_df.copy()
+
+    # Apply role filter if requested
+    if role is not None and "role" in hi_df.columns:
+        hi_df = hi_df[hi_df["role"] == role]
+
+    if (
+        hi_df.empty
+        or "raw_tlx_score" not in hi_df.columns
+        or "topology" not in hi_df.columns
+    ):
+        ax_tlx.set_title("Raw TLX Score per Topology (no data)")
+        ax_tlx.set_xlabel("Topology")
+        ax_tlx.set_ylabel("Raw TLX Score")
+    else:
+        tlx_plot_df = hi_df[["topology", "raw_tlx_score"]].dropna()
+        _draw_boxplot(ax_tlx, tlx_plot_df, "topology", "raw_tlx_score",
+                      "Raw TLX Score per Topology", "Raw TLX Score")
+
+    # ------------------------------------------------------------------
+    # Right Axes: cognitive_load_proxy from runs_df
+    # ------------------------------------------------------------------
+    if (
+        runs_df.empty
+        or "cognitive_load_proxy" not in runs_df.columns
+        or "topology" not in runs_df.columns
+    ):
+        ax_proxy.set_title("Cognitive Load Proxy per Topology (no data)")
+        ax_proxy.set_xlabel("Topology")
+        ax_proxy.set_ylabel("Cognitive Load Proxy")
+    else:
+        proxy_plot_df = runs_df[["topology", "cognitive_load_proxy"]].dropna()
+        _draw_boxplot(ax_proxy, proxy_plot_df, "topology", "cognitive_load_proxy",
+                      "Cognitive Load Proxy per Topology", "Cognitive Load Proxy")
+
+    fig.tight_layout()
+    return fig
