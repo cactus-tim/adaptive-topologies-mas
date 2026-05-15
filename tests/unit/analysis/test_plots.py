@@ -57,7 +57,11 @@ def runs_df() -> pd.DataFrame:
 
 @pytest.fixture
 def phases_df() -> pd.DataFrame:
-    """Minimal phases DataFrame for plot_phase_timeline."""
+    """Minimal phases DataFrame for plot_phase_timeline.
+
+    Uses ``phase_name`` column to match ``load_phases`` loader output and
+    the updated default ``phase_col="phase_name"`` in ``plot_phase_timeline``.
+    """
     t0 = datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
     rows = []
     for run_id, run_offset in [("run-A", 0), ("run-B", 3600)]:
@@ -67,7 +71,7 @@ def phases_df() -> pd.DataFrame:
             rows.append(
                 {
                     "run_id": run_id,
-                    "phase": phase,
+                    "phase_name": phase,
                     "started_at": start,
                     "ended_at": end,
                 }

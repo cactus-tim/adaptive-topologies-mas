@@ -220,7 +220,7 @@ def plot_phase_timeline(
     phases_df: pd.DataFrame,
     *,
     run_id: str,
-    phase_col: str = "phase",
+    phase_col: str = "phase_name",
     started_col: str = "started_at",
     ended_col: str = "ended_at",
     figsize: tuple[float, float] = (10, 4),
@@ -230,7 +230,8 @@ def plot_phase_timeline(
     Args:
         phases_df:   DataFrame with phase records including timing columns.
         run_id:      Filter to this run_id value (must be present in ``run_id`` column).
-        phase_col:   Column for phase name. Default: "phase".
+        phase_col:   Column for phase name. Default: "phase_name" (matches
+                     ``load_phases`` output column name).
         started_col: Column for phase start timestamp. Default: "started_at".
         ended_col:   Column for phase end timestamp. Default: "ended_at".
         figsize:     Figure (width, height) in inches.
