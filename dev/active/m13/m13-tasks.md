@@ -63,9 +63,9 @@
   - Files: `src/atm/analysis/plots.py`, `tests/unit/analysis/test_plots.py` (new)
   - Acceptance: `pytest tests/unit/analysis/test_plots.py::test_plot_pareto -v` зелёный; `isinstance(fig, plt.Figure)` и `len(fig.axes) >= 1`; `plt.close(fig)` в teardown; нет предупреждений
 
-## Wave 7 — RQ2 Plots (Step 8) NOT STARTED
+## Wave 7 — RQ2 Plots (Step 8) COMPLETE
 
-- [ ] 8.1 Реализовать `plot_transition_timeline_quality`, `plot_guard_override_rate`, `plot_router_cost_share`, `plot_time_per_topology`, `plot_oracle_gap_loo` + тесты
+- [x] 8.1 Реализовать `plot_transition_timeline_quality`, `plot_guard_override_rate`, `plot_router_cost_share`, `plot_time_per_topology`, `plot_oracle_gap_loo` + тесты
   - Type: tdd
   - Depends On: 7.1
   - Can-Parallel-With: —
@@ -113,7 +113,7 @@
 ## Stats
 
 - Total: 12 tasks (Steps 1–12, один task per step) · ~10h
-- Done: 7 / 12
+- Done: 8 / 12
 
 ## How to Update
 
