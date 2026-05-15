@@ -72,7 +72,7 @@ _WALL_TIME_PARALLEL_MAX_S = 30.0
 # ---------------------------------------------------------------------------
 
 
-def _write_grid_yaml(tmp_path: Path, *, pg_dsn: str, parquet_dir: str) -> Path:
+def _write_grid_yaml(tmp_path: Path, *, pg_dsn: str, parquet_dir: str) -> tuple[Path, str]:
     """Write a 2-topology x 2-seed = 4-cell grid YAML into *tmp_path*.
 
     All LLM fixtures are resolved to absolute paths so the subprocess (which
@@ -135,7 +135,7 @@ def _write_grid_yaml(tmp_path: Path, *, pg_dsn: str, parquet_dir: str) -> Path:
 
     config_path = tmp_path / "m12_grid_parallel_config.yaml"
     config_path.write_text(yaml_content)
-    return config_path
+    return config_path, unique_name
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ async def test_grid_parallel_all_cells_complete(
     parquet_dir = tmp_path / "parquet"
     parquet_dir.mkdir(parents=True, exist_ok=True)
 
-    config_path = _write_grid_yaml(
+    config_path, experiment_name = _write_grid_yaml(
         tmp_path,
         pg_dsn=ephemeral_pg_dsn,
         parquet_dir=str(parquet_dir),
@@ -217,13 +217,19 @@ async def test_grid_parallel_all_cells_complete(
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine.connect() as conn:
-            # Retrieve the experiment id from the runs table.
+            # Look up THIS test's experiment by its unique name — robust against
+            # cross-test state pollution that can leave rows from earlier tests
+            # in the same ephemeral DB.
             exp_id_row = (
-                await conn.execute(sa.text("SELECT DISTINCT exp_id FROM runs"))
+                await conn.execute(
+                    sa.text("SELECT id FROM experiments WHERE name = :name").bindparams(
+                        name=experiment_name
+                    )
+                )
             ).fetchone()
 
             assert exp_id_row is not None, (
-                "No rows found in ``runs`` after ``atm grid`` completed.\n"
+                f"No experiment row found for name={experiment_name!r}.\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
