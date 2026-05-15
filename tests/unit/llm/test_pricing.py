@@ -52,10 +52,12 @@ def test_from_yaml_has_expected_model_keys(pricing: Pricing) -> None:
     expected_keys = {
         "openai:gpt-4o",
         "openai:gpt-4o-mini",
+        "openai:gpt-4.1-mini",
         "anthropic:claude-3-5-sonnet-latest",
         "anthropic:claude-3-5-haiku-latest",
         "cerebras:llama3.1-8b",
         "cerebras:gpt-oss-120b",
+        "cerebras:zai-glm-4.7",
         "fake:deterministic",
         "fake:scripted",
         "fake:echo",
