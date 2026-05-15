@@ -17,6 +17,8 @@
 
 - Step 11.1: Normalized `__all__` in `__init__.py` (28 symbols, alphabetically sorted). Fixed lint/type issues: RUF022 (sorted __all__), UP037 (remove quotes from return type in oracle.py), B905 (zip strict= in plots.py), plt.Axes→matplotlib.axes.Axes, aggfunc type ignore, int(Hashable) cast, unstack fill_value int, pyarrow no-untyped-call type ignores. Added pandas-stubs to dev deps. Added per-file-ignores for test_oracle_no_matplotlib_import.py. ruff check/format: clean; mypy: clean; pytest: 159 passed, 18 skipped (PG-gated); full suite: 1759 passed.
 
+- Lint run (m13 surface): auto-fixed `scripts/gen_analysis_notebook.py` ruff format + 8 mypy `no-untyped-call`/`no-any-return` errors from untyped nbformat API (added `# type: ignore` annotations). All clean: ruff check, ruff format, mypy 0 errors on 6 source files.
+
 ### IN PROGRESS
 - Step 12.1: Codebase-map update (running in parallel)
 
