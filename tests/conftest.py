@@ -61,8 +61,11 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
     #   1. Terminate ALL other backends on this DB so no concurrent DDL/DML
     #      can race the schema reset.
     #   2. DROP SCHEMA public CASCADE + CREATE SCHEMA public.
+    import asyncio as _asyncio
+
     reset_engine = create_engine(dsn, echo=False, pool_size=1, max_overflow=0)
     async with reset_engine.begin() as conn:
+        # 1) Send SIGTERM to all other backends on this DB.
         await conn.execute(
             text(
                 "SELECT pg_terminate_backend(pid) "
@@ -71,6 +74,25 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
                 "  AND pid <> pg_backend_pid()"
             )
         )
+
+    # 2) Poll until they're actually gone (terminate is async on PG side).
+    for _ in range(50):  # up to ~5 s
+        async with reset_engine.connect() as conn:
+            remaining = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE datname = current_database() "
+                        "  AND pid <> pg_backend_pid()"
+                    )
+                )
+            ).scalar()
+        if remaining == 0:
+            break
+        await _asyncio.sleep(0.1)
+
+    # 3) Now we are the only connection — schema reset is race-free.
+    async with reset_engine.begin() as conn:
         await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         await conn.execute(text("CREATE SCHEMA public"))
     await reset_engine.dispose()
