@@ -1,22 +1,40 @@
 # ATM LLM Pricing Table
-# Source: OpenAI https://openai.com/api/pricing/ and Anthropic https://www.anthropic.com/pricing
-# Check-date: 2026-04; mark uncertain values with # VERIFY
+# Source: OpenAI https://openai.com/api/pricing/, Anthropic https://www.anthropic.com/pricing,
+# Cerebras https://www.cerebras.ai/pricing + https://inference-docs.cerebras.ai/models/overview
+# Check-date: 2026-05; mark uncertain values with # VERIFY
+#
+# Active experimental lineup (Variant B'.1, decided 2026-05-15):
+#   - workers / critic / summarizer / router / HITL-sim → cerebras:gpt-oss-120b
+#   - judge (LLM-as-judge, evaluation) → openai:gpt-4.1-mini (cross-family independence)
+#   - confirmation primary (cross-family on Cerebras) → cerebras:zai-glm-4.7
+#   - confirmation cross-family → openai:gpt-4o
 version: 1
 
 models:
   openai:gpt-4o:
-    # GPT-4o — standard token pricing
-    # Source: OpenAI pricing page (2026-04)
+    # GPT-4o — used ONLY for cross-family confirmation runs (~1800 runs in E1–E4 follow-up).
+    # Source: OpenAI pricing page (2026-05)
     input_per_1k: 0.0025
     output_per_1k: 0.010
     cached_input_per_1k: 0.00125  # 50 % discount for cached prompt tokens
 
   openai:gpt-4o-mini:
-    # GPT-4o mini — lower cost tier
+    # GPT-4o mini — retained for back-compat with existing tests and as fallback.
+    # NOT used in active experimental lineup (superseded by gpt-4.1-mini for judge,
+    # cerebras:gpt-oss-120b for compute roles).
     # Source: OpenAI pricing page (2026-04)
     input_per_1k: 0.00015
     output_per_1k: 0.00060
-    cached_input_per_1k: 0.000075  # 50 % discount for cached prompt tokens
+    cached_input_per_1k: 0.000075
+
+  openai:gpt-4.1-mini:
+    # GPT-4.1 mini — primary LLM-as-judge model (self-consistency × 3).
+    # Used because it sits in a different model family from compute-side
+    # (Cerebras gpt-oss) — independent evaluator argument for the defense.
+    # Source: OpenAI pricing page (2026-05) — $0.40 in / $1.60 out per 1M
+    input_per_1k: 0.00040
+    output_per_1k: 0.00160
+    cached_input_per_1k: 0.00010   # 75% cache discount per OpenAI pricing
 
   anthropic:claude-3-5-sonnet-latest:
     # Claude 3.5 Sonnet — standard token pricing
@@ -34,21 +52,36 @@ models:
     cache_read_per_1k: 0.000080   # Prompt Cache read
     cache_write_per_1k: 0.0010    # Prompt Cache write
 
-  # DEPRECATION 2026-05-27 — llama3.1-8b is scheduled for removal on Cerebras platform
+  # REMOVED 2026-05-27 — llama3.1-8b is being deprecated from Cerebras Cloud.
+  # Entry retained for back-compat with existing tests + provider docs only;
+  # MUST NOT appear in any conf/experiments/*.yaml after 2026-05-27.
   cerebras:llama3.1-8b:
-    # Cerebras llama3.1-8b — 8B tier (upcoming deprecation 2026-05-27)
-    # Source: Cerebras Cloud pricing (2026-04) — VERIFY before merge
-    input_per_1k: 0.0001  # VERIFY
-    output_per_1k: 0.0001  # VERIFY
+    # Cerebras llama3.1-8b — 8B tier (DEPRECATED, do not use in new experiments)
+    # Source: Cerebras Cloud pricing (2026-04)
+    input_per_1k: 0.0001
+    output_per_1k: 0.0001
     cached_input_per_1k: 0.0
     cache_read_per_1k: 0.0
     cache_write_per_1k: 0.0
 
   cerebras:gpt-oss-120b:
-    # Cerebras gpt-oss-120b — 120B tier (active, replaces both 70B models)
-    # Source: Cerebras Cloud pricing (2026-04) — VERIFY before merge
-    input_per_1k: 0.00085  # VERIFY
-    output_per_1k: 0.00120  # VERIFY
+    # Cerebras gpt-oss-120b — primary compute model (all worker roles + critic + summarizer + router + HITL-sim).
+    # OpenAI's open-weight 120B MoE, ~3000 tok/s on Cerebras WSE (measured ~2241 t/s, AI Analysis).
+    # Source: Cerebras pricing (2026-05) — $0.35 in / $0.75 out per 1M (Sim.ai card, conservative;
+    # Cerebras blog announced $0.25/$0.69 as launch price — use $0.35/$0.75 until verified on dashboard).
+    input_per_1k: 0.00035
+    output_per_1k: 0.00075
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0
+
+  cerebras:zai-glm-4.7:
+    # Cerebras Z.ai GLM 4.7 — 355B preview model, ~1000 tok/s.
+    # Used for cross-family confirmation runs on Cerebras (different model family from gpt-oss).
+    # Status: PREVIEW (Cerebras catalog) — pricing not yet published publicly.
+    # Source: https://inference-docs.cerebras.ai/models/overview
+    input_per_1k: 0.0006  # VERIFY — preview-tier estimate; sync with Cerebras dashboard before E4 confirmation
+    output_per_1k: 0.0022  # VERIFY
     cached_input_per_1k: 0.0
     cache_read_per_1k: 0.0
     cache_write_per_1k: 0.0
