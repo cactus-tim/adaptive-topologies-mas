@@ -134,7 +134,7 @@ async def _fk_confdeltype(pg_dsn: str, constraint_name: str) -> str | None:
                 {"cname": constraint_name},
             )
             row = result.fetchone()
-            return str(row[0]) if row is not None else None
+            return row[0].decode() if row is not None else None
     finally:
         await engine.dispose()
 
