@@ -68,7 +68,11 @@ from atm.storage.models import Base, Experiment, FinishReason, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 from atm.tasks import resolve_spec
-from atm.tasks.dabench import stage_workspace_for
+
+try:
+    from atm.tasks.dabench import stage_workspace_for
+except ImportError:  # pragma: no cover
+    stage_workspace_for = None  # type: ignore[assignment]
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
@@ -549,6 +553,8 @@ def _pre_stage_workspace(
         List of :class:`~pathlib.Path` objects for every file staged into
         *workspace_path*, or ``[]`` on any failure.
     """
+    if stage_workspace_for is None:  # pragma: no cover
+        return []
     try:
         _spec = spec if spec is not None else resolve_spec(cfg.task)
         if _spec is None:
@@ -1809,9 +1815,16 @@ async def _execute_existing_run(
         from atm.tools.defaults import build_default_registry
         from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
 
+        # Resolve spec once here so _pre_stage_workspace and _build_initial_state
+        # share a single resolve_spec call (mirrors run_one at lines 854-893).
+        try:
+            _resume_spec = resolve_spec(cfg.task)
+        except Exception:
+            _resume_spec = None
+
         tools_workspace = parquet_root / "workspace" / str(run_id)
         tools_workspace.mkdir(parents=True, exist_ok=True)
-        _pre_stage_workspace(cfg, run_id, tools_workspace)
+        _pre_stage_workspace(cfg, run_id, tools_workspace, spec=_resume_spec)
         tools_corpus = tools_workspace / "_corpus"
         tools_corpus.mkdir(exist_ok=True)
         try:
@@ -1838,7 +1851,7 @@ async def _execute_existing_run(
             budget_exceed_threshold=Decimal(str(cfg.budget.per_run_usd)),
         )
 
-        initial_state = _build_initial_state(cfg, run_id)
+        initial_state = _build_initial_state(cfg, run_id, spec=_resume_spec)
         topology_cfg = TopologyConfig(
             name=cfg.topology.name,
             max_iterations=cfg.topology.max_iterations,
