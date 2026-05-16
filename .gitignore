@@ -23,6 +23,7 @@ __pycache__/
 # Data / runtime directories
 data/
 !data/.gitkeep
+logs/
 
 # OS artefacts
 .DS_Store
