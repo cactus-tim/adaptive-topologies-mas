@@ -4,11 +4,18 @@ Three tests (acceptance criteria from plan step 3.1):
   1. _build_initial_state puts run_id into state["shared"]["run_id"]
   2. cfg.human=None (default) — topology.build receives human_cfg=None, no errors
   3. cfg.human=HumanCfg(enabled=True, ...) — topology.build receives the kwarg
+
+Four tests added for fix-dabench-task Step 3.1:
+  4. _build_initial_state augments task_input with DABench metadata
+  5. _build_initial_state leaves task_input unchanged when metadata is empty
+  6. _build_initial_state leaves task_input unchanged for irrelevant (non-DABench) metadata
+  7. _pre_stage_workspace delegates to stage_workspace_for with the right arguments
 """
 
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -24,7 +31,8 @@ from atm.experiment.config import (
     TaskCfg,
     TopologyCfg,
 )
-from atm.experiment.runner import _build_initial_state
+from atm.experiment.runner import _build_initial_state, _pre_stage_workspace
+from atm.core.types import TaskSpec
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -273,3 +281,153 @@ async def test_run_one_human_cfg_enabled_propagates_to_build() -> None:
     )
     assert received_human.enabled is True
     assert received_human.gateway == "llm_simulated"
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — DABench metadata is appended to task_input (fix-dabench-task 3.1)
+# ---------------------------------------------------------------------------
+
+
+def test_build_initial_state_augments_dabench_metadata() -> None:
+    """_build_initial_state must append [Task metadata] block for DABench specs."""
+    # Arrange
+    dabench_spec = TaskSpec(
+        id="dabench/example",
+        type="reasoning",
+        input="What is the mean fare?",
+        expected=None,
+        metadata={
+            "format": "@mean[1.0]",
+            "constraints": "Round to 2 decimals",
+            "file_name": "titanic.csv",
+        },
+        evaluator_key="dabench",
+    )
+    cfg = _make_cfg(task=TaskCfg(name="dabench", input=""))
+
+    with patch("atm.experiment.runner.resolve_spec", return_value=dabench_spec):
+        # Act
+        state = _build_initial_state(cfg, run_id=uuid.uuid4())
+
+    # Assert
+    task_input: str = state["shared"]["task_input"]
+    assert "[Task metadata]" in task_input, (
+        f"Expected '[Task metadata]' block in task_input; got: {task_input!r}"
+    )
+    assert "Dataset file: titanic.csv" in task_input, (
+        f"Expected 'Dataset file: titanic.csv' in task_input; got: {task_input!r}"
+    )
+    assert "Constraints: Round to 2 decimals" in task_input, (
+        f"Expected 'Constraints: Round to 2 decimals' in task_input; got: {task_input!r}"
+    )
+    assert "Answer format" in task_input, (
+        f"Expected 'Answer format' line in task_input; got: {task_input!r}"
+    )
+    assert "@mean[1.0]" in task_input, (
+        f"Expected '@mean[1.0]' in task_input; got: {task_input!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — Empty metadata leaves task_input unchanged (fix-dabench-task 3.1)
+# ---------------------------------------------------------------------------
+
+
+def test_build_initial_state_no_metadata_unchanged() -> None:
+    """_build_initial_state must NOT augment task_input when metadata is empty."""
+    # Arrange
+    plain_spec = TaskSpec(
+        id="dabench/example",
+        type="reasoning",
+        input="Solve fibonacci",
+        expected=None,
+        metadata={},
+        evaluator_key="dabench",
+    )
+    cfg = _make_cfg(task=TaskCfg(name="dabench", input=""))
+
+    with patch("atm.experiment.runner.resolve_spec", return_value=plain_spec):
+        # Act
+        state = _build_initial_state(cfg, run_id=uuid.uuid4())
+
+    # Assert
+    task_input: str = state["shared"]["task_input"]
+    assert task_input == "Solve fibonacci", (
+        f"Expected task_input to equal 'Solve fibonacci' exactly; got: {task_input!r}"
+    )
+    assert "[Task metadata]" not in task_input, (
+        f"Expected no '[Task metadata]' block when metadata is empty; got: {task_input!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — Irrelevant (non-DABench) metadata leaves task_input unchanged
+#           (fix-dabench-task 3.1)
+# ---------------------------------------------------------------------------
+
+
+def test_build_initial_state_irrelevant_metadata_unchanged() -> None:
+    """_build_initial_state must NOT augment task_input for non-DABench metadata."""
+    # Arrange — HumanEval-style spec: has metadata but no 'format' or 'file_name'
+    humaneval_spec = TaskSpec(
+        id="humaneval/HumanEval/0",
+        type="programming",
+        input="def fibonacci(n):",
+        expected=None,
+        metadata={"test": "assert fibonacci(10) == 55", "entry_point": "fibonacci"},
+        evaluator_key="humaneval",
+    )
+    cfg = _make_cfg(task=TaskCfg(name="humaneval", input=""))
+
+    with patch("atm.experiment.runner.resolve_spec", return_value=humaneval_spec):
+        # Act
+        state = _build_initial_state(cfg, run_id=uuid.uuid4())
+
+    # Assert
+    task_input: str = state["shared"]["task_input"]
+    assert "[Task metadata]" not in task_input, (
+        f"Expected no '[Task metadata]' block for HumanEval spec; got: {task_input!r}"
+    )
+    assert task_input == "def fibonacci(n):", (
+        f"Expected task_input identical to spec.input for HumanEval; got: {task_input!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — _pre_stage_workspace calls stage_workspace_for (fix-dabench-task 3.1)
+# ---------------------------------------------------------------------------
+
+
+def test_pre_stage_workspace_invoked_on_resume_path(tmp_path: Path) -> None:
+    """_pre_stage_workspace must delegate to stage_workspace_for with correct args."""
+    # Arrange
+    dabench_spec = TaskSpec(
+        id="dabench/titanic/0",
+        type="reasoning",
+        input="What is the mean fare?",
+        expected=None,
+        metadata={
+            "format": "@mean_fare[34.65]",
+            "constraints": "Round to 2 decimals",
+            "file_name": "titanic.csv",
+        },
+        evaluator_key="dabench",
+    )
+    cfg = _make_cfg(task=TaskCfg(name="dabench", input=""))
+    run_id = uuid.uuid4()
+    staged_file = Path("/tmp/titanic.csv")
+
+    mock_stage = Mock(return_value=[staged_file])
+
+    with (
+        patch("atm.experiment.runner.resolve_spec", return_value=dabench_spec),
+        patch("atm.experiment.runner.stage_workspace_for", mock_stage),
+    ):
+        # Act
+        result = _pre_stage_workspace(cfg, run_id, tmp_path)
+
+    # Assert — the mock was called exactly once with the resolved spec and workspace path
+    mock_stage.assert_called_once_with(dabench_spec, tmp_path)
+    assert result == [staged_file], (
+        f"Expected _pre_stage_workspace to return the staged file list; got: {result!r}"
+    )

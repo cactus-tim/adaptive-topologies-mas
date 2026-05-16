@@ -17,21 +17,28 @@ Tests (TDD — 11 tests):
     sub-assertion: float("YES") raises ValueError proving categorical path triggered;
     sub-case: "@n[1.0]" vs "@n[2.0]" → False (numeric mismatch, not categorical string equality).
 11. test_dabench_evaluator_vacuous       — expected="" (no pairs) → 1.0/True.
+
+Workspace staging tests (4 tests — step 3.2):
+12. test_stage_workspace_for_non_dabench_spec_returns_empty
+13. test_stage_workspace_for_downloads_and_caches
+14. test_stage_workspace_for_offline_returns_empty
+15. test_stage_workspace_for_network_error_returns_empty_and_logs
 """
 
 from __future__ import annotations
 
 import math
 import re
+import urllib.error
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 import atm.tasks._cache as _cache
 from atm.core.types import TaskSpec
-from atm.tasks.dabench import DABenchEvaluator, DABenchLoader
+from atm.tasks.dabench import DABenchEvaluator, DABenchLoader, stage_workspace_for
 
 # ---------------------------------------------------------------------------
 # Fixture helpers
@@ -399,4 +406,193 @@ async def test_dabench_evaluator_vacuous() -> None:
     )
     assert math.isclose(result.score, 1.0, abs_tol=1e-9), (
         f"Expected score=1.0 for vacuous case, got {result.score}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 12: stage_workspace_for — non-dabench spec returns empty list
+# ---------------------------------------------------------------------------
+
+
+def test_stage_workspace_for_non_dabench_spec_returns_empty(tmp_path: Path) -> None:
+    """A spec whose id does not start with 'dabench/' causes an immediate no-op.
+
+    stage_workspace_for must return [] without touching the filesystem or
+    performing any network activity when the spec is not a DABench task.
+    """
+    # Arrange
+    spec = TaskSpec(
+        id="humaneval/HumanEval/0",
+        type="programming",
+        input="Write a function that adds two numbers.",
+        expected="add(1, 2) == 3",
+        evaluator_key="humaneval",
+    )
+
+    # Act
+    result = stage_workspace_for(spec, workspace_path=tmp_path)
+
+    # Assert
+    assert result == [], (
+        f"Expected [] for non-dabench spec, got {result!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 13: stage_workspace_for — downloads, writes cache, serves cache on second call
+# ---------------------------------------------------------------------------
+
+
+def test_stage_workspace_for_downloads_and_caches(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First call downloads and caches; second call (fresh workspace) skips urlopen.
+
+    Verifies:
+    - Returned list contains exactly the path workspace / file_name.
+    - The file in the workspace has the correct byte content.
+    - The file is written to cache_dir so subsequent calls avoid re-downloading.
+    - urlopen call count does not increase on a cache-hit second call.
+    """
+    # Arrange — two separate directories so workspace != cache
+    tmp_workspace_1 = tmp_path_factory.mktemp("workspace1")
+    tmp_workspace_2 = tmp_path_factory.mktemp("workspace2")
+    tmp_cache = tmp_path_factory.mktemp("cache")
+
+    csv_bytes = b"col_a,col_b\n1,2\n"
+
+    mock_response = MagicMock()
+    mock_response.read.return_value = csv_bytes
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    mock_urlopen = MagicMock(return_value=mock_response)
+
+    spec = TaskSpec(
+        id="dabench/X",
+        type="decision",
+        input="Analyse the titanic dataset.",
+        expected="@survival_rate[0.38]",
+        evaluator_key="dabench_numeric_exact",
+        metadata={"file_name": "titanic.csv"},
+    )
+
+    # Ensure offline mode is not active
+    monkeypatch.delenv("ATM_DABENCH_OFFLINE", raising=False)
+
+    with patch("atm.tasks.dabench.urlopen", mock_urlopen):
+        # Act — first call: cache miss, should download
+        result_1 = stage_workspace_for(spec, workspace_path=tmp_workspace_1, cache_dir=tmp_cache)
+
+        # Assert first call
+        assert result_1 == [tmp_workspace_1 / "titanic.csv"], (
+            f"Expected [workspace/titanic.csv], got {result_1!r}"
+        )
+        assert (tmp_workspace_1 / "titanic.csv").read_bytes() == csv_bytes, (
+            "Staged file content does not match downloaded bytes"
+        )
+        assert (tmp_cache / "titanic.csv").exists(), (
+            "Downloaded CSV was not written to cache_dir"
+        )
+        urlopen_count_after_first = mock_urlopen.call_count
+        assert urlopen_count_after_first == 1, (
+            f"Expected exactly 1 urlopen call on first (cache miss) call, got {urlopen_count_after_first}"
+        )
+
+        # Act — second call: cache hit, should NOT call urlopen again
+        result_2 = stage_workspace_for(spec, workspace_path=tmp_workspace_2, cache_dir=tmp_cache)
+
+    # Assert second call
+    assert result_2 == [tmp_workspace_2 / "titanic.csv"], (
+        f"Expected [workspace2/titanic.csv] on cache-hit call, got {result_2!r}"
+    )
+    assert mock_urlopen.call_count == urlopen_count_after_first, (
+        "urlopen was called again on cache-hit second call — byte cache not respected"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 14: stage_workspace_for — offline mode returns empty without network attempt
+# ---------------------------------------------------------------------------
+
+
+def test_stage_workspace_for_offline_returns_empty(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ATM_DABENCH_OFFLINE=1 causes stage_workspace_for to return [] immediately.
+
+    No urlopen call must be made regardless of whether a cache file exists.
+    """
+    # Arrange
+    tmp_workspace = tmp_path_factory.mktemp("workspace")
+    tmp_cache = tmp_path_factory.mktemp("cache")
+
+    spec = TaskSpec(
+        id="dabench/offline_test",
+        type="decision",
+        input="Analyse the titanic dataset.",
+        expected="@mean[1.0]",
+        evaluator_key="dabench_numeric_exact",
+        metadata={"file_name": "titanic.csv"},
+    )
+
+    monkeypatch.setenv("ATM_DABENCH_OFFLINE", "1")
+
+    mock_urlopen = MagicMock()
+
+    with patch("atm.tasks.dabench.urlopen", mock_urlopen):
+        # Act
+        result = stage_workspace_for(spec, workspace_path=tmp_workspace, cache_dir=tmp_cache)
+
+    # Assert
+    assert result == [], (
+        f"Expected [] when ATM_DABENCH_OFFLINE=1, got {result!r}"
+    )
+    mock_urlopen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Test 15: stage_workspace_for — network error returns empty list and logs warning
+# ---------------------------------------------------------------------------
+
+
+def test_stage_workspace_for_network_error_returns_empty_and_logs(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """URLError from urlopen is swallowed; function returns [] without raising.
+
+    The error must not propagate to the caller — a degraded-but-running
+    experiment is preferable to a crashed run.
+    """
+    # Arrange
+    tmp_workspace = tmp_path_factory.mktemp("workspace")
+    tmp_cache = tmp_path_factory.mktemp("cache")
+
+    spec = TaskSpec(
+        id="dabench/net_error_test",
+        type="decision",
+        input="Analyse the titanic dataset.",
+        expected="@mean[1.0]",
+        evaluator_key="dabench_numeric_exact",
+        metadata={"file_name": "titanic.csv"},
+    )
+
+    monkeypatch.delenv("ATM_DABENCH_OFFLINE", raising=False)
+
+    mock_urlopen = MagicMock(side_effect=urllib.error.URLError("test failure"))
+
+    with patch("atm.tasks.dabench.urlopen", mock_urlopen):
+        # Act — must not raise
+        result = stage_workspace_for(spec, workspace_path=tmp_workspace, cache_dir=tmp_cache)
+
+    # Assert
+    assert result == [], (
+        f"Expected [] when URLError is raised, got {result!r}"
+    )
+    # The workspace file must NOT have been created (nothing to copy)
+    assert not (tmp_workspace / "titanic.csv").exists(), (
+        "Workspace file should not exist after a network error"
     )
