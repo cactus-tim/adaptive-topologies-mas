@@ -1,0 +1,47 @@
+# E4 Pilot — battle smoke for Adaptive Topology + Adaptive Role (RQ4).
+#
+# Catches E4-specific bugs before full 540-cell e4_full:
+#   1. role_router=rule actually shifts role per phase (parquet check)
+#   2. role_router=llm produces non-zero router_cost (LLM really called)
+#   3. role_router=fixed remains byte-identical to E3 baseline
+#   4. adaptive+adaptive (topology+role) doesn't deadlock or thrash
+#
+# Smart-cuts vs e4_full:
+#   - 3 task types (dabench skipped on smoke — included in full)
+#   - 5 shuffle × 1 seed × 3 role_routers = 45 cells
+#   - placeholder topology_router=rule (replace after E3 champion known)
+#
+# Size: 3 × 3 × 5 = 45 cells. ~$4, ~25-35 min on p=8.
+
+include: e3_full.yaml
+
+name: e4_pilot
+
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: rule
+  role_router_model: openai:gpt-4.1-mini
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 5.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 8
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    human.role_router: [fixed, rule, llm]
+    task.name: [humaneval, gsm8k, commongen]
+    task.shuffle_seed: [0, 1, 2, 3, 4]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

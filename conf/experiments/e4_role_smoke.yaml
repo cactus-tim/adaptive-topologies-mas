@@ -1,0 +1,47 @@
+# E4 Role-Router Smoke — диагностический smoke на различение режимов.
+#
+# Цель: подтвердить что 3 режима role_router (fixed/rule/llm) реально дают
+# РАЗНЫЕ роли в human_interactions parquet. Аналог e3_router_smoke.
+#
+# Acceptance:
+#   - fixed: ВСЕ human_interactions имеют role = cfg.human.role (один)
+#   - rule:  3+ phases дают 2-3 разных value (planning→coordinator,
+#            execution→peer, verification→reviewer per DEFAULT_ROLE_TABLE)
+#   - llm:   реальный LLM вызов (cost > 0) + 1+ role decisions
+#
+# Размер: 3 role_routers × 2 guards × 1 task × 1 shuffle × 1 seed = 6 cells.
+# ~3-5 мин, ~$0.30.
+
+include: e3_full.yaml
+
+name: e4_role_smoke
+
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: rule
+  role_router_model: openai:gpt-4.1-mini
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 1.5
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    human.role_router: [fixed, rule, llm]
+    task.name: [humaneval]
+    task.shuffle_seed: [0]
+    topology.extra.adaptive.switch_guards: [true, false]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
