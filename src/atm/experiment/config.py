@@ -226,6 +226,24 @@ class AdaptiveExtras(BaseModel):
     topology_router: str = "rule"  # NOTE: parsed but NOT consumed by builder
 
 
+# ---------------------------------------------------------------------------
+# TopologyExtras — schema rationale
+#
+# Single source of truth: default values in each sub-model below mirror the
+# ``_DEFAULT_*`` constants defined in the corresponding topology module.  Any
+# drift between schema defaults and module constants is caught immediately by
+# the schema-vs-source parity guard test in tests/unit/experiment/test_config.py.
+#
+# Dotpath access in sweep configs follows the namespaced shape:
+#   topology.extra.mesh.max_rounds: 12
+#   topology.extra.debate.max_rounds: 4
+#   topology.extra.star.planning_max_iter: 3
+# Flat (legacy) extras are auto-remapped by the bw-compat pre-validator on
+# ``TopologyCfg``; see ``_remap_flat_extras`` and the ``@model_validator``
+# below for the full scattering rules.
+# ---------------------------------------------------------------------------
+
+
 class TopologyExtras(BaseModel):
     """Namespaced container for per-topology extra parameters.
 
