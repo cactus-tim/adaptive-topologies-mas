@@ -397,9 +397,7 @@ def _extract_winner_artifact(agents: dict[str, Any], agent_id: str) -> str:
         if isinstance(path, str) and path.endswith(".py"):
             if py_any is None:
                 py_any = str(content)
-            if py_solution is None and (
-                path.endswith("solution.py") or path.endswith("main.py")
-            ):
+            if py_solution is None and (path.endswith("solution.py") or path.endswith("main.py")):
                 py_solution = str(content)
                 break
     if py_solution is not None:

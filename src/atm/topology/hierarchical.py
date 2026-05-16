@@ -165,9 +165,7 @@ def _extract_hierarchical_artifact(
         tool_calls: list[Any] = list(worker_state.get("tool_calls") or [])
         tool_results: list[Any] = list(worker_state.get("tool_results") or [])
         ok_call_ids: set[Any] = {
-            getattr(r, "call_id", None)
-            for r in tool_results
-            if getattr(r, "ok", False)
+            getattr(r, "call_id", None) for r in tool_results if getattr(r, "ok", False)
         }
 
         for tc in reversed(tool_calls):
