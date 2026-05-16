@@ -743,6 +743,94 @@ def _build_agents(
             tools=tools,
         )
 
+    # ------------------------------------------------------------------
+    # Topology-specific extra workers.
+    #
+    # canonical_4 covers star/chain/mesh/adaptive but NOT:
+    #   - hierarchical: needs per-team worker agents listed under
+    #     cfg.topology.extra.sub_teams[*].workers (e.g. executor_a1).
+    #   - debate: needs debater_pro / debater_contra / judge agents
+    #     identified by cfg.topology.extra.{debater_pro_id,
+    #     debater_contra_id, judge_id} (defaults: those exact strings).
+    # We synthesise each extra worker as a fresh Agent (Critic subclass
+    # for the judge so it emits DECISION). The base config is borrowed
+    # from executor.yaml — workers ARE executors, just with team-scoped
+    # identifiers — which keeps tools (file_write/code_run/...) attached.
+    # The judge borrows critic.yaml so its prompt and DECISION semantics
+    # match the chain/star verifier.
+    # ------------------------------------------------------------------
+    topo_name = getattr(cfg.topology, "name", "")
+    topo_extra = dict(getattr(cfg.topology, "extra", None) or {})
+    extra_workers: list[tuple[str, str]] = []  # [(agent_id, base_role), ...]
+
+    if topo_name == "hierarchical":
+        # Mirror HierarchicalTopology.build defaults: if sub_teams is missing
+        # or has <2 teams, the topology synthesises team_a/team_b with two
+        # executor workers each. _build_agents has to use the SAME default
+        # set, otherwise the topology references agent ids we never built.
+        sub_teams = list(topo_extra.get("sub_teams") or [])
+        if len(sub_teams) < 2:
+            sub_teams = [
+                {"team_id": "team_a", "workers": ["executor_a1", "executor_a2"]},
+                {"team_id": "team_b", "workers": ["executor_b1", "executor_b2"]},
+            ]
+        for team in sub_teams:
+            for worker_id in team.get("workers") or []:
+                extra_workers.append((str(worker_id), "executor"))
+    elif topo_name == "debate":
+        extra_workers.append(
+            (str(topo_extra.get("debater_pro_id") or "debater_pro"), "executor")
+        )
+        extra_workers.append(
+            (str(topo_extra.get("debater_contra_id") or "debater_contra"), "executor")
+        )
+        extra_workers.append(
+            (str(topo_extra.get("judge_id") or "judge"), "critic")
+        )
+
+    for worker_id, base_role in extra_workers:
+        if worker_id in agents:
+            continue  # already built (e.g. judge_id == "critic")
+        base_yaml = agents_conf_dir / f"{base_role}.yaml"
+        if not base_yaml.exists():
+            logger.warning(
+                "topology extra worker base config missing",
+                worker_id=worker_id,
+                base_role=base_role,
+                path=str(base_yaml),
+            )
+            continue
+        try:
+            agent_cfg = load_agent_config(base_yaml)
+        except Exception as e:
+            logger.warning(
+                "topology extra worker config load failed",
+                worker_id=worker_id,
+                error=str(e),
+            )
+            continue
+        # Per-worker LLM resolution: prefer cfg.model.by_role[worker_id]
+        # if explicitly mapped, then by_role[base_role], else default.
+        llm = (
+            llms.get(worker_id)
+            or llms.get(base_role)
+            or llms.get("planner")
+        )
+        if llm is None:
+            logger.warning(
+                "no LLM wrapper for topology extra worker",
+                worker_id=worker_id,
+            )
+            continue
+        tools = tool_registry if tool_registry is not None else ToolRegistry()
+        agent_cls_extra: type = Critic if base_role == "critic" else Agent
+        agents[worker_id] = agent_cls_extra(
+            agent_id=worker_id,
+            cfg=agent_cfg,
+            llm=llm,
+            tools=tools,
+        )
+
     return agents
 
 
