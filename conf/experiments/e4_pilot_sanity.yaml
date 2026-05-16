@@ -1,0 +1,57 @@
+# E4 Pilot Sanity — ультра-минимальный wiring-смоук Adaptive + Adaptive Role.
+#
+# Назначение: за ~5 мин проверить что E4-пайплайн собирается и не падает
+# для каждого role_router режима (fixed/rule/llm) с включённым adaptive
+# topology + HITL.
+#
+# Что ловим:
+#   - _build_role_router возвращает корректный router для каждой strategy
+#   - RuleBasedRoleRouter / LLMRoleRouter инициализируются без падений
+#   - role_router=llm не падает при отсутствии role_router_model (fallback на default)
+#   - human_advisor node в adaptive получает role_router и не игнорирует его
+#   - parquet human_interactions пишет реальный active_role per call
+#
+# Размер: 3 role_routers × 2 tasks × 1 shuffle × 1 seed = 6 cells. ~$0.30.
+# parallelism=4 (низкий, чтобы не конкурировать с E2/E3).
+#
+# E4 SPECIFIC vs E3: добавляется sweep по human.role_router.
+# topology_router=rule (placeholder, обновить после E3 winners).
+
+include: e3_full.yaml
+
+name: e4_pilot_sanity
+
+# Cross-family role_router LLM (avoid Cerebras quota collision with workers).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer                  # initial role; router may override per phase
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: rule               # placeholder; overridden by sweep
+  role_router_model: openai:gpt-4.1-mini
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    human.role_router:
+      - fixed
+      - rule
+      - llm
+    task.name:
+      - humaneval                 # CODE branch
+      - gsm8k                     # NON-CODE + Path C finalize
+    task.shuffle_seed: [0]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
