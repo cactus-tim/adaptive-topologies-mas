@@ -63,6 +63,7 @@ from langgraph.graph import END, START, StateGraph
 from atm.core.state import GraphState
 from atm.core.types import MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
+from atm.topology.star import _extract_final_answer
 
 # ---------------------------------------------------------------------------
 # Lazy imports for HITL — patchable in tests
@@ -592,6 +593,18 @@ class MeshTopology:
                     signals["consensus_pending"] = True
                 else:
                     signals["consensus_pending"] = False
+
+            # ALWAYS-extract contract (mirrors star/chain post-Bug #6/#8):
+            # Canonical_4 agents do not emit DECISION votes with payload["vote_for"],
+            # so consensus is essentially never reached on standard runs. Without
+            # this fallback, final_answer stays empty and the run reports
+            # quality_score=0 even when the executor wrote a perfectly good
+            # solution.py via file_write. Provisionally extract the executor's
+            # latest artifact every tick, regardless of consensus state.
+            if not shared.get("final_answer"):
+                provisional = _extract_final_answer(state)
+                if provisional and provisional != "<incomplete>":
+                    shared["final_answer"] = provisional
 
             shared["signals"] = signals
             return {"shared": shared}

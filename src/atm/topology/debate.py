@@ -235,9 +235,12 @@ async def _judge_postprocess(
         existing_signals["judge_decided"] = True
         existing_signals["debate_winner"] = winner
 
-        # Extract final_answer from winning debater's DRAFT
+        # Extract final_answer from winning debater. Prefer a successful
+        # file_write artifact (e.g. solution.py) over the DRAFT text — the
+        # DRAFT typically contains the debater's argument while the actual
+        # solution is written via the file_write tool.
         winner_id = debater_pro_id if winner == "pro" else debater_contra_id
-        final_answer = _extract_draft(agents, winner_id)
+        final_answer = _extract_winner_artifact(agents, winner_id)
         existing_shared["final_answer"] = final_answer
     else:
         # Explicitly set judge_decided=False on rejection (star.py pattern)
@@ -312,6 +315,75 @@ def _extract_draft(agents: dict[str, Any], agent_id: str) -> str:
             content = getattr(msg, "content", None)
             if content:
                 return str(content)
+
+    return "<incomplete>"
+
+
+def _extract_winner_artifact(agents: dict[str, Any], agent_id: str) -> str:
+    """Extract winner debater's primary artifact (final answer for the topology).
+
+    Tool-using debaters typically write the actual solution into a
+    ``file_write`` tool call (e.g. ``solution.py``) while their DRAFT message
+    only contains the argument/rationale. Mirrors the strategy in
+    ``atm.topology.star._extract_final_answer``:
+
+      1. Last successful ``file_write`` to ``solution.py`` / ``main.py`` /
+         any ``.py`` (filtered by ``ToolResult.ok`` to skip rejected overwrites).
+      2. Last DRAFT message from the agent's outbox (legacy / non-tool case).
+      3. Any non-Python file artifact (last resort).
+      4. Fallback: ``"<incomplete>"``.
+
+    The previous implementation only consulted DRAFT (#2), forcing the
+    runner-level workspace fallback to fire on every code-task debate run.
+    Now the topology natively returns the code artifact when the debater
+    used the ``file_write`` tool.
+    """
+    agent_state: dict[str, Any] = dict(agents.get(agent_id) or {})
+
+    # Strategy 1: prefer a successful file_write artifact.
+    tool_calls: list[Any] = list(agent_state.get("tool_calls") or [])
+    tool_results: list[Any] = list(agent_state.get("tool_results") or [])
+    ok_call_ids: set[Any] = {
+        getattr(r, "call_id", None) for r in tool_results if getattr(r, "ok", False)
+    }
+    py_solution: str | None = None
+    py_any: str | None = None
+    any_file: str | None = None
+    for tc in reversed(tool_calls):
+        if getattr(tc, "tool_name", None) != "file_write":
+            continue
+        # If tool_results is empty (older runs without result tracking) treat
+        # absence as success to preserve back-compat. Otherwise require ok=True.
+        if tool_results and getattr(tc, "id", None) not in ok_call_ids:
+            continue
+        args = getattr(tc, "args", None) or {}
+        content = args.get("content") if isinstance(args, dict) else None
+        path = args.get("path") if isinstance(args, dict) else None
+        if not content:
+            continue
+        if any_file is None:
+            any_file = str(content)
+        if isinstance(path, str) and path.endswith(".py"):
+            if py_any is None:
+                py_any = str(content)
+            if py_solution is None and (
+                path.endswith("solution.py") or path.endswith("main.py")
+            ):
+                py_solution = str(content)
+                break
+    if py_solution is not None:
+        return py_solution
+    if py_any is not None:
+        return py_any
+
+    # Strategy 2: DRAFT message (legacy / non-tool path).
+    draft = _extract_draft(agents, agent_id)
+    if draft and draft != "<incomplete>":
+        return draft
+
+    # Strategy 3: any non-Python file artifact (last resort).
+    if any_file is not None:
+        return any_file
 
     return "<incomplete>"
 
