@@ -147,3 +147,91 @@ async def test_tempdir_cleaned_up_on_success() -> None:
     assert result.stdout == "clean\n"
     # No assertion about temp dirs themselves — OS cleanup may be deferred,
     # but TemporaryDirectory.__exit__ guarantees removal on context exit.
+
+
+# ---------------------------------------------------------------------------
+# Workspace pass-through — fixes dabench=0 (staged CSVs were invisible to
+# code_run because SubprocessSandbox executed in an empty tmpdir cwd).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_workspace_files_visible_in_sandbox(tmp_path) -> None:
+    """When constructed with workspace=, staged files appear in the sandbox cwd."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "insurance.csv").write_text("age,sex\n25,male\n")
+    sandbox = SubprocessSandbox(workspace=workspace)
+
+    result = await sandbox.execute(
+        lang="python",
+        code=(
+            "import os\n"
+            "print(sorted(os.listdir('.')))\n"
+            "print(open('insurance.csv').read())\n"
+        ),
+    )
+    assert result.exit_code == 0, f"stderr={result.stderr}"
+    assert "insurance.csv" in result.stdout
+    assert "25,male" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_workspace_subdirectories_copied(tmp_path) -> None:
+    """Nested workspace contents (e.g. _corpus/) are also accessible."""
+    workspace = tmp_path / "ws"
+    (workspace / "_corpus").mkdir(parents=True)
+    (workspace / "_corpus" / "doc.txt").write_text("hello corpus")
+    sandbox = SubprocessSandbox(workspace=workspace)
+
+    result = await sandbox.execute(
+        lang="python",
+        code="print(open('_corpus/doc.txt').read())",
+    )
+    assert result.exit_code == 0, f"stderr={result.stderr}"
+    assert "hello corpus" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_workspace_writes_do_not_leak_back(tmp_path) -> None:
+    """User code's writes stay in tmpdir; workspace is read-only by virtue of copy."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "data.txt").write_text("original")
+    sandbox = SubprocessSandbox(workspace=workspace)
+
+    result = await sandbox.execute(
+        lang="python",
+        code="open('data.txt', 'w').write('modified'); open('new.txt', 'w').write('x')",
+    )
+    assert result.exit_code == 0
+    # Workspace must be unchanged after execute() returns — the sandbox copied
+    # the file into its tmpdir, the user code rewrote the COPY, and the tmpdir
+    # was destroyed.
+    assert (workspace / "data.txt").read_text() == "original"
+    assert not (workspace / "new.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_main_filename_not_clobbered_by_workspace(tmp_path) -> None:
+    """If workspace happens to contain main.py, user code still wins."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "main.py").write_text("print('stale workspace file')")
+    sandbox = SubprocessSandbox(workspace=workspace)
+
+    result = await sandbox.execute(lang="python", code="print('fresh code')")
+    assert result.exit_code == 0
+    assert "fresh code" in result.stdout
+    assert "stale workspace file" not in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_no_workspace_keeps_legacy_behavior() -> None:
+    """Constructed without workspace= → cwd is empty (current default)."""
+    sandbox = SubprocessSandbox()
+    result = await sandbox.execute(
+        lang="python", code="import os; print(sorted(os.listdir('.')))"
+    )
+    assert result.exit_code == 0
+    assert "main.py" in result.stdout

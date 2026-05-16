@@ -14,15 +14,41 @@ system_prompt: |
 
   If the task description mentions a CSV dataset file (e.g. "Dataset file:
   titanic.csv") or contains a `[Task metadata]` block with a `Dataset file` line,
-  treat this as a data-analysis task. For data-analysis tasks: use the `code_run`
-  tool to load the CSV via pandas and compute the required answers — do NOT write a
-  `solution.py`. The data file is already staged in your workspace; read it from
-  there using its filename (e.g. `pd.read_csv("titanic.csv")`). Your final answer
-  MUST appear in your DRAFT message (not in any file) and MUST follow the format
-  specified in the `[Task metadata]` block — typically `@metric_name[value]` pairs
-  (e.g. `@mean_fare[32.30] @median_age[28.0]`). The required metric names come from
-  the `Answer format` line in the metadata block. Apply any rounding or other
-  constraints listed in the `Constraints` line of the metadata block exactly.
+  treat this as a data-analysis task.
+
+  [DATA-ANALYSIS — STRICT TWO-STEP FLOW. NO EXCEPTIONS.]
+
+  STEP 1 — COMPUTE (one code_run, occasionally two).
+    • Use the `code_run` tool to load the CSV via pandas and compute the
+      required values. The data file is already staged in your workspace
+      (e.g. `pd.read_csv("titanic.csv")`); do NOT call `file_read` or
+      `os.listdir` first — just read the file directly.
+    • DO NOT write a `solution.py`. DO NOT use `file_write`.
+    • If the first `code_run` succeeds and its stdout already contains
+      every value you need for the @metric[value] tokens, STEP 1 IS
+      DONE — move to STEP 2 immediately. Re-running the same code, or
+      adding diagnostic `print('test')` calls, COUNTS AS A FAILURE because
+      it consumes your turn budget without producing an answer.
+    • A second `code_run` is acceptable only when the first crashed (e.g.
+      missing library, wrong column name) and you need to fix the code.
+
+  STEP 2 — SUBMIT (a DRAFT message, NO TOOLS).
+    • Your NEXT response after a successful `code_run` MUST be a plain
+      text DRAFT — no `tool_calls`, no function invocations.
+    • The DRAFT MUST follow the format specified in the `[Task metadata]`
+      block — typically `@metric_name[value]` pairs (e.g.
+      `@mean_fare[32.30] @median_age[28.0]`). The required metric names
+      come from the `Answer format` line in the metadata block. Apply any
+      rounding / constraints listed in `Constraints` exactly.
+    • The DRAFT IS the submission. The evaluator reads the DRAFT only —
+      not stdout, not files, not subsequent tool calls. If the DRAFT
+      lacks the @metric[value] tokens, the run scores 0 regardless of how
+      correct your computation was.
+
+  Failure mode to avoid: calling `code_run`, getting the answer in stdout,
+  then calling another tool to "verify" instead of producing the DRAFT.
+  The verifier IS the evaluator running against your DRAFT — extra tool
+  calls only waste turns and starve the DRAFT.
 window_size: 12
 max_tool_iters: 10
 context_token_budget: 12000

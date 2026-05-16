@@ -41,6 +41,16 @@ class SubprocessSandbox:
     image_digest : str | None
         Always None — SubprocessSandbox does not use a container image.
 
+    Parameters
+    ----------
+    workspace : Path | None, optional
+        When provided, the sandbox copies the workspace contents into the
+        per-call tmpdir before executing user code. Without this, the
+        executor's ``code_run`` cannot ``pd.read_csv("staged.csv")`` because
+        the tmpdir cwd is empty. The copy happens fresh per ``execute()`` so
+        the sandbox stays isolated — user code's writes go to tmpdir, not
+        back to the workspace.
+
     Notes
     -----
     - Python code is executed with ``sys.executable`` (the same interpreter).
@@ -56,6 +66,11 @@ class SubprocessSandbox:
 
     IS_ISOLATED: ClassVar[bool] = False
     image_digest: ClassVar[str | None] = None
+
+    def __init__(self, workspace: Path | None = None) -> None:
+        self._workspace: Path | None = (
+            workspace.resolve() if workspace is not None else None
+        )
 
     async def execute(
         self,
@@ -98,9 +113,28 @@ class SubprocessSandbox:
 
         try:
             work = Path(tmpdir)
-
-            # Write the main entry-point file
             main_filename = _LANG_FILENAME[lang]
+
+            # Stage workspace contents into the per-call tmpdir so user code
+            # can read staged data files (e.g. dabench's insurance.csv). The
+            # main entry-point name is reserved — never let workspace clobber
+            # it. Failures are swallowed: a staging hiccup must not break the
+            # sandbox, the user code can still run.
+            if self._workspace is not None and self._workspace.exists():
+                for item in self._workspace.iterdir():
+                    if item.name == main_filename or item.name.startswith("."):
+                        continue
+                    target = work / item.name
+                    try:
+                        if item.is_dir():
+                            shutil.copytree(item, target, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(item, target)
+                    except OSError:
+                        continue
+
+            # Write the main entry-point file (after staging so we never
+            # overwrite user-supplied code with an unrelated workspace file).
             (work / main_filename).write_text(code, encoding="utf-8")
 
             # Write any extra files
