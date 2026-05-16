@@ -76,7 +76,7 @@ human:
 
 # 5 topo × 4 task × 15 shuffle_seed × 3 seed = 900 cells.
 grid:
-  parallelism: 12
+  parallelism: 30
   fail_fast: false
   seeds: [42, 43, 44]
   sweep:

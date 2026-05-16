@@ -15,7 +15,7 @@ include: e1_pilot.yaml
 name: e1_mini_fixes
 
 grid:
-  parallelism: 12
+  parallelism: 24
   fail_fast: false
   seeds: [42]
   sweep:

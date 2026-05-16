@@ -106,7 +106,7 @@ human:
 # ---- grid sweep ----------------------------------------------------------
 # 2 topologies × 50 tasks (shuffle_seed) × 3 seeds = 300 runs.
 grid:
-  parallelism: 12       # tuned to 6-core box (2x I/O oversub) + PG max_conn=100
+  parallelism: 30       # 16/32 box, aggressive (~1.9x cores); load@p=24 was ~0.34 → headroom
   fail_fast: false
   seeds: [42, 43, 44]
   sweep:
