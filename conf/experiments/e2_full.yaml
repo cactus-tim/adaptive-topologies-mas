@@ -30,16 +30,18 @@ seed: 42
 # ---- topology / agents / model — inherit from e1_pilot, override grid below.
 
 # HITL: enabled, cross-family LLM simulator pinned for reproducibility.
+# runner.py:1143/2117 reads `cfg.human.model or cfg.model.default` for the
+# HITL gateway's LLM — there is no `model.human` field on ModelCfg, so the
+# cross-family override MUST live here (HumanCfg.model), not under model:.
 human:
   enabled: true
   gateway: llm_simulated
-  role: reviewer            # placeholder; sweep overrides per cell
+  role: reviewer                       # placeholder; sweep overrides per cell
   timeout_s: 900.0
   timeout_policy: llm_fallback
-  role_router: fixed        # E2 = static role per cell (E4 sweeps role_router)
+  role_router: fixed                   # E2 = static role per cell (E4 sweeps role_router)
+  model: openai:gpt-4.1-mini
 
-# HITL gateway runs on openai:gpt-4.1-mini (cross-family vs. cerebras workers).
-# Wired via runner._build_role_router / role_router_llm_factory → build_llm.
 model:
   default: cerebras:gpt-oss-120b
   by_role:
@@ -50,7 +52,6 @@ model:
   judge:      openai:gpt-4.1-mini
   summarizer: cerebras:gpt-oss-120b
   router:     cerebras:gpt-oss-120b
-  human:      openai:gpt-4.1-mini
   prompt_cache_scope: per_run
   provider_opts:
     cerebras:
