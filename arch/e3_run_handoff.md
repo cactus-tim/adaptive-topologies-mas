@@ -187,17 +187,55 @@ Acceptance (per task):
 - commongen: mean_q ≥ 0.55, 0 failed (фикс из commit 499de6c)
 - Total failed ≤ 2 (transient Cerebras issues допустимы)
 
-### Wave 4: E3 full — 3 router modes (~6 ч, 540 cells, $40)
+### Wave 4: E3 full — 3 router modes (~2 ч ПАРАЛЛЕЛЬНО, 540 cells, $40)
 
 **КРИТИЧНО:** `e3_full.yaml` НЕ свипает по `topology.extra.adaptive.topology_router`.
 Нужно запустить **3 раза** с разным override, либо отредактировать
 `e3_full.yaml` чтобы добавить sweep по router_mode (тогда cells = 540, не 180).
 
-#### Вариант A — 3 отдельных запуска (рекомендую, чище exp_id)
+#### Вариант A — 3 ПАРАЛЛЕЛЬНЫХ запуска (рекомендую — экономия 4 ч)
+
+3 × `p=8` = 24 workers суммарно (= то же что 1 × p=24), но wall в 3 раза
+меньше. Cerebras TPM/RPM суммарно идентично, PG conns 24×3=72 (внутри
+лимита 500). Каждый launch пишет в свой exp_id, parquet dirs не пересекаются.
+
+```bash
+mkdir -p logs
+for MODE in rule llm oracle; do
+    EXP_NAME="e3_full_router_${MODE}"
+    nohup uv run atm grid run \
+        -c conf/experiments/e3_full.yaml \
+        --no-estimate -p 8 \
+        +name=$EXP_NAME \
+        +topology.extra.adaptive.topology_router=$MODE \
+        > logs/${EXP_NAME}.log 2>&1 &
+    echo "launched $MODE (PID $!)"
+done
+echo "All 3 launches running in background. Tail logs/ for progress."
+
+# Wait for all to finish:
+wait
+echo "All done. Summary:"
+for MODE in rule llm oracle; do
+    echo "=== $MODE ==="
+    grep GridResult logs/e3_full_router_${MODE}.log
+done
+```
+
+Wall: ~2 ч на p=8 × 3 параллельно, $40 total.
+
+Мониторинг:
+```bash
+watch -n 30 'for f in logs/e3_full_router_{rule,llm,oracle}.log; do echo "=== ${f##*router_} ==="; grep -oE "\[[0-9]+/[0-9]+\] done=[0-9]+ failed=[0-9]+" "$f" 2>/dev/null | tail -1; done'
+```
+
+#### Вариант B — последовательно, если на машине ещё что-то параллельно бежит
+
+Если параллельно бегут E2 или другие grid'ы — сделать **по очереди** на
+`p=24`, чтобы не оверподписаться:
 
 ```bash
 for MODE in rule llm oracle; do
-    echo "=== E3 full, topology_router=$MODE ==="
     EXP_NAME="e3_full_router_${MODE}"
     uv run atm grid run \
         -c conf/experiments/e3_full.yaml \
@@ -205,12 +243,11 @@ for MODE in rule llm oracle; do
         +name=$EXP_NAME \
         +topology.extra.adaptive.topology_router=$MODE \
         > logs/${EXP_NAME}.log 2>&1
-    echo "$MODE done — GridResult:"
     grep GridResult logs/${EXP_NAME}.log
 done
 ```
 
-Wall: ~2 ч × 3 = 6 ч на p=24, $40 total.
+Wall: ~2 ч × 3 = 6 ч.
 
 Acceptance per router mode:
 - rule:   mean_q ≥ 0.7 (baseline)
@@ -316,11 +353,13 @@ uv run atm grid run -c conf/experiments/e3_pilot_sanity.yaml --no-estimate -p 6 
 uv run atm grid run -c conf/experiments/e3_router_smoke.yaml --no-estimate -p 6 > logs/e3_router_smoke.log 2>&1
 uv run atm grid run -c conf/experiments/e3_pilot.yaml --no-estimate -p 8 > logs/e3_pilot.log 2>&1
 
-# Wave 4: full E3
+# Wave 4: full E3 — 3 router modes ПАРАЛЛЕЛЬНО (~2 ч)
 for MODE in rule llm oracle; do
-    uv run atm grid run -c conf/experiments/e3_full.yaml --no-estimate -p 24 \
+    nohup uv run atm grid run -c conf/experiments/e3_full.yaml --no-estimate -p 8 \
         +name=e3_full_router_${MODE} \
         +topology.extra.adaptive.topology_router=${MODE} \
-        > logs/e3_full_router_${MODE}.log 2>&1
+        > logs/e3_full_router_${MODE}.log 2>&1 &
 done
+wait
+for MODE in rule llm oracle; do grep GridResult logs/e3_full_router_${MODE}.log; done
 ```
