@@ -68,6 +68,7 @@ from atm.storage.models import Base, Experiment, FinishReason, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 from atm.tasks import resolve_spec
+from atm.tasks.dabench import stage_workspace_for
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
@@ -518,6 +519,50 @@ def _build_initial_state(
     }
 
 
+def _pre_stage_workspace(
+    cfg: ExperimentConfig,
+    run_id: UUID,
+    workspace_path: Path,
+    *,
+    spec: Any = None,
+) -> list[Path]:
+    """Stage task-specific files into *workspace_path* before the graph runs.
+
+    Resolves the task spec via :func:`resolve_spec` (unless *spec* is already
+    provided by the caller) and delegates to :func:`stage_workspace_for` from
+    ``atm.tasks.dabench``.  For non-DABench task families, or when the spec
+    cannot be resolved, the function returns an empty list without raising.
+
+    Args:
+        cfg:            Experiment configuration (used to resolve the task spec
+                        when *spec* is not supplied).
+        run_id:         UUID of the current run (for log context only).
+        workspace_path: The per-run workspace directory that has already been
+                        created by the caller (``tools_workspace``).
+        spec:           Optional pre-resolved ``TaskSpec``.  When provided,
+                        :func:`resolve_spec` is NOT called again, keeping the
+                        total call count at 1 (required by the evaluation-wiring
+                        test contract).  When omitted (e.g. in the resume path),
+                        ``resolve_spec`` is invoked internally.
+
+    Returns:
+        List of :class:`~pathlib.Path` objects for every file staged into
+        *workspace_path*, or ``[]`` on any failure.
+    """
+    try:
+        _spec = spec if spec is not None else resolve_spec(cfg.task)
+        if _spec is None:
+            return []
+        return stage_workspace_for(_spec, workspace_path)
+    except Exception:
+        logger.warning(
+            "pre_stage_workspace failed; continuing without staged files",
+            run_id=str(run_id),
+            exc_info=True,
+        )
+        return []
+
+
 def _build_llm_wrappers(
     cfg: ExperimentConfig,
     budget: BudgetTracker,
@@ -804,8 +849,13 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         from atm.tools.defaults import build_default_registry
         from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
 
+        # Resolve spec once — reused at staging, initial-state build, and evaluation
+        # so the total resolve_spec call count stays at 1 (required by test contract).
+        _run_spec = resolve_spec(cfg.task)
+
         tools_workspace = parquet_root / "workspace" / str(run_id)
         tools_workspace.mkdir(parents=True, exist_ok=True)
+        _pre_stage_workspace(cfg, run_id, tools_workspace, spec=_run_spec)
         tools_corpus = tools_workspace / "_corpus"
         tools_corpus.mkdir(exist_ok=True)
         try:
@@ -837,12 +887,9 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             budget_exceed_threshold=Decimal(str(cfg.budget.per_run_usd)),
         )
 
-        # Step 8: build initial state.
-        # Resolve spec once here so _build_initial_state can augment task_input
-        # with TaskSpec.metadata (e.g. DABench format/constraints/file_name)
-        # and the same resolved spec is reused at the evaluation step below,
-        # avoiding a second registry lookup.
-        _run_spec = resolve_spec(cfg.task)
+        # Step 8: build initial state — pass the already-resolved spec so
+        # _build_initial_state can augment task_input with TaskSpec.metadata
+        # (e.g. DABench format/constraints/file_name) without a second lookup.
         initial_state = _build_initial_state(cfg, run_id, spec=_run_spec)
 
         # Step 6: build topology
@@ -1764,6 +1811,7 @@ async def _execute_existing_run(
 
         tools_workspace = parquet_root / "workspace" / str(run_id)
         tools_workspace.mkdir(parents=True, exist_ok=True)
+        _pre_stage_workspace(cfg, run_id, tools_workspace)
         tools_corpus = tools_workspace / "_corpus"
         tools_corpus.mkdir(exist_ok=True)
         try:
