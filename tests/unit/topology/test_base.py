@@ -20,6 +20,7 @@ from atm.topology.base import (
     TopologyConfig,
     TopologyRegistry,
     _should_stop,
+    get_topology_extras,
 )
 
 # ---------------------------------------------------------------------------
@@ -322,3 +323,123 @@ class TestPublicApi:
         import atm.topology as mod
 
         importlib.reload(mod)
+
+    def test_import_get_topology_extras(self) -> None:
+        from atm.topology import get_topology_extras  # noqa: F401
+
+
+# ---------------------------------------------------------------------------
+# Test group 10: get_topology_extras — all four detection branches
+# ---------------------------------------------------------------------------
+
+
+class TestGetTopologyExtras:
+    """get_topology_extras handles namespaced, flat, empty, and mixed shapes."""
+
+    # --- Branch 1: namespaced form (all top-level keys in _TOPOLOGY_NAMES) ---
+
+    def test_namespaced_returns_correct_bucket(self) -> None:
+        """Fully namespaced extra → returns the named topology's sub-dict."""
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"mesh": {"max_rounds": 12}, "star": {}},
+        )
+        result = get_topology_extras(cfg, "mesh")
+        assert result == {"max_rounds": 12}
+
+    def test_namespaced_returns_empty_for_absent_topology(self) -> None:
+        """Namespaced extra with no key for this topology → {}."""
+        cfg = TopologyConfig(
+            name="debate",
+            max_iterations=8,
+            extra={"mesh": {"max_rounds": 12}},
+        )
+        result = get_topology_extras(cfg, "debate")
+        assert result == {}
+
+    def test_namespaced_all_six_topologies(self) -> None:
+        """All six topology namespaces present → each returns its own bucket."""
+        extra = {
+            "star": {"planning_max_iter": 2},
+            "chain": {},
+            "debate": {"max_rounds": 3},
+            "hierarchical": {"max_rounds": 4},
+            "mesh": {"max_rounds": 12},
+            "adaptive": {"exec_max_iter": 10},
+        }
+        cfg = TopologyConfig(name="star", max_iterations=20, extra=extra)
+        assert get_topology_extras(cfg, "star") == {"planning_max_iter": 2}
+        assert get_topology_extras(cfg, "chain") == {}
+        assert get_topology_extras(cfg, "debate") == {"max_rounds": 3}
+        assert get_topology_extras(cfg, "mesh") == {"max_rounds": 12}
+
+    # --- Branch 2: legacy-flat form (at least one key not in _TOPOLOGY_NAMES) ---
+
+    def test_flat_dict_returned_verbatim(self) -> None:
+        """Flat extra (non-namespace key present) → full dict returned as-is."""
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"max_rounds": 12},
+        )
+        result = get_topology_extras(cfg, "mesh")
+        assert result == {"max_rounds": 12}
+
+    def test_flat_dict_same_for_any_topology_name(self) -> None:
+        """Flat form is returned verbatim regardless of topology_name argument."""
+        cfg = TopologyConfig(
+            name="debate",
+            max_iterations=8,
+            extra={"max_rounds": 5, "judge_id": "judge"},
+        )
+        assert get_topology_extras(cfg, "debate") == {"max_rounds": 5, "judge_id": "judge"}
+        # Even with a different topology_name, same flat dict is returned.
+        assert get_topology_extras(cfg, "mesh") == {"max_rounds": 5, "judge_id": "judge"}
+
+    def test_flat_star_keys_returned_verbatim(self) -> None:
+        """Star keys in flat form are returned as-is (not confused for namespace)."""
+        cfg = TopologyConfig(
+            name="star",
+            max_iterations=20,
+            extra={"planning_max_iter": 2, "exec_max_iter": 5, "verify_max_iter": 3},
+        )
+        result = get_topology_extras(cfg, "star")
+        assert result == {"planning_max_iter": 2, "exec_max_iter": 5, "verify_max_iter": 3}
+
+    # --- Branch 3: empty / missing extra ---
+
+    def test_empty_extra_dict_returns_empty(self) -> None:
+        """cfg.extra == {} → always returns {}."""
+        cfg = TopologyConfig(name="mesh", max_iterations=8, extra={})
+        assert get_topology_extras(cfg, "mesh") == {}
+
+    def test_default_extra_returns_empty(self) -> None:
+        """cfg.extra uses default_factory=dict → returns {}."""
+        cfg = TopologyConfig(name="star", max_iterations=20)
+        assert get_topology_extras(cfg, "star") == {}
+
+    # --- Branch 4: mixed shape (namespace + non-namespace key) → legacy-flat ---
+
+    def test_mixed_shape_treated_as_legacy_flat(self) -> None:
+        """A mix of namespace keys and non-namespace keys → entire dict is flat."""
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"mesh": {"max_rounds": 12}, "some_unknown_key": 99},
+        )
+        result = get_topology_extras(cfg, "mesh")
+        # Mixed shape → verbatim flat dict (all keys returned).
+        assert result == {"mesh": {"max_rounds": 12}, "some_unknown_key": 99}
+
+    # --- Return type is always a plain dict ---
+
+    def test_always_returns_plain_dict(self) -> None:
+        """Return value must be a plain dict instance in all branches."""
+        cfg_ns = TopologyConfig(name="star", extra={"star": {"planning_max_iter": 1}})
+        cfg_flat = TopologyConfig(name="star", extra={"planning_max_iter": 1})
+        cfg_empty = TopologyConfig(name="star", extra={})
+
+        assert type(get_topology_extras(cfg_ns, "star")) is dict
+        assert type(get_topology_extras(cfg_flat, "star")) is dict
+        assert type(get_topology_extras(cfg_empty, "star")) is dict

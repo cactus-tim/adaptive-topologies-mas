@@ -27,6 +27,7 @@ from atm.topology.base import (
     TopologyConfig,
     TopologyRegistry,
     _should_stop,
+    get_topology_extras,
 )
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "TopologyRegistry",
     "_should_stop",
     "build_adaptive_graph",
+    "get_topology_extras",
 ]
 
 # ---------------------------------------------------------------------------

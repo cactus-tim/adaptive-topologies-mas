@@ -7,12 +7,15 @@ This module re-exports ``load_config`` for full back-compat.
 Public API:
   - BudgetCfg, ModelCfg, ScratchpadCfg, AgentSetCfg, TopologyCfg, TaskCfg,
     ObservabilityCfg, ExperimentConfig, GridCfg, EstimateCfg
+  - TopologyExtras, StarExtras, ChainExtras, DebateExtras, HierarchicalExtras,
+    MeshExtras, AdaptiveExtras
   - load_config(path, overrides) -> ExperimentConfig  (re-exported from loader)
 """
 
 from __future__ import annotations
 
 import types
+import warnings
 from typing import Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -82,12 +85,258 @@ class AgentSetCfg(BaseModel):
     scratchpad: ScratchpadCfg = Field(default_factory=ScratchpadCfg)
 
 
+# ---------------------------------------------------------------------------
+# Topology extras sub-schemas
+# ---------------------------------------------------------------------------
+
+# Canonical set of topology names; used by both TopologyExtras and the
+# bw-compat remapper to determine whether an extras dict is namespaced.
+_TOPOLOGY_EXTRA_NAMES: frozenset[str] = frozenset(
+    {"star", "chain", "debate", "hierarchical", "mesh", "adaptive"}
+)
+
+# Flat extra keys that are remapped to a specific namespace on detection.
+# Any flat key that is NOT in this mapping raises ValidationError after
+# remapping (because TopologyExtras has extra="forbid").
+_FLAT_TO_NAMESPACE: dict[str, tuple[str, str]] = {
+    # shared round-counters → debate + hierarchical only (NOT mesh, NOT adaptive)
+    # (handled separately because they scatter to two namespaces)
+    # "max_rounds": handled inline in _remap_flat_extras
+    # star-specific phase limits
+    "planning_max_iter": ("star", "planning_max_iter"),
+    "exec_max_iter": ("star", "exec_max_iter"),
+    "verify_max_iter": ("star", "verify_max_iter"),
+    # mesh-specific (aliased key in legacy form)
+    "mesh_max_rounds": ("mesh", "max_rounds"),
+    "consensus_threshold": ("mesh", "consensus_threshold"),
+    # debate-specific
+    "debater_pro_id": ("debate", "debater_pro_id"),
+    "debater_contra_id": ("debate", "debater_contra_id"),
+    "judge_id": ("debate", "judge_id"),
+    # hierarchical-specific
+    "sub_teams": ("hierarchical", "sub_teams"),
+    "final_answer_strategy": ("hierarchical", "final_answer_strategy"),
+    # adaptive-specific
+    "phase_router": ("adaptive", "phase_router"),
+    "topology_router": ("adaptive", "topology_router"),
+    "subgraph_max_iterations": ("adaptive", "subgraph_max_iterations"),
+    "switch_guards": ("adaptive", "switch_guards"),
+    "switch_guards_config": ("adaptive", "switch_guards_config"),
+    "run_id": ("adaptive", "run_id"),
+}
+
+
+class StarExtras(BaseModel):
+    """Extra parameters for the Star topology.
+
+    Defaults mirror ``star.py`` constants ``_DEFAULT_PLANNING_MAX_ITER``,
+    ``_DEFAULT_EXEC_MAX_ITER``, and ``_DEFAULT_VERIFY_MAX_ITER``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    planning_max_iter: int = 2
+    exec_max_iter: int = 5
+    verify_max_iter: int = 3
+
+
+class ChainExtras(BaseModel):
+    """Extra parameters for the Chain topology (reserved; chain reads no extras)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DebateExtras(BaseModel):
+    """Extra parameters for the Debate topology.
+
+    Defaults mirror ``debate.py`` constant ``_DEFAULT_MAX_ROUNDS``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_rounds: int = 4
+    debater_pro_id: str | None = None
+    debater_contra_id: str | None = None
+    judge_id: str | None = None
+
+
+class HierarchicalExtras(BaseModel):
+    """Extra parameters for the Hierarchical topology.
+
+    Defaults mirror ``hierarchical.py`` constants ``_DEFAULT_MAX_ROUNDS``
+    and ``_DEFAULT_FINALIZE_SIGNAL``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_rounds: int = 4
+    finalize_signal: str = "top_coord_finalize"
+    sub_teams: list[Any] | None = None
+    final_answer_strategy: str | None = None
+
+
+class MeshExtras(BaseModel):
+    """Extra parameters for the Mesh topology.
+
+    Defaults mirror ``mesh.py`` constants (``_DEFAULT_MAX_ROUNDS = 12``,
+    ``_DEFAULT_CONSENSUS_THRESHOLD = 3``, ``_DEFAULT_BROADCAST_BUS_CAP = 200``).
+
+    ``max_rounds`` corresponds to the legacy ``mesh_max_rounds`` flat key.
+    The bw-compat validator in ``TopologyCfg`` remaps ``mesh_max_rounds``
+    to ``mesh.max_rounds`` transparently.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_rounds: int = 12
+    consensus_threshold: int = 3
+    max_messages: int = 200
+    dispatch: str = "round_robin"
+    round_robin_order: list[str] = Field(
+        default_factory=lambda: ["planner", "researcher", "executor", "critic"]
+    )
+
+
+class AdaptiveExtras(BaseModel):
+    """Extra parameters for the Adaptive topology.
+
+    Phase-limit defaults (3/10/4) match the inline fallback literals in
+    ``adaptive.py:394-396`` — they are intentionally LARGER than star's 2/5/3
+    because adaptive runs longer reasoning phases.
+
+    ``run_id`` defaults to ``None`` so that the runner's ``model_dump(
+    exclude_none=True)`` omits it entirely, allowing the builder's own
+    ``uuid.uuid4()`` fallback to fire (plain ``None`` would produce the
+    literal string ``"None"`` via ``str(None)``).
+
+    ``phase_router`` and ``topology_router`` are parsed but NOT consumed by
+    the current builder implementation — kept for forward-compatibility.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    planning_max_iter: int = 3
+    exec_max_iter: int = 10
+    verify_max_iter: int = 4
+    subgraph_max_iterations: int = 10
+    switch_guards: bool = True
+    switch_guards_config: dict[str, Any] | None = None
+    run_id: str | None = None
+    phase_router: str = "rule"  # NOTE: parsed but NOT consumed by builder
+    topology_router: str = "rule"  # NOTE: parsed but NOT consumed by builder
+
+
+class TopologyExtras(BaseModel):
+    """Namespaced container for per-topology extra parameters.
+
+    Each sub-field holds the extras for exactly one topology.  Sweeps and
+    YAML configs access them via dotpath, e.g.::
+
+        topology.extra.mesh.max_rounds: 12
+        topology.extra.debate.max_rounds: 4
+
+    Unknown top-level keys (i.e. topology names not in this schema) are
+    rejected by ``extra="forbid"`` to surface typos early.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    star: StarExtras = Field(default_factory=StarExtras)
+    chain: ChainExtras = Field(default_factory=ChainExtras)
+    debate: DebateExtras = Field(default_factory=DebateExtras)
+    hierarchical: HierarchicalExtras = Field(default_factory=HierarchicalExtras)
+    mesh: MeshExtras = Field(default_factory=MeshExtras)
+    adaptive: AdaptiveExtras = Field(default_factory=AdaptiveExtras)
+
+
+def _remap_flat_extras(flat: dict[str, Any]) -> dict[str, Any]:
+    """Remap a flat legacy extras dict to the namespaced ``TopologyExtras`` shape.
+
+    Emits a ``DeprecationWarning`` describing the flat keys found.
+
+    Scattering rules:
+    - ``max_rounds`` → ``debate.max_rounds`` AND ``hierarchical.max_rounds``
+      (NOT mesh — mesh default of 12 is starvation-safe; NOT adaptive — no
+      such field).
+    - All other flat keys → their declared namespace per ``_FLAT_TO_NAMESPACE``.
+
+    Unknown keys (not in ``_FLAT_TO_NAMESPACE`` and not ``max_rounds``) are
+    placed in a synthetic top-level key so that Pydantic's ``extra="forbid"``
+    on ``TopologyExtras`` raises a ``ValidationError`` with a clear message.
+    """
+    namespaced: dict[str, dict[str, Any]] = {}
+    unknown_keys: list[str] = []
+
+    for key, value in flat.items():
+        if key == "max_rounds":
+            namespaced.setdefault("debate", {})["max_rounds"] = value
+            namespaced.setdefault("hierarchical", {})["max_rounds"] = value
+        elif key in _FLAT_TO_NAMESPACE:
+            ns, field = _FLAT_TO_NAMESPACE[key]
+            namespaced.setdefault(ns, {})[field] = value
+        else:
+            unknown_keys.append(key)
+
+    if unknown_keys:
+        # Include unknown keys verbatim at top-level so TopologyExtras'
+        # extra="forbid" produces an informative ValidationError.
+        for key in unknown_keys:
+            namespaced[key] = flat[key]
+
+    return namespaced
+
+
 class TopologyCfg(BaseModel):
-    """Topology selection and stopping parameters (arch.md §12.1)."""
+    """Topology selection and stopping parameters (arch.md §12.1).
+
+    ``extra`` is a typed, namespaced container (``TopologyExtras``).  Each
+    topology reads only its own sub-namespace, eliminating shared-key
+    collisions (e.g. ``max_rounds`` in debate vs hierarchical vs mesh).
+
+    **Legacy flat form** (bw-compat):
+    YAML configs written before this refactor may use a flat ``extra:`` block
+    such as ``extra: {max_rounds: 4}``.  The ``@model_validator(mode="before")``
+    detects flat-shaped dicts and remaps them to the namespaced form while
+    emitting a ``DeprecationWarning``.  See ``_remap_flat_extras`` for the
+    scattering rules.
+    """
 
     name: Literal["star", "chain", "mesh", "debate", "hierarchical", "adaptive"]
     max_iterations: int = 10
-    extra: dict[str, Any] = Field(default_factory=dict)
+    extra: TopologyExtras = Field(default_factory=TopologyExtras)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bw_compat_flat_extras(cls, values: Any) -> Any:
+        """Detect flat legacy ``extra`` dicts and remap to namespaced form.
+
+        A dict is considered FLAT (legacy) if it has at least one key that is
+        NOT a recognised topology name.  A dict whose keys are ALL topology
+        names is already in namespaced form and is passed through unchanged.
+        An empty dict is also passed through unchanged.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        raw_extra = values.get("extra")
+        if not isinstance(raw_extra, dict) or not raw_extra:
+            return values
+
+        # Check if all keys are known topology names (namespaced form).
+        if raw_extra.keys() <= _TOPOLOGY_EXTRA_NAMES:
+            # Already namespaced — pass through without warning.
+            return values
+
+        # Flat (legacy) form detected.
+        warnings.warn(
+            "flat topology.extra keys are deprecated; use namespaced form "
+            "(e.g. topology.extra.mesh.max_rounds)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        values = dict(values)
+        values["extra"] = _remap_flat_extras(raw_extra)
+        return values
 
 
 class TaskCfg(BaseModel):
