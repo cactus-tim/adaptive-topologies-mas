@@ -376,9 +376,21 @@ def _extract_winner_artifact(agents: dict[str, Any], agent_id: str) -> str:
     if py_any is not None:
         return py_any
 
-    # Strategy 2: DRAFT message (legacy / non-tool path).
+    # Strategy 2: DRAFT message. For non-code tasks the debater is instructed
+    # (via the [DEBATE ROLE — HARD RULES] prompt override in
+    # runner._build_agents) to begin its DRAFT with a structured marker
+    # block:  ###ANSWER###\n<answer>\n###END###
+    # If we find that block, extract just the answer — otherwise return the
+    # full DRAFT (legacy behavior).
     draft = _extract_draft(agents, agent_id)
     if draft and draft != "<incomplete>":
+        import re as _re
+
+        m = _re.search(r"###ANSWER###\s*\n(.*?)\n\s*###END###", draft, _re.DOTALL)
+        if m:
+            extracted = m.group(1).strip()
+            if extracted:
+                return extracted
         return draft
 
     # Strategy 3: any non-Python file artifact (last resort).
