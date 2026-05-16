@@ -355,9 +355,7 @@ async def _critic_postprocess(state: dict[str, Any]) -> dict[str, Any]:
     executor_tool_calls: list[Any] = list(executor_state.get("tool_calls", []))
     executor_tool_results: list[Any] = list(executor_state.get("tool_results", []))
     ok_call_ids: set[Any] = {
-        getattr(r, "call_id", None)
-        for r in executor_tool_results
-        if getattr(r, "ok", False)
+        getattr(r, "call_id", None) for r in executor_tool_results if getattr(r, "ok", False)
     }
     file_artifact: str | None = None
     for tc in reversed(executor_tool_calls):

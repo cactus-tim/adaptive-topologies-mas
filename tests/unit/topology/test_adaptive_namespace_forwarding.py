@@ -24,12 +24,9 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-import atm.topology.adaptive  # noqa: F401 — side-effect: register "adaptive"
+import atm.topology.adaptive
 from atm.topology.adaptive import AdaptiveTopology
 from atm.topology.base import TopologyConfig, get_topology_extras
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -225,9 +222,7 @@ class TestSubgraphNamespaceForwarding:
             "verify_max_iter",
         }
         leaked = set(mesh_bucket.keys()) & adaptive_specific_keys
-        assert not leaked, (
-            f"Adaptive-specific keys leaked into mesh bucket: {leaked}"
-        )
+        assert not leaked, f"Adaptive-specific keys leaked into mesh bucket: {leaked}"
 
     def test_subgraph_forwards_star_namespace_via_supervisor_alias(self) -> None:
         """'supervisor' alias maps to 'star' registry key; star extras forwarded.
@@ -266,9 +261,7 @@ class TestSubgraphNamespaceForwarding:
         top_level_keys = set(sub_cfg.extra.keys())
         # Every top-level key must be a recognised topology name
         unknown_keys = top_level_keys - _TOPOLOGY_NAMES
-        assert not unknown_keys, (
-            f"sub_cfg.extra has unexpected top-level keys: {unknown_keys}"
-        )
+        assert not unknown_keys, f"sub_cfg.extra has unexpected top-level keys: {unknown_keys}"
 
     def test_subgraph_max_iter_comes_from_adaptive_extras(self) -> None:
         """sub_cfg.max_iterations matches subgraph_max_iterations from adaptive extras.
@@ -290,5 +283,7 @@ class TestSubgraphNamespaceForwarding:
         )
         subgraph_max_iter = int(adaptive_bucket.get("subgraph_max_iterations", 10))
 
-        sub_cfg = _build_sub_cfg_directly("mesh", adaptive_extra, subgraph_max_iter=subgraph_max_iter)
+        sub_cfg = _build_sub_cfg_directly(
+            "mesh", adaptive_extra, subgraph_max_iter=subgraph_max_iter
+        )
         assert sub_cfg.max_iterations == 5

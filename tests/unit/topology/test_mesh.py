@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import atm.topology.mesh  # noqa: F401 — triggers @TopologyRegistry.register("mesh")
 from atm.core.types import Message, MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, get_topology_extras
-from atm.topology.mesh import MeshTopology, _DEFAULT_MAX_ROUNDS, _pick_priority_agent
+from atm.topology.mesh import _DEFAULT_MAX_ROUNDS, MeshTopology, _pick_priority_agent
 
 # ---------------------------------------------------------------------------
 # Helpers

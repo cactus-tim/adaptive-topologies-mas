@@ -468,9 +468,7 @@ def test_topology_extras_unknown_topology_name_raises() -> None:
 def test_topology_extras_unknown_field_in_sub_bucket_raises() -> None:
     """Extra with unknown field inside a topology bucket raises ValidationError."""
     with pytest.raises(ValidationError):
-        TopologyCfg.model_validate(
-            {"name": "mesh", "extra": {"mesh": {"unknown_param": 99}}}
-        )
+        TopologyCfg.model_validate({"name": "mesh", "extra": {"mesh": {"unknown_param": 99}}})
 
 
 # --- T10. AdaptiveExtras defaults ---
