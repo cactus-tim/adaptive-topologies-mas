@@ -235,7 +235,7 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
                         timeout=5.0,
                     )
                 )
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             pass
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())

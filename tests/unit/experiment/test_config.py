@@ -585,3 +585,48 @@ def test_schema_defaults_match_topology_builder_constants() -> None:
 
     # ChainExtras — no fields (chain reads no extras); verify instance is created
     assert isinstance(ChainExtras(), ChainExtras)
+
+
+# ---------------------------------------------------------------------------
+# Refactor-validation (Step 3.2): bw-compat remap isolation
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_flat_extras_remap_does_not_pollute_other_buckets() -> None:
+    """Flat max_rounds=7 scatters to debate+hierarchical but NOT mesh or adaptive.
+
+    This is a refactor-validation test for the namespace-topology-extra refactor.
+    It verifies the bw-compat remapping scattering rules in isolation:
+
+    - debate.max_rounds   == 7   (scatter target)
+    - hierarchical.max_rounds == 7  (scatter target)
+    - mesh.max_rounds     == 12  (starvation-safe default, NOT overwritten)
+    - adaptive has no max_rounds field at all (AttributeError on access)
+    """
+    with pytest.warns(DeprecationWarning):
+        cfg = TopologyCfg.model_validate(
+            {"name": "debate", "max_iterations": 8, "extra": {"max_rounds": 7}}
+        )
+
+    # Flat max_rounds scatters to debate and hierarchical
+    assert cfg.extra.debate.max_rounds == 7, (
+        f"debate.max_rounds should be 7, got {cfg.extra.debate.max_rounds!r}"
+    )
+    assert cfg.extra.hierarchical.max_rounds == 7, (
+        f"hierarchical.max_rounds should be 7, got {cfg.extra.hierarchical.max_rounds!r}"
+    )
+
+    # mesh.max_rounds must stay at 12 — flat max_rounds MUST NOT scatter here
+    assert cfg.extra.mesh.max_rounds == 12, (
+        f"mesh.max_rounds should remain at default 12 (not overwritten by flat "
+        f"max_rounds=7), got {cfg.extra.mesh.max_rounds!r}"
+    )
+
+    # adaptive has no max_rounds field — accessing it must raise AttributeError
+    try:
+        _ = cfg.extra.adaptive.max_rounds  # type: ignore[attr-defined]
+        raise AssertionError(
+            "cfg.extra.adaptive.max_rounds should not exist (AttributeError expected)"
+        )
+    except AttributeError:
+        pass  # expected — AdaptiveExtras has no max_rounds field

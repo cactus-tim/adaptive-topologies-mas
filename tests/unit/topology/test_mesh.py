@@ -1,4 +1,4 @@
-"""Unit tests for atm.topology.mesh — MeshTopology (10 tests).
+"""Unit tests for atm.topology.mesh — MeshTopology (10 tests + 2 refactor-validation).
 
 Tests:
   1. test_dispatcher_round_robin_cycles_agents
@@ -11,6 +11,9 @@ Tests:
   8. test_mesh_broadcast_writes_outbox_to_bus
   9. test_broadcast_bus_does_not_unbound (MC-5)
   10. test_consensus_vote_payload_str_format
+  --- Refactor-validation (namespace-topology-extra Step 3.2) ---
+  11. test_mesh_reads_max_rounds_from_namespaced_extra
+  12. test_mesh_falls_back_to_default_when_namespace_empty
 """
 
 from __future__ import annotations
@@ -20,8 +23,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import atm.topology.mesh  # noqa: F401 — triggers @TopologyRegistry.register("mesh")
 from atm.core.types import Message, MessageKind
-from atm.topology.base import TopologyConfig, TopologyRegistry
-from atm.topology.mesh import MeshTopology, _pick_priority_agent
+from atm.topology.base import TopologyConfig, TopologyRegistry, get_topology_extras
+from atm.topology.mesh import MeshTopology, _DEFAULT_MAX_ROUNDS, _pick_priority_agent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -576,3 +579,65 @@ class TestConsensusVotePayloadStrFormat:
             vote_counts[vote_for_val] = vote_counts.get(vote_for_val, 0) + 1
 
         assert len(vote_counts) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 11 + 12: Refactor-validation — namespaced extras (Step 3.2)
+# ---------------------------------------------------------------------------
+
+
+class TestMeshNamespacedExtras:
+    """Verify that MeshTopology reads max_rounds from the namespaced extra bucket.
+
+    These are refactor-validation tests for the namespace-topology-extra refactor.
+    They confirm that the ``get_topology_extras`` helper correctly resolves the
+    ``mesh`` bucket from a namespaced ``TopologyConfig.extra`` dict, and that
+    ``_DEFAULT_MAX_ROUNDS`` is used when the bucket is empty.
+
+    Strategy: directly exercise ``get_topology_extras(cfg, "mesh")`` rather than
+    inspecting LangGraph closure internals. The helper is the indirection contract
+    that ``MeshTopology.build`` relies on; verifying it resolves correctly is a
+    meaningful contract test that does not require running real LLMs or patching
+    the StateGraph.
+    """
+
+    def setup_method(self) -> None:
+        _ensure_mesh_registered()
+
+    def test_mesh_reads_max_rounds_from_namespaced_extra(self) -> None:
+        """get_topology_extras resolves max_rounds=20 from namespaced mesh bucket.
+
+        Constructs a TopologyConfig with namespaced extra
+        ``{"mesh": {"max_rounds": 20, "consensus_threshold": 3}}`` and verifies
+        that ``get_topology_extras(cfg, "mesh")`` returns ``max_rounds=20``,
+        confirming the mesh builder will use 20 (not the default 12).
+        """
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"mesh": {"max_rounds": 20, "consensus_threshold": 3}},
+        )
+        extras = get_topology_extras(cfg, "mesh")
+        assert extras.get("max_rounds", _DEFAULT_MAX_ROUNDS) == 20, (
+            f"Expected max_rounds=20 from namespaced extra, got {extras.get('max_rounds')!r}"
+        )
+        assert extras.get("consensus_threshold", 3) == 3
+
+    def test_mesh_falls_back_to_default_when_namespace_empty(self) -> None:
+        """get_topology_extras returns empty dict for empty mesh bucket.
+
+        Constructs a TopologyConfig with namespaced extra ``{"mesh": {}}`` and
+        verifies that ``get_topology_extras(cfg, "mesh")`` returns an empty dict,
+        so the builder applies ``_DEFAULT_MAX_ROUNDS`` (12) as the fallback.
+        """
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"mesh": {}},
+        )
+        extras = get_topology_extras(cfg, "mesh")
+        resolved_max_rounds = extras.get("max_rounds", _DEFAULT_MAX_ROUNDS)
+        assert resolved_max_rounds == _DEFAULT_MAX_ROUNDS == 12, (
+            f"Expected max_rounds to fall back to {_DEFAULT_MAX_ROUNDS} "
+            f"when bucket is empty, got {resolved_max_rounds!r}"
+        )

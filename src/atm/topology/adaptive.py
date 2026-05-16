@@ -385,9 +385,6 @@ class AdaptiveTopology:
                          When None → back-compat behaviour: role = human_cfg.role.
         """
         extras = get_topology_extras(cfg, "adaptive")
-        # _raw_extra retains the full cfg.extra dict for _get_subgraph forwarding
-        # (Step 3.1 will replace _get_subgraph with namespace-aware forwarding).
-        _raw_extra: dict[str, Any] = cfg.extra or {}
         checkpointer = kwargs.get("checkpointer")
 
         # ----------------------------------------------------------------
@@ -415,23 +412,18 @@ class AdaptiveTopology:
         subgraph_max_iter: int = int(extras.get("subgraph_max_iterations", 10))
         _subgraph_cache: dict[str, Any] = {}
 
-        # Keys to strip from extra when building subgraph configs
-        _meta_keys = frozenset(
-            {
-                "phase_router",
-                "topology_router",
-                "switch_guards",
-                "switch_guards_config",
-                "subgraph_max_iterations",
-                "planning_max_iter",
-                "exec_max_iter",
-                "verify_max_iter",
-                "run_id",
-            }
-        )
-
         def _get_subgraph(topology_name: str) -> Any:
-            """Return compiled subgraph for the given topology name, building if needed."""
+            """Return compiled subgraph for the given topology name, building if needed.
+
+            The sub-topology receives the full namespaced ``cfg.extra`` dict
+            (e.g. ``{"mesh": {"max_rounds": 20}, "debate": {...}}``) so that
+            its own ``get_topology_extras(sub_cfg, registry_name)`` call can
+            locate exactly its bucket.  No adaptive-specific key filtering is
+            needed: under the namespaced model each topology reads only its own
+            sub-namespace, so adaptive's keys (phase_router, switch_guards, …)
+            live in ``cfg.extra["adaptive"]`` and are never visible to mesh,
+            debate, or any other sub-topology builder.
+            """
             if topology_name in _subgraph_cache:
                 return _subgraph_cache[topology_name]
 
@@ -449,10 +441,15 @@ class AdaptiveTopology:
                 registry_name = "chain"
 
             topo_instance = topo_cls()
+            # Forward the full namespaced extra dict so the sub-topology builder
+            # can call get_topology_extras(sub_cfg, registry_name) and find its
+            # own bucket (e.g. cfg.extra["mesh"]).  For legacy-flat test fixtures
+            # get_topology_extras falls back to returning the whole dict, which
+            # preserves backward compatibility.
             sub_cfg = TopologyConfig(
                 name=registry_name,
                 max_iterations=subgraph_max_iter,
-                extra={k: v for k, v in _raw_extra.items() if k not in _meta_keys},
+                extra=dict(cfg.extra),
             )
             compiled = topo_instance.build(agents, sub_cfg)
             _subgraph_cache[topology_name] = compiled
