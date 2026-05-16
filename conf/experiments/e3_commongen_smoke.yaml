@@ -1,0 +1,37 @@
+# E3 CommonGen Smoke — изолированный re-test после fix #1
+# (расширенный _needs_finalize trigger для CommonGen).
+#
+# Сравниваем quality на adaptive×commongen до/после фикса.
+# До: mean_q=0.43, 1 cell q=0.03, 1 failed.
+# Цель: mean_q ≥ 0.55, нет cells q < 0.4.
+
+include: e3_full.yaml
+
+name: e3_commongen_smoke
+
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 6
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    task.name: [commongen]
+    task.shuffle_seed: [0, 1, 2, 3, 4]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

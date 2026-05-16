@@ -1,0 +1,71 @@
+# E2 Pilot — боевой smoke для HITL-пайплайна (RQ3 sanity).
+#
+# Назначение: за ~15 мин (на parallelism=6 параллельно с E1) поймать все
+# баги в E2-специфичной поверхности — HITL gateway, role personas,
+# (topology × role) сочетания, events в PG/Parquet — до запуска полного
+# 2160-cell e2_full.
+#
+# Smart-cuts vs e2_full:
+#   - 3 топологии (placeholder из e2_full, до уточнения top-3 из E1)
+#   - 5 ролей (полный sweep — главная новизна E2)
+#   - 2 task type (humaneval = код + gsm8k = математика) — покрывают
+#     CODE и NON-CODE ветки critic + два extract path
+#   - 1 shuffle_seed, 1 seed (это smoke, не статистика)
+#   - dabench исключён (upstream CSV 404, известная проблема)
+#   - commongen исключён (low signal на smoke; покрыт в e2_full)
+#
+# Размер: 3 × 5 × 2 × 1 × 1 = 30 cells (без post-hoc exclusion).
+# Заведомо «странные» сочетания (Debate × Coordinator, Chain × Peer,
+# Hierarchical × Peer) НЕ исключаем — пусть smoke поймает graceful
+# degradation либо падение. Если падают — фиксим в e2_full перед грид'ом.
+#
+# Параллелизм: 6. На 16/32 box при p=24 на E1 свободно ещё 8 ядер;
+# 6 workers E2 = ~10-12% load + 5-10% сетевого Cerebras — безопасно.
+# Если E1 ещё на 6-core машине — снизить до 3.
+
+include: e1_pilot.yaml
+
+name: e2_pilot
+
+# Снижаем timeout HITL: smoke не должен висеть на медленных gateway-зовах.
+# 300с = 5 мин — достаточно для 3-5 LLM-вызовов симулятора.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer        # placeholder; overridden by sweep
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+# 30 cells × ~$0.06 (HITL adds 1-2 calls/iter) → ~$2.0 + judge ~$0.5.
+# warn at 85% → нотификация если что-то идёт не так.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 5.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 6        # параллельно с E1 — оставляем CPU headroom
+  fail_fast: false      # хотим собрать все падения за один прогон
+  seeds: [42]
+  sweep:
+    topology.name:
+      - star            # human_reviewer node после verify
+      - chain           # human_reviewer node после chain тика
+      - hierarchical    # human через sub-coords → top coord
+    human.role:
+      - coordinator     # директивный, может override планировщика
+      - reviewer        # стандартный review-loop
+      - judge           # объективный судья
+      - peer            # коллаборативный peer
+      - monitor         # пассивный наблюдатель (минимум вмешательств)
+    task.name:
+      - humaneval       # CODE ветка critic + _extract_final_answer
+      - gsm8k           # NON-CODE numeric extraction
+    task.shuffle_seed: [0]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4     # HITL +1 LLM call/iter vs E1
+  use_historical: false

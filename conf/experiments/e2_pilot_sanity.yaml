@@ -1,0 +1,58 @@
+# E2 Pilot Sanity — ультра-минимальный wiring-смоук HITL.
+#
+# Назначение: за ~3 мин проверить что E2-пайплайн собирается и не падает
+# на каждой из 3 топологий с включённым llm_simulated шлюзом + role=fixed.
+# Это НЕ оценка качества, а проверка контракта interrupt → gateway.request →
+# Command(resume=...) для каждого пути.
+#
+# Что ловим:
+#   - падение при ленивой инициализации llm_simulated gateway
+#   - расхождения в _build_role_router для router="fixed"
+#   - отсутствие human_request/human_response событий в parquet/PG
+#   - крэш на сборке topology с человеком (human_cfg → graph nodes)
+#   - таймауты на простом HumanEval (если 300с не хватает — раскрыть в pilot)
+#
+# Размер: 3 топо × 2 роли × 1 задача × 1 shuffle × 1 seed = 6 cells.
+# Запускается ПАРАЛЛЕЛЬНО с E1 — поэтому parallelism занижен (4).
+# DABench исключён — известная проблема с CSV upstream 404.
+
+include: e1_pilot.yaml
+
+name: e2_pilot_sanity
+
+# Снижаем таймаут с 900с до 300с — на smoke не ждём долго.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer          # placeholder, override sweep'ом
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+# 6 cells × ~$0.03 (HITL ×2 calls/iter) → ~$0.20 + judge ~$0.05.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4          # E1 уже жрёт CPU; оставляем headroom
+  fail_fast: false        # хотим увидеть все падения за один прогон
+  seeds: [42]
+  sweep:
+    topology.name:
+      - star
+      - chain
+      - hierarchical
+    human.role:
+      - reviewer          # standard rev-loop
+      - judge             # judge персона (другая system prompt)
+    task.name:
+      - humaneval         # override parent's 4-task sweep — sanity = humaneval only
+    task.shuffle_seed: [0]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4       # HITL +1 LLM call/iter vs E1
+  use_historical: false   # smoke на свежей таблице — без истории
