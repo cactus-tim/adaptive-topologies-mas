@@ -311,6 +311,14 @@ def grid(
         )
     )
 
+    # Step 2.5: warm task-dataset caches sequentially. Each TaskLoader.load()
+    # writes data/cache/tasks/{name}.parquet via .tmp + os.replace; when N
+    # parallel workers race on the same key the first os.replace wins and
+    # the rest raise FileNotFoundError on a now-missing .tmp. Pre-warming
+    # in the parent ensures workers read from the cache (no network, no
+    # write) regardless of parallelism.
+    _prefetch_task_caches(configs)
+
     # Step 3: interactive confirm (skipped with --yes or in non-TTY).
     if not yes and sys.stdin.isatty() and not typer.confirm("Proceed?", default=True):
         typer.echo("Aborted.", err=True)
@@ -355,6 +363,46 @@ def grid(
     if failed_total == result.total:
         raise typer.Exit(2)
     raise typer.Exit(1)
+
+
+def _prefetch_task_caches(configs: list[Any]) -> None:
+    """Warm ``data/cache/tasks/{name}.parquet`` for every task in *configs*.
+
+    Each ``TaskLoader.load()`` writes via ``.tmp`` + ``os.replace``. When N
+    parallel grid workers each hit a cold cache, they race on the same tmp
+    path — the first worker's ``os.replace`` succeeds, the rest see a
+    vanished ``.tmp`` and crash with ``FileNotFoundError``. Loading once
+    sequentially in the parent process makes the cache hot before any
+    worker spawns; ``ProcessPoolExecutor`` does not inherit Python state
+    after fork on POSIX-with-forkserver, but the on-disk parquet is
+    shared and that's the only thing workers need.
+
+    Loaders are imported lazily via the side-effect import below so this
+    runs even if `atm grid` is the first command in the session.
+    """
+    # Side-effect import: registers every @TASKS.register loader class.
+    import atm.tasks  # noqa: F401
+    from atm.tasks.base import TASKS
+
+    unique_task_names: list[str] = sorted({c.task.name for c in configs})
+    if not unique_task_names:
+        return
+    typer.echo(f"Prefetching task caches: {', '.join(unique_task_names)}")
+    for name in unique_task_names:
+        try:
+            loader_cls = TASKS.get(name)
+        except KeyError:
+            typer.echo(f"  ! No loader registered for {name!r} — skipping", err=True)
+            continue
+        try:
+            specs = loader_cls().load()
+        except Exception as exc:  # noqa: BLE001 — keep grid alive on prefetch errors
+            typer.echo(
+                f"  ! Prefetch failed for {name!r}: {exc} (workers will retry)",
+                err=True,
+            )
+            continue
+        typer.echo(f"  ↳ {name}: {len(specs)} tasks cached")
 
 
 async def _grid_preflight(
