@@ -171,7 +171,17 @@ class MeshTopology:
         checkpointer = kwargs.get("checkpointer")
         extra = cfg.extra or {}
 
-        max_rounds: int = int(extra.get("max_rounds", _DEFAULT_MAX_ROUNDS))
+        # Mesh-specific key: ``mesh_max_rounds`` (preferred). Falls back to the
+        # legacy ``max_rounds`` for old tests/configs. This avoids a collision
+        # with the same key in debate/hierarchical configs where ``max_rounds``
+        # has different semantics (debate rounds vs. dispatch rounds) — a shared
+        # tiny value (e.g. 2) is healthy for debate/hier but starves mesh's
+        # round-robin dispatcher (planner→researcher→executor→critic), where
+        # max_rounds<4 means the executor never runs and no solution.py is
+        # written. Default 6 (≥1 full round-robin + retry).
+        max_rounds: int = int(
+            extra.get("mesh_max_rounds", extra.get("max_rounds", _DEFAULT_MAX_ROUNDS))
+        )
         consensus_threshold: int = int(
             extra.get("consensus_threshold", _DEFAULT_CONSENSUS_THRESHOLD)
         )
