@@ -71,6 +71,17 @@ _PY_MARKERS = (
 # the per-pair regex search returns zero matches and the run scores 0.
 _DABENCH_TEMPLATE_RE = re.compile(r"@[A-Za-z_]\w*\[[^\]]+\]")
 
+# CommonGen: critic/meta-commentary markers. If the "answer" is a list of
+# issues/suggestions rather than the requested sentence, trigger finalize.
+_COMMONGEN_META_MARKERS: tuple[str, ...] = (
+    "issues identified",
+    "suggested fix",
+    "the executor",
+    "does not contain",
+    "does not provide",
+    "task requirements",
+)
+
 
 def _is_non_code_task(task_id: str) -> bool:
     return task_id.startswith(_NON_CODE_TASK_PREFIXES)
@@ -84,14 +95,38 @@ def _looks_like_code(text: str) -> bool:
     return hits >= 2
 
 
-def _needs_finalize(task_id: str, current_answer: str) -> bool:
+def _commongen_needs_finalize(task_spec: TaskSpec, stripped: str) -> bool:
+    """CommonGen-specific finalize trigger.
+
+    The standard "empty/code" triggers miss a common failure mode: the
+    "answer" is the critic's complaint about the executor's output
+    ("Issues identified: ...") rather than the requested sentence. Trigger
+    finalize when:
+      * any required concept is missing from the text (concept_coverage < 1.0), OR
+      * the text matches a meta-commentary marker.
+    """
+    md = task_spec.metadata or {}
+    concepts: list[str] = list(md.get("concepts") or [])
+    if concepts:
+        text_lower = stripped.lower()
+        for concept in concepts:
+            if concept.lower() not in text_lower:
+                return True
+    lower = stripped.lower()
+    return any(marker in lower for marker in _COMMONGEN_META_MARKERS)
+
+
+def _needs_finalize(task_spec: TaskSpec, current_answer: str) -> bool:
     """Decide whether to invoke the no-tool LLM finalize step.
 
     Triggers (any one is sufficient) for non-code tasks only:
       * empty / ``"<incomplete>"`` answer
       * answer looks like Python source
       * task is DABench AND the answer lacks any ``@name[value]`` template
+      * task is CommonGen AND any required concept is missing OR the answer
+        is a critic-style meta-comment (see ``_commongen_needs_finalize``)
     """
+    task_id = task_spec.id
     if not _is_non_code_task(task_id):
         return False
 
@@ -102,7 +137,13 @@ def _needs_finalize(task_id: str, current_answer: str) -> bool:
     if _looks_like_code(stripped):
         return True
 
-    return task_id.startswith("dabench/") and _DABENCH_TEMPLATE_RE.search(stripped) is None
+    if task_id.startswith("dabench/") and _DABENCH_TEMPLATE_RE.search(stripped) is None:
+        return True
+
+    if task_id.startswith("commongen/") and _commongen_needs_finalize(task_spec, stripped):
+        return True
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +189,17 @@ def _format_required_format(task_spec: TaskSpec) -> str:
         parts.append(f"Required format:\n{fmt}")
     if constraints:
         parts.append(f"Constraints:\n{constraints}")
+
+    if task_spec.id.startswith("commongen/"):
+        concepts: list[str] = list(md.get("concepts") or [])
+        if concepts:
+            parts.append(
+                "Output requirements:\n"
+                "- Write ONE complete English sentence (5-25 words).\n"
+                f"- The sentence MUST contain every concept verbatim: {', '.join(concepts)}.\n"
+                "- Do NOT output a list of issues, suggestions, headers, or markdown."
+            )
+
     return "\n\n".join(parts)
 
 
@@ -174,7 +226,7 @@ async def maybe_finalize_answer(
     if task_spec is None:
         return current_answer
 
-    if not _needs_finalize(task_spec.id, current_answer):
+    if not _needs_finalize(task_spec, current_answer):
         return current_answer
 
     tool_history = _format_tool_history(final_state)

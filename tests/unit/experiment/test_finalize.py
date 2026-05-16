@@ -93,29 +93,57 @@ class TestNeedsFinalize:
     def test_code_task_never_triggers(self) -> None:
         # Even with empty / code-shaped answers, humaneval is left alone:
         # its file-write artifact is the right answer.
-        assert _needs_finalize("humaneval/0", "") is False
-        assert _needs_finalize("humaneval/0", "import x\ndef foo(): pass") is False
+        assert _needs_finalize(_mk_spec("humaneval/0"), "") is False
+        assert _needs_finalize(_mk_spec("humaneval/0"), "import x\ndef foo(): pass") is False
 
     def test_non_code_empty_triggers(self) -> None:
-        assert _needs_finalize("gsm8k/0", "") is True
-        assert _needs_finalize("gsm8k/0", "   ") is True
-        assert _needs_finalize("gsm8k/0", "<incomplete>") is True
+        spec = _mk_spec("gsm8k/0")
+        assert _needs_finalize(spec, "") is True
+        assert _needs_finalize(spec, "   ") is True
+        assert _needs_finalize(spec, "<incomplete>") is True
 
     def test_non_code_python_shaped_triggers(self) -> None:
         py = "import pandas as pd\ndf = pd.read_csv('x.csv')\nprint(df.mean())"
-        assert _needs_finalize("gsm8k/0", py) is True
+        assert _needs_finalize(_mk_spec("gsm8k/0"), py) is True
 
     def test_dabench_missing_template_triggers(self) -> None:
         # Non-empty, prose-shaped, but no @name[value] — DABench evaluator
         # would score 0; we should ask the model to re-format.
-        assert _needs_finalize("dabench/5", "The mean fare is 34.65.") is True
+        assert _needs_finalize(_mk_spec("dabench/5"), "The mean fare is 34.65.") is True
 
     def test_dabench_with_template_passes(self) -> None:
-        assert _needs_finalize("dabench/5", "@mean_fare[34.65]") is False
+        assert _needs_finalize(_mk_spec("dabench/5"), "@mean_fare[34.65]") is False
 
     def test_gsm8k_plain_numeric_passes(self) -> None:
         # GSM8K answer is a number — no template required.
-        assert _needs_finalize("gsm8k/0", "72") is False
+        assert _needs_finalize(_mk_spec("gsm8k/0"), "72") is False
+
+    def test_commongen_missing_concept_triggers(self) -> None:
+        spec = _mk_spec(
+            "commongen/0",
+            metadata={"concepts": ["dog", "fence", "jump"], "references": []},
+        )
+        # "fence" missing → trigger.
+        assert _needs_finalize(spec, "The dog jumps over the wall.") is True
+
+    def test_commongen_all_concepts_present_passes(self) -> None:
+        spec = _mk_spec(
+            "commongen/0",
+            metadata={"concepts": ["dog", "fence", "jump"], "references": []},
+        )
+        assert _needs_finalize(spec, "The dog jumps over the fence.") is False
+
+    def test_commongen_meta_marker_triggers(self) -> None:
+        spec = _mk_spec(
+            "commongen/0",
+            metadata={"concepts": ["dog", "fence", "jump"], "references": []},
+        )
+        # All concepts technically present, but answer is a critic complaint.
+        meta_text = (
+            "Issues identified: the executor output does not contain a story "
+            "with the required concepts (dog, fence, jump)."
+        )
+        assert _needs_finalize(spec, meta_text) is True
 
     def test_dabench_template_regex(self) -> None:
         assert _DABENCH_TEMPLATE_RE.search("@a[1] @b[2]") is not None
