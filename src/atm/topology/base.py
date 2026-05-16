@@ -1,4 +1,5 @@
-"""Topology Protocol, TopologyConfig, TopologyRegistry, and _should_stop helper.
+"""Topology Protocol, TopologyConfig, TopologyRegistry, _should_stop helper,
+and get_topology_extras indirection helper.
 
 Key contracts (arch.md §6, §7.1):
   - Topology is a @runtime_checkable Protocol with:
@@ -10,6 +11,9 @@ Key contracts (arch.md §6, §7.1):
       budget → (NOT here — raised by LLMWrapper as BudgetExceededError)
       max_iter → topology_success → topology_max → continue
     Returns (bool, reason_str) where reason_str matches FinishReason.value.
+  - get_topology_extras extracts the per-topology bucket from cfg.extra,
+    handling both the namespaced shape (production) and the legacy flat
+    shape (test fixtures / legacy callers) for backwards compatibility.
 """
 
 from __future__ import annotations
@@ -20,6 +24,18 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 from atm.storage.models import FinishReason
+
+# ---------------------------------------------------------------------------
+# Topology name constants — used by get_topology_extras detection logic
+# ---------------------------------------------------------------------------
+
+#: Frozenset of the canonical topology names that form valid namespace keys
+#: in the structured ``cfg.extra`` dict produced by the experiment runner.
+#: A ``cfg.extra`` whose *every* top-level key belongs to this set is treated
+#: as a namespaced dict; otherwise it is treated as a legacy-flat dict.
+_TOPOLOGY_NAMES: frozenset[str] = frozenset(
+    {"star", "chain", "debate", "hierarchical", "mesh", "adaptive"}
+)
 
 # ---------------------------------------------------------------------------
 # TopologyConfig
@@ -199,3 +215,60 @@ def _should_stop(
 
     # Priority 4: continue
     return False, ""
+
+
+# ---------------------------------------------------------------------------
+# get_topology_extras — per-topology bucket indirection helper
+# ---------------------------------------------------------------------------
+
+
+def get_topology_extras(cfg: TopologyConfig, topology_name: str) -> dict[str, Any]:
+    """Return the per-topology bucket from ``cfg.extra``.
+
+    Handles two forms transparently so that topology builders work correctly
+    with both production configs (namespaced) and legacy test fixtures (flat):
+
+    **Form 1 — Typed TopologyExtras (production path):**
+    The experiment runner serialises ``TopologyCfg.extra`` (a Pydantic
+    ``TopologyExtras`` model) to a dict via ``model_dump(exclude_none=True)``
+    before constructing the internal ``TopologyConfig``. The resulting dict has
+    every top-level key in ``_TOPOLOGY_NAMES`` (e.g.
+    ``{"star": {...}, "mesh": {...}}``). In this case the function returns
+    ``cfg.extra[topology_name]``, or ``{}`` if the key is absent.
+
+    **Form 2 — Legacy flat dict (test fixtures / legacy callers):**
+    Many unit tests construct ``TopologyConfig(extra={"max_rounds": 5})``
+    directly. If *any* top-level key falls outside ``_TOPOLOGY_NAMES`` the
+    entire dict is treated as a flat bucket belonging to the requested topology
+    and returned verbatim. This preserves backwards compatibility without test
+    churn.
+
+    Detection invariant:
+        A ``cfg.extra`` dict is treated as **namespaced** iff *every* top-level
+        key is a member of ``_TOPOLOGY_NAMES``. Any other shape (including a
+        mix of namespace and non-namespace keys) is treated as **legacy-flat**.
+
+    Args:
+        cfg:           ``TopologyConfig`` passed to the topology builder.
+        topology_name: The canonical topology identifier (e.g. ``"mesh"``).
+
+    Returns:
+        A plain ``dict[str, Any]`` ready for builder consumption.
+        Always returns ``{}`` for an empty or absent ``cfg.extra``.
+    """
+    extra: dict[str, Any] = cfg.extra or {}
+
+    if not extra:
+        return {}
+
+    # Check whether every top-level key is a known topology namespace key.
+    is_namespaced = all(k in _TOPOLOGY_NAMES for k in extra)
+
+    if is_namespaced:
+        # Namespaced form: return the bucket for this topology (default {}).
+        bucket = extra.get(topology_name, {})
+        # Guard: bucket must be a dict (not a stray scalar from a buggy dump).
+        return dict(bucket) if isinstance(bucket, dict) else {}
+    else:
+        # Legacy-flat form: treat the whole dict as this topology's bucket.
+        return dict(extra)
