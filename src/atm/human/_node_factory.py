@@ -281,12 +281,17 @@ def build_human_node_factory(
         timeout_policy: str = getattr(human_cfg, "timeout_policy", "skip")
 
         if request_with_timeout is not None and timeout_s is not None:
+            _fallback_gateway: Any = None
+            if timeout_policy == "llm_fallback" and LLMSimulatedGateway is not None:
+                _fb_llm: Any = getattr(gateway, "_llm", None)
+                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
             response = await request_with_timeout(
                 gateway,
                 ctx,
                 request_id=request_id,
                 timeout_s=timeout_s,
                 policy=timeout_policy,
+                llm_fallback_gateway=_fallback_gateway,
             )
         else:
             response = await gateway.request(ctx, request_id=request_id)
