@@ -52,6 +52,7 @@ from atm.core.types import HumanRole, Phase
 from atm.evaluation.aggregator import compute_quality
 from atm.evaluation.metrics import human_sim_cognitive_load_proxy
 from atm.experiment.config import ExperimentConfig, HumanCfg
+from atm.experiment.finalize import maybe_finalize_answer
 from atm.human.role_router import (
     DEFAULT_ROLE_TABLE,
     HumanRoleRouter,
@@ -1199,6 +1200,21 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         final_answer = str(shared_final.get("final_answer") or "")
         iterations = int(shared_final.get("iter_total") or 0)
 
+        # Post-graph finalize hook (Path C). For non-code tasks where the
+        # executor never produced a usable DRAFT (most visible on DABench:
+        # the answer is a solution.py blob instead of the @name[value]
+        # templates the evaluator expects), do a SINGLE no-tool LLM call
+        # using the same executor wrapper so cost still counts against the
+        # run budget.
+        _finalize_llm = llms.get("executor") or llms.get("default")
+        if _finalize_llm is not None:
+            final_answer = await maybe_finalize_answer(
+                llm=_finalize_llm,
+                task_spec=_run_spec,
+                final_state=final_state,
+                current_answer=final_answer,
+            )
+
         # Get actual budget spent from tracker
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
@@ -2140,6 +2156,17 @@ async def _execute_existing_run(
 
         sandbox = SubprocessSandbox()
         spec = resolve_spec(cfg.task)
+
+        # Post-graph finalize (Path C) — same hook as run_one.
+        _finalize_llm = llms.get("executor") or llms.get("default")
+        if _finalize_llm is not None and spec is not None:
+            final_answer = await maybe_finalize_answer(
+                llm=_finalize_llm,
+                task_spec=spec,
+                final_state=final_state,
+                current_answer=final_answer,
+            )
+
         if spec is None:
             quality_score = 0.0
         else:
