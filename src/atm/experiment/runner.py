@@ -542,6 +542,90 @@ def _pre_stage_workspace(
         return []
 
 
+def _build_role_wrapper(
+    role: str,
+    model_id: str,
+    *,
+    pricing: Pricing,
+    budget: BudgetTracker,
+    fake_fixtures: dict[str, str],
+    provider_opts: dict[str, Any],
+    replay_sources: dict[str, Path] | None,
+    shared_replay_llm: Any,
+) -> LLMWrapper:
+    """Build a single LLMWrapper for one role (or the summarizer) via dispatch.
+
+    Encapsulates the provider dispatch shared by every entry in the role set so
+    the summarizer can reuse the exact same logic:
+
+      - ``fake:scripted`` → fixture from ``fake_fixtures[role]`` (or
+        ``FakeLLM(mode="echo")`` fallback with a warning when none configured)
+      - ``fake:replay``   → ``shared_replay_llm`` if provided, else the Parquet
+        path from ``replay_sources[role]``
+      - real provider     → ``build_llm`` with merged ``provider_opts``
+
+    Args:
+        role:             Role key (used for fixture/opts/replay lookups and logs).
+        model_id:         Provider-qualified model id for this role.
+        pricing:          Shared pricing table.
+        budget:           Shared BudgetTracker.
+        fake_fixtures:    ``cfg.model.fake_fixtures`` mapping role → fixture path.
+        provider_opts:    ``cfg.model.provider_opts`` for the real-provider branch.
+        replay_sources:   Optional ``{role: parquet_path}`` for ``fake:replay``.
+        shared_replay_llm: Optional shared replay FakeLLM (deterministic replay).
+
+    Returns:
+        A configured LLMWrapper.
+    """
+    provider = model_id.split(":", 1)[0] if ":" in model_id else model_id
+    bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
+
+    if provider == "fake" and bare_model == "scripted":
+        fixture_str = fake_fixtures.get(role)
+        if fixture_str is None:
+            logger.warning(
+                "fake:scripted model requested but no fixture configured; "
+                "falling back to FakeLLM(mode='echo')",
+                role=role,
+                hint="Set model.fake_fixtures.<role>=<path> in experiment config",
+            )
+        fixture_path = Path(fixture_str) if fixture_str else None
+        return build_llm(
+            model_id=model_id,
+            pricing=pricing,
+            budget=budget,
+            fixture_path=fixture_path,
+        )
+    if provider == "fake" and bare_model == "replay":
+        if shared_replay_llm is not None:
+            return LLMWrapper(
+                model_id=model_id,
+                pricing=pricing,
+                budget=budget,
+                llm=shared_replay_llm,
+            )
+        replay_path = replay_sources.get(role) if replay_sources else None
+        if replay_path is None:
+            raise ValueError(
+                f"fake:replay requested for role={role!r} but no replay_source "
+                f"provided. Pass replay_sources={{'{role}': <parquet_path>}} "
+                f"or shared_replay_llm to _build_llm_wrappers / replay_one()."
+            )
+        return build_llm(
+            model_id=model_id,
+            pricing=pricing,
+            budget=budget,
+            replay_source=replay_path,
+        )
+    opts = _resolve_provider_opts(provider_opts, provider, role)
+    return build_llm(
+        model_id=model_id,
+        pricing=pricing,
+        budget=budget,
+        cfg=opts or None,
+    )
+
+
 def _build_llm_wrappers(
     cfg: ExperimentConfig,
     budget: BudgetTracker,
@@ -578,56 +662,42 @@ def _build_llm_wrappers(
     wrappers: dict[str, LLMWrapper] = {}
 
     for role in roles:
-        model_id = cfg.model.get_model_for(role)
-        provider = model_id.split(":", 1)[0] if ":" in model_id else model_id
-        bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
+        wrappers[role] = _build_role_wrapper(
+            role,
+            cfg.model.get_model_for(role),
+            pricing=pricing,
+            budget=budget,
+            fake_fixtures=cfg.model.fake_fixtures,
+            provider_opts=cfg.model.provider_opts,
+            replay_sources=replay_sources,
+            shared_replay_llm=shared_replay_llm,
+        )
 
-        if provider == "fake" and bare_model == "scripted":
-            fixture_str = cfg.model.fake_fixtures.get(role)
-            if fixture_str is None:
-                logger.warning(
-                    "fake:scripted model requested but no fixture configured; "
-                    "falling back to FakeLLM(mode='echo')",
-                    role=role,
-                    hint="Set model.fake_fixtures.<role>=<path> in experiment config",
-                )
-            fixture_path = Path(fixture_str) if fixture_str else None
-            wrappers[role] = build_llm(
-                model_id=model_id,
-                pricing=pricing,
-                budget=budget,
-                fixture_path=fixture_path,
-            )
-        elif provider == "fake" and bare_model == "replay":
-            if shared_replay_llm is not None:
-                wrappers[role] = LLMWrapper(
-                    model_id=model_id,
-                    pricing=pricing,
-                    budget=budget,
-                    llm=shared_replay_llm,
-                )
-            else:
-                replay_path = replay_sources.get(role) if replay_sources else None
-                if replay_path is None:
-                    raise ValueError(
-                        f"fake:replay requested for role={role!r} but no replay_source "
-                        f"provided. Pass replay_sources={{'{role}': <parquet_path>}} "
-                        f"or shared_replay_llm to _build_llm_wrappers / replay_one()."
-                    )
-                wrappers[role] = build_llm(
-                    model_id=model_id,
-                    pricing=pricing,
-                    budget=budget,
-                    replay_source=replay_path,
-                )
-        else:
-            opts = _resolve_provider_opts(cfg.model.provider_opts, provider, role)
-            wrappers[role] = build_llm(
-                model_id=model_id,
-                pricing=pricing,
-                budget=budget,
-                cfg=opts or None,
-            )
+    # Summarizer wrapper for the window-with-summary scratchpad policy. Built
+    # through the SAME provider dispatch as the roles so fake/offline configs
+    # stay fully offline (no API key / no network at construction). Construction
+    # is best-effort, mirroring the judge-LLM resilience in run_one: a real
+    # provider summarizer without credentials — common when model.summarizer is
+    # left at its default in a fake config — must not abort the run; agents then
+    # fall back to window-only scratchpad memory.
+    try:
+        wrappers["summarizer"] = _build_role_wrapper(
+            "summarizer",
+            cfg.model.summarizer,
+            pricing=pricing,
+            budget=budget,
+            fake_fixtures=cfg.model.fake_fixtures,
+            provider_opts=cfg.model.provider_opts,
+            replay_sources=replay_sources,
+            shared_replay_llm=shared_replay_llm,
+        )
+    except Exception as exc:
+        logger.warning(
+            "summarizer LLM construction failed — proceeding without scratchpad "
+            "summarization (window-only fallback)",
+            summarizer_model=cfg.model.summarizer,
+            error=str(exc)[:200],
+        )
 
     return wrappers
 
@@ -705,6 +775,7 @@ def _build_agents(
     agents_conf_dir = conf_dir / "agents"
     roles = ["planner", "executor", "critic", "researcher"]
     agents: dict[str, Any] = {}
+    summarizer_llm = llms.get("summarizer")
 
     for role in roles:
         yaml_path = agents_conf_dir / f"{role}.yaml"
@@ -730,6 +801,7 @@ def _build_agents(
             cfg=agent_cfg,
             llm=llm,
             tools=tools,
+            summarizer_llm=summarizer_llm,
         )
 
     topo_name = getattr(cfg.topology, "name", "")
@@ -881,6 +953,7 @@ def _build_agents(
             cfg=agent_cfg,
             llm=llm,
             tools=tools,
+            summarizer_llm=summarizer_llm,
         )
 
     return agents
