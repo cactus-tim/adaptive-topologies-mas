@@ -157,9 +157,13 @@ def stage_workspace_for(
     if not file_name:
         return []
 
-    # Guard 3: validate file_name against path traversal and injection
-    # Whitelist: only allow safe filename characters (no slashes, dots-dot, etc.)
-    if not re.match(r"^[A-Za-z0-9._-]+$", file_name):
+    # Guard 3: validate file_name against path traversal and injection.
+    # Whitelist allows characters that legitimately appear in DABench
+    # filenames upstream (e.g. "beauty and the labor market.csv",
+    # "veracruz 2016.csv") while still rejecting path separators and other
+    # filesystem-meaningful characters. The path-traversal / absolute-path /
+    # length checks below provide defense-in-depth against escape attempts.
+    if not re.match(r"^[A-Za-z0-9._\-() &']+$", file_name):
         _log.warning(
             "rejecting file_name with disallowed characters",
             file_name=file_name,
@@ -204,9 +208,15 @@ def stage_workspace_for(
             resolved_cache_dir.mkdir(parents=True, exist_ok=True)
             tmp_path = resolved_cache_dir / f"{file_name}.tmp"
 
+            # URL-encode the file_name so that legitimately-spaced or
+            # parenthesised upstream filenames (e.g. "veracruz 2016.csv")
+            # become a valid URL component. The local filesystem path uses
+            # the raw name so cache/workspace files are still human-readable.
+            from urllib.parse import quote
+
             url = _DABENCH_TABLES_URL_TEMPLATE.format(
                 sha=_DABENCH_COMMIT_SHA,
-                file_name=file_name,
+                file_name=quote(file_name, safe=""),
             )
             with urlopen(url, timeout=30) as response:
                 data: bytes = response.read()
