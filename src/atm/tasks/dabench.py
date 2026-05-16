@@ -157,15 +157,23 @@ def stage_workspace_for(
     if not file_name:
         return []
 
-    # Guard 3: validate file_name against path traversal and injection.
-    # Whitelist allows characters that legitimately appear in DABench
-    # filenames upstream (e.g. "beauty and the labor market.csv",
-    # "veracruz 2016.csv") while still rejecting path separators and other
-    # filesystem-meaningful characters. The path-traversal / absolute-path /
-    # length checks below provide defense-in-depth against escape attempts.
-    if not re.match(r"^[A-Za-z0-9._\-() &']+$", file_name):
+    # Guard 3: reject path separators, null bytes, and control characters.
+    # Switched from an explicit allowlist to a blocklist of dangerous chars
+    # because the DABench upstream uses a broader set of legitimate chars in
+    # filenames — e.g. "DES=+2006261.csv", "beauty and the labor market.csv",
+    # "Florida (1).csv". The allowlist was rejecting valid files (~1/257)
+    # because it didn't include "=+" etc., so those cells crashed before any
+    # CSV could be staged. The threat model is path traversal / writing
+    # outside the workspace, which is already covered by:
+    #   - the "absolute path" check below,
+    #   - the ".." check below,
+    #   - the length cap below,
+    #   - file_write's resolve-and-confine check at write time.
+    if any(c in file_name for c in ("/", "\\", "\x00")) or any(
+        ord(c) < 32 for c in file_name
+    ):
         _log.warning(
-            "rejecting file_name with disallowed characters",
+            "rejecting file_name with path separator / null / control chars",
             file_name=file_name,
             spec_id=spec.id,
         )
