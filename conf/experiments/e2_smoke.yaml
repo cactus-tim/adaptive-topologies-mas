@@ -1,0 +1,56 @@
+# E2 smoke — cross-family HITL validation before launching e2_full.
+#
+# Tiny grid (3 cells) that exercises the llm_simulated HITL gateway with
+# the cross-family OpenAI model. Validates:
+#   - HITL node wires into the graph (no crash on build)
+#   - `human.model: openai:gpt-4.1-mini` actually drives gpt-4.1-mini calls
+#     (visible as openai:* rows in PG llm_calls table)
+#   - 3 different human.role personas (reviewer / judge / coordinator)
+#     produce valid HumanResponse JSON
+#
+# Budget: ~$0.20 total. Wall-time: ~3-5 min at parallelism=3.
+#
+# After this smoke passes, scripts/run_e2.py is safe to launch.
+
+include: e1_pilot.yaml
+
+name: e2_smoke
+seed: 42
+
+# Override parent's no-HITL flag. Cross-family LLM lives in human.model
+# (ModelCfg has no `human` field — setting it under model: is silently
+# dropped).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer                       # placeholder; sweep overrides per cell
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+  model: openai:gpt-4.1-mini
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 3
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    topology.name:
+      - star
+    human.role:
+      - reviewer
+      - judge
+      - coordinator
+    task.name:
+      - humaneval
+    task.shuffle_seed: [0]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
