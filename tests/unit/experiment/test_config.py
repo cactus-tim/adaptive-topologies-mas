@@ -504,7 +504,9 @@ def test_mesh_extras_defaults() -> None:
     m = MeshExtras()
     assert m.max_rounds == 12
     assert m.consensus_threshold == 3
-    assert m.max_messages == 200
+    assert m.broadcast_bus_cap == 200
+    assert m.activation_policy == "round_robin"
+    assert m.agent_order == ["planner", "researcher", "executor", "critic"]
 
 
 # --- T13. DebateExtras and HierarchicalExtras defaults ---
@@ -546,6 +548,8 @@ def test_schema_defaults_match_topology_builder_constants() -> None:
         _DEFAULT_MAX_ROUNDS as HIER_DEFAULT_MAX_ROUNDS,
     )
     from atm.topology.mesh import (
+        _DEFAULT_ACTIVATION_POLICY,
+        _DEFAULT_AGENT_ORDER,
         _DEFAULT_BROADCAST_BUS_CAP,
         _DEFAULT_CONSENSUS_THRESHOLD,
     )
@@ -573,7 +577,9 @@ def test_schema_defaults_match_topology_builder_constants() -> None:
     # MeshExtras parity
     assert MeshExtras().max_rounds == MESH_DEFAULT_MAX_ROUNDS
     assert MeshExtras().consensus_threshold == _DEFAULT_CONSENSUS_THRESHOLD
-    assert MeshExtras().max_messages == _DEFAULT_BROADCAST_BUS_CAP
+    assert MeshExtras().broadcast_bus_cap == _DEFAULT_BROADCAST_BUS_CAP
+    assert MeshExtras().activation_policy == _DEFAULT_ACTIVATION_POLICY
+    assert MeshExtras().agent_order == _DEFAULT_AGENT_ORDER
 
     # AdaptiveExtras — no named constants; assert raw integer parity with
     # inline literals in adaptive.py:394-396

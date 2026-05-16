@@ -24,7 +24,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import atm.topology.mesh  # noqa: F401 — triggers @TopologyRegistry.register("mesh")
 from atm.core.types import Message, MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, get_topology_extras
-from atm.topology.mesh import _DEFAULT_MAX_ROUNDS, MeshTopology, _pick_priority_agent
+from atm.topology.mesh import (
+    _DEFAULT_AGENT_ORDER,
+    _DEFAULT_BROADCAST_BUS_CAP,
+    _DEFAULT_MAX_ROUNDS,
+    MeshTopology,
+    _pick_priority_agent,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -640,4 +646,62 @@ class TestMeshNamespacedExtras:
         assert resolved_max_rounds == _DEFAULT_MAX_ROUNDS == 12, (
             f"Expected max_rounds to fall back to {_DEFAULT_MAX_ROUNDS} "
             f"when bucket is empty, got {resolved_max_rounds!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests 13 + 14: Regression — broadcast_bus_cap and agent_order (F1 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestMeshNamespacedExtrasBroadcastCapAndOrder:
+    """Regression tests for Critical finding F1: MeshExtras field name alignment.
+
+    Verify that ``broadcast_bus_cap`` and ``agent_order`` set via the namespaced
+    extra bucket ``{"mesh": {...}}`` are correctly propagated to the builder via
+    ``get_topology_extras``.  These keys were previously named ``max_messages``
+    and ``round_robin_order`` in the schema but the builder read
+    ``broadcast_bus_cap`` / ``agent_order`` — causing silent fallback to defaults.
+    """
+
+    def setup_method(self) -> None:
+        _ensure_mesh_registered()
+
+    def test_mesh_reads_broadcast_bus_cap_from_namespaced_extra(self) -> None:
+        """get_topology_extras resolves broadcast_bus_cap=500 from namespaced mesh bucket.
+
+        Constructs a TopologyConfig with namespaced extra
+        ``{"mesh": {"broadcast_bus_cap": 500}}`` and verifies that
+        ``get_topology_extras(cfg, "mesh")`` returns ``broadcast_bus_cap=500``,
+        confirming the mesh builder will use 500 (not the default 200).
+        """
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"mesh": {"broadcast_bus_cap": 500}},
+        )
+        extras = get_topology_extras(cfg, "mesh")
+        resolved = extras.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP)
+        assert resolved == 500, (
+            f"Expected broadcast_bus_cap=500 from namespaced extra, got {resolved!r}"
+        )
+
+    def test_mesh_reads_agent_order_from_namespaced_extra(self) -> None:
+        """get_topology_extras resolves custom agent_order from namespaced mesh bucket.
+
+        Constructs a TopologyConfig with a custom ``agent_order`` and verifies
+        that ``get_topology_extras(cfg, "mesh")`` returns the custom order,
+        confirming the mesh dispatcher will use it instead of the default.
+        """
+        custom_order = ["critic", "executor", "researcher", "planner"]
+        cfg = TopologyConfig(
+            name="mesh",
+            max_iterations=8,
+            extra={"mesh": {"agent_order": custom_order}},
+        )
+        extras = get_topology_extras(cfg, "mesh")
+        resolved = extras.get("agent_order", _DEFAULT_AGENT_ORDER)
+        assert resolved == custom_order, (
+            f"Expected agent_order={custom_order!r} from namespaced extra, "
+            f"got {resolved!r}"
         )

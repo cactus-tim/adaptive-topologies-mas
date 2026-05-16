@@ -37,6 +37,7 @@ from atm.experiment.config import (
 )
 from atm.experiment.runner import (
     RunResult,
+    _build_agents,
     _build_initial_state,
     _get_git_sha,
     run_one,
@@ -953,4 +954,80 @@ async def test_run_one_does_not_pass_human_gateway_llm_when_human_disabled() -> 
     assert build_kwargs.get("human_gateway_llm") is None, (
         "When cfg.human is None, human_gateway_llm must be None (not built). "
         f"Got: {build_kwargs.get('human_gateway_llm')!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Regression test: _build_agents reads debate extras from namespaced TopologyExtras
+# ---------------------------------------------------------------------------
+
+
+def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
+    """Verify that custom debate agent IDs from namespaced TopologyExtras reach _build_agents.
+
+    Regression test for Critical finding F2: runner._build_agents used dict() on the
+    TopologyExtras Pydantic model, which does not iterate field values, so
+    topo_extra.get("debater_pro_id") always returned None.
+
+    The fix reads debate_extra directly from cfg.topology.extra.debate when the extra
+    is a typed TopologyExtras model.  This test constructs a TopologyCfg with
+    extra.debate.debater_pro_id="my_pro" and verifies that the synthesised agents dict
+    contains "my_pro" as a key.
+    """
+    from pathlib import Path
+
+    # Build a topology config with namespaced debate extras
+    topo_cfg = TopologyCfg.model_validate(
+        {
+            "name": "debate",
+            "max_iterations": 5,
+            "extra": {
+                "debate": {
+                    "debater_pro_id": "my_pro",
+                    "debater_contra_id": "my_contra",
+                    "judge_id": "my_judge",
+                }
+            },
+        }
+    )
+    cfg = _make_cfg(topology=topo_cfg)
+
+    # Minimal mock AgentConfig returned by load_agent_config
+    mock_agent_cfg = MagicMock()
+    mock_agent_cfg.system_prompt = "test prompt"
+    mock_agent_cfg.model_copy = MagicMock(return_value=mock_agent_cfg)
+
+    # Minimal mock Agent/LLMWrapper
+    mock_llm = MagicMock()
+    mock_agent = MagicMock()
+
+    def _fake_load_agent_config(path: Any) -> Any:
+        return mock_agent_cfg
+
+    def _fake_agent_cls(*args: Any, **kwargs: Any) -> Any:
+        return mock_agent
+
+    with (
+        # Patch Path.exists to always return True so YAML paths appear present
+        patch.object(Path, "exists", return_value=True),
+        # Patch load_agent_config at the source module (imported locally inside _build_agents)
+        patch("atm.agents.config.load_agent_config", side_effect=_fake_load_agent_config),
+        # Patch Agent and Critic at the source modules (imported locally)
+        patch("atm.agents.base.Agent", side_effect=_fake_agent_cls),
+        patch("atm.agents.critic.Critic", side_effect=_fake_agent_cls),
+    ):
+        agents = _build_agents(
+            cfg,
+            llms={"planner": mock_llm, "executor": mock_llm, "critic": mock_llm, "researcher": mock_llm},
+        )
+
+    # The custom debater/judge IDs must be present in the synthesised agent dict
+    assert "my_pro" in agents, (
+        f"Expected 'my_pro' in agents (from debate.debater_pro_id), got keys: {list(agents)}"
+    )
+    assert "my_contra" in agents, (
+        f"Expected 'my_contra' in agents (from debate.debater_contra_id), got keys: {list(agents)}"
+    )
+    assert "my_judge" in agents, (
+        f"Expected 'my_judge' in agents (from debate.judge_id), got keys: {list(agents)}"
     )
