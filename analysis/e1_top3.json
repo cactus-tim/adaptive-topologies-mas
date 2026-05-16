@@ -1,0 +1,74 @@
+{
+  "exp_id": "f153400f-f8ba-4ca3-8dc2-66f31ba15236",
+  "top_n": 3,
+  "tasks": {
+    "commongen": [
+      {
+        "topology": "debate",
+        "avg_quality": 0.5843,
+        "n": 45
+      },
+      {
+        "topology": "chain",
+        "avg_quality": 0.5257,
+        "n": 45
+      },
+      {
+        "topology": "hierarchical",
+        "avg_quality": 0.4857,
+        "n": 45
+      }
+    ],
+    "dabench": [
+      {
+        "topology": "debate",
+        "avg_quality": 0.3481,
+        "n": 45
+      },
+      {
+        "topology": "chain",
+        "avg_quality": 0.3333,
+        "n": 45
+      },
+      {
+        "topology": "mesh",
+        "avg_quality": 0.3185,
+        "n": 45
+      }
+    ],
+    "gsm8k": [
+      {
+        "topology": "star",
+        "avg_quality": 1.0,
+        "n": 45
+      },
+      {
+        "topology": "hierarchical",
+        "avg_quality": 0.9778,
+        "n": 45
+      },
+      {
+        "topology": "debate",
+        "avg_quality": 0.9333,
+        "n": 45
+      }
+    ],
+    "humaneval": [
+      {
+        "topology": "chain",
+        "avg_quality": 0.9333,
+        "n": 45
+      },
+      {
+        "topology": "star",
+        "avg_quality": 0.9111,
+        "n": 45
+      },
+      {
+        "topology": "hierarchical",
+        "avg_quality": 0.8889,
+        "n": 45
+      }
+    ]
+  }
+}
