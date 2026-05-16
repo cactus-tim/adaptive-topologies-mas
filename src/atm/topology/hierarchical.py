@@ -889,15 +889,24 @@ class HierarchicalTopology:
             # the JSON envelope — DRAFT messages typically contain narrative
             # ("Solution written to solution.py") while the real code lives in
             # a tool call. Mirrors star._extract_final_answer /
-            # debate._extract_winner_artifact. When no file_write exists
-            # (gsm8k / commongen), falls through to the json_concat strategy.
-            agents_state: dict[str, Any] = dict(state.get("agents") or {})
-            all_workers: list[str] = list(_team_a_workers) + list(_team_b_workers)
-            artifact = _extract_hierarchical_artifact(agents_state, all_workers)
-            if artifact:
-                shared["final_answer"] = artifact
-                shared["signals"] = signals
-                return {"shared": shared}
+            # debate._extract_winner_artifact.
+            #
+            # Task-aware: for NON-CODE tasks (gsm8k / commongen / dabench) the
+            # executor still writes a solution.py per executor.yaml's
+            # unconditional instruction, but that file contains Python
+            # intermediates rather than the actual answer. Skip the artifact
+            # path entirely for non-code tasks so json_concat runs on team
+            # DRAFTs. Mirrors chain.py d585bbb.
+            task_id: str = str(shared.get("task_id") or "").lower()
+            is_code_task: bool = task_id in {"humaneval"}
+            if is_code_task:
+                agents_state: dict[str, Any] = dict(state.get("agents") or {})
+                all_workers: list[str] = list(_team_a_workers) + list(_team_b_workers)
+                artifact = _extract_hierarchical_artifact(agents_state, all_workers)
+                if artifact:
+                    shared["final_answer"] = artifact
+                    shared["signals"] = signals
+                    return {"shared": shared}
 
             # Build JSON-concat final answer
             if final_answer_strategy == "json_concat":

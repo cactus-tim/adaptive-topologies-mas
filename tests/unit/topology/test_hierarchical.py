@@ -420,6 +420,121 @@ class TestFinalAnswerJsonConcat:
 
 
 # ---------------------------------------------------------------------------
+# Regression: hierarchical_finalize_node task-aware artifact preference (port
+# of chain d585bbb). When a sub-team worker calls file_write to solution.py
+# on a NON-CODE task, the finalize node must skip the artifact path and use
+# json_concat with team drafts, because executor.yaml unconditionally
+# instructs the model to dump "programming tasks" to solution.py — for
+# gsm8k/commongen/dabench that file holds Python intermediates, not the
+# human-readable answer.
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_worker_with_file_write(
+    agent_id: str, *, draft_content: str, file_content: str
+) -> MagicMock:
+    """Mock worker that emits both a DRAFT and a successful file_write call."""
+    from atm.core.types import ToolCall, ToolResult
+
+    agent = MagicMock()
+    agent.agent_id = agent_id
+
+    async def fake_step(state: dict) -> dict:
+        call = ToolCall(
+            tool_name="file_write",
+            args={"path": "solution.py", "content": file_content},
+            issued_by=agent_id,
+        )
+        msg = Message(
+            sender=agent_id,
+            kind=MessageKind.DRAFT,
+            content=draft_content,
+        )
+        return {
+            "agents": {
+                agent_id: {
+                    "agent_id": agent_id,
+                    "outbox": [msg],
+                    "tool_calls": [call],
+                    "tool_results": [
+                        ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
+                    ],
+                }
+            },
+            "messages": [],
+        }
+
+    agent.step = fake_step
+    return agent
+
+
+class TestFinalizeTaskAware:
+    """hierarchical_finalize honours shared.task_id when choosing artifact path."""
+
+    @staticmethod
+    def _agents_with_file_writes() -> dict[str, Any]:
+        return {
+            "executor_a1": _make_mock_worker_with_file_write(
+                "executor_a1", draft_content="A1 answer: 42", file_content="PYCODE_A1"
+            ),
+            "executor_a2": _make_mock_worker_with_file_write(
+                "executor_a2", draft_content="A2 answer: 42", file_content="PYCODE_A2"
+            ),
+            "executor_b1": _make_mock_worker_with_file_write(
+                "executor_b1", draft_content="B1 answer: 42", file_content="PYCODE_B1"
+            ),
+            "executor_b2": _make_mock_worker_with_file_write(
+                "executor_b2", draft_content="B2 answer: 42", file_content="PYCODE_B2"
+            ),
+        }
+
+    @staticmethod
+    def _state_with_task_id(task_id: str) -> dict[str, Any]:
+        st = _make_state(iter_total=0)
+        st["shared"]["task_id"] = task_id
+        return st
+
+    async def test_code_task_returns_solution_py_artifact(self) -> None:
+        """For task_id=humaneval, final_answer is the solution.py content (artifact path)."""
+        topology = HierarchicalTopology()
+        cfg = _make_cfg(final_answer_strategy="json_concat")
+        compiled = topology.build(self._agents_with_file_writes(), cfg)
+
+        final_state = await compiled.ainvoke(self._state_with_task_id("humaneval"))
+        final_answer = final_state["shared"]["final_answer"]
+        assert final_answer is not None
+        # One of the worker file_writes wins — value depends on traversal order,
+        # but it must be a PYCODE_* artifact, never the json envelope.
+        assert final_answer.startswith("PYCODE_"), (
+            f"code-task final_answer should be a solution.py artifact, got: {final_answer!r}"
+        )
+
+    async def test_non_code_task_uses_json_concat_over_solution_py(self) -> None:
+        """For non-code tasks, json_concat with team DRAFTs wins over solution.py."""
+        topology = HierarchicalTopology()
+        cfg = _make_cfg(final_answer_strategy="json_concat")
+        compiled = topology.build(self._agents_with_file_writes(), cfg)
+
+        for non_code in ("gsm8k", "commongen", "dabench"):
+            agents = self._agents_with_file_writes()
+            compiled = topology.build(agents, cfg)
+            final_state = await compiled.ainvoke(self._state_with_task_id(non_code))
+            final_answer = final_state["shared"]["final_answer"]
+            assert final_answer is not None, f"final_answer missing for task_id={non_code}"
+
+            # Must be a JSON envelope, NOT the solution.py content.
+            assert not final_answer.startswith("PYCODE_"), (
+                f"non-code task_id={non_code!r} leaked solution.py artifact: "
+                f"{final_answer!r}"
+            )
+            parsed = json.loads(final_answer)
+            assert "team_a" in parsed and "team_b" in parsed, (
+                f"non-code task_id={non_code!r} should produce json_concat envelope, "
+                f"got keys: {list(parsed.keys())}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Test 11: test_top_coord_and_sub_coord_are_not_in_agents_dict (MC-4)
 # ---------------------------------------------------------------------------
 
