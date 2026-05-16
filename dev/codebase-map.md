@@ -1,5 +1,5 @@
 # Codebase Map
-*Auto-generated. Last updated: 2026-05-15 (post-m13-analysis-tooling)*
+*Auto-generated. Last updated: 2026-05-16 (post-fix-dabench-task)*
 
 ## Tech Stack
 - **Language:** Python 3.11+
@@ -25,18 +25,26 @@
   - `human/` — M9 + M9.1 + M9.2 complete: HumanGateway protocol, LLMSimulatedGateway, CLI gateway; all 5 topologies + adaptive.py accept `human_cfg`, `human_gateway_llm`, `role_router` kwargs in `.build()`; RoleRouter protocol (FixedRoleRouter, RuleBasedRoleRouter, LLMRoleRouter, HumanRoleRouter); node_factory, timeout, runner helpers, prompts; integration tests per-topology + per-topology-human unit tests; cognitive_load_proxy metric
   - `storage/` — SQLAlchemy models (6 models including `Run` with replay tracking), async session, ParquetWriter, checkpointer wrapper (M3 complete + M12); wall_time_s, cognitive_load_proxy, replay_of FK, host, process_pid columns; Alembic 0004 (replay and PID tracking)
   - `observability/` — ExperimentCallbackHandler (LangGraph async callbacks), serializers, structlog processors (M3 complete; M11-resync: filter_secrets)
-  - `tasks/` — TaskSpec base, HumanEval/GSM8K/CommonGen/DABench loaders + evaluators (M10-resync)
+  - `tasks/` — TaskSpec base, HumanEval/GSM8K/CommonGen/DABench loaders + evaluators; DABench task staging support (fix-dabench-task)
   - `evaluation/` — LLM-as-judge, ground truth runners (dispatches via EVALUATORS.get), metrics, NASA-TLX persistence (M11 complete; M11-resync: _DEPS table dispatch pattern); human_sim_cognitive_load_proxy metric (M9.2)
-  - `experiment/` — Pydantic config schemas + grid/estimate (M12), OmegaConf loader split into `loader.py`, single-run runner (`run_one` with HITL wiring), Typer CLI (`atm run`); wall_time_s and cognitive_load_proxy capture
+  - `experiment/` — Pydantic config schemas + grid/estimate (M12), OmegaConf loader split into `loader.py`, single-run runner (`run_one` with HITL wiring and DABench workspace staging), Typer CLI (`atm run`); wall_time_s and cognitive_load_proxy capture
   - `analysis/` — Full M13 surface: `loaders.py` (load_experiment, load_runs, load_llm_calls, load_llm_calls_for_experiment, load_topology_transitions, load_phases, load_human_interactions), `metrics.py` (7 RQ2 derived-metric helpers), `plots.py` (9 RQ1/RQ2/RQ4 plot functions), `oracle.py` (OracleTable, build_leave_one_out_oracle, build_loo_from_rows, load_oracle_table, plot_oracle_vs_router — M8.7 + M13)
 - `tests/` — unit, integration, fixtures
-  - `unit/experiment/` — test_config.py, test_smoke_yaml_loads.py, test_config_grid.py (M12), test_loader_grid_expansion.py (M12)
+  - `unit/experiment/` — test_config.py, test_smoke_yaml_loads.py, test_config_grid.py (M12), test_loader_grid_expansion.py (M12), test_runner_initial_state.py (fix-dabench-task)
+  - `unit/tasks/` — test_humaneval.py, test_gsm8k.py, test_commagen.py, test_dabench.py (fix-dabench-task)
   - `integration/storage/` — test_smoke_run.py + test_migration_0004.py (M12)
 - `alembic/` — database migrations (async template; head = 0004_m12_runs_replay_and_pid)
 - `.github/workflows/` — CI/CD pipelines (M11-resync: ci.yml with lint/unit/integration matrix)
 - `dev/` — documentation (PLAN.md, arch.md) and task tracking
 
-## Recent Updates (2026-05-15)
+## Recent Updates (2026-05-16)
+
+### fix-dabench-task: DABench Workspace Staging (completed 2026-05-16)
+- **`src/atm/tasks/dabench.py`** (extended): Added `stage_workspace_for(spec, workspace_path, *, spec_id=None)` public function to download & cache DABench CSV table files into experiment workspace. Includes path-traversal guards via `.resolve().is_relative_to()` and network timeout handling (`URLError`, `OSError`, `TimeoutError`). Constants `_DABENCH_TABLES_URL_TEMPLATE` and `_DEFAULT_TABLES_CACHE` (@ `data/cache/dabench_tables/`). Supports offline mode via `ATM_DABENCH_OFFLINE=1` env var (returns empty list).
+- **`src/atm/experiment/runner.py`** (extended): Restructured `_build_initial_state` to always resolve spec (outside `if not task_input:` guard), wrapping in `try/except Exception`. Added `_augment_task_input_with_metadata(task_input, spec_id, metadata)` helper — injects `[Task metadata]` block with format, constraints, file_name (DABench-only, guarded by `spec_id.startswith("dabench/")`). Added module-level guarded import `from atm.tasks.dabench import stage_workspace_for` (with `try/except ImportError`). Added `_pre_stage_workspace(cfg, run_id, workspace_path, *, spec=None)` helper; called immediately after `tools_workspace.mkdir` at two sites: `run_one` (~line 858) and resume/replay path (~line 1864). Single `resolve_spec` call per run preserved.
+- **`conf/agents/executor.yaml`** (extended): Added DABench data-analysis paragraph to system_prompt after `solution.py` paragraph. Includes: CSV detection via "Dataset file" / `[Task metadata]` block, `code_run` + pandas guidance, `@metric_name[value]` format instruction, Answer format and Constraints line references.
+- **Tests:** `test_runner_initial_state.py` — 4 new tests (augmentation, resume-path staging). `test_dabench.py` — 4 new staging tests (non-dabench, cache, offline, network error). Suite grows from 1766 to 1774 unit tests.
+- **Constraints:** No DB schema change. No Alembic migration. No package exports beyond `atm.tasks.dabench.stage_workspace_for`.
 
 ### M13: Analysis Tooling (m13 — complete)
 - **`src/atm/analysis/loaders.py`** (new): 7 async/sync loaders — `load_experiment`, `load_runs` (PG-backed); `load_llm_calls`, `load_llm_calls_for_experiment` (Parquet); `load_topology_transitions`, `load_phases`, `load_human_interactions` (PG + Parquet dual-source). JSONB fields decoded to dict; `raw_tlx_score` cast to float with NaN for empty strings.
@@ -71,6 +79,10 @@
 
 ## Key Modules
 
+### Task Framework (`tasks/`) — M10-resync + fix-dabench-task
+- **HumanEval/GSM8K/CommonGen loaders:** SpecRegistry loaders + Evaluator classes.
+- **DABench loader + staging:** `DABenchLoader`, `DABenchEvaluator`, new `stage_workspace_for(spec, workspace_path, *, spec_id=None)` for CSV staging with path-traversal & timeout guards. Constants `_DABENCH_TABLES_URL_TEMPLATE` (GitHub raw URLs), `_DEFAULT_TABLES_CACHE` (@ `data/cache/dabench_tables/`). Respects `ATM_DABENCH_OFFLINE=1`.
+
 ### Storage Layer (`storage/`) — M3 complete + M12
 - **Run model columns:** `id`, `exp_id`, `topology`, `task_id`, `agent_set`, `human_role`, `seed`, `model`, `models_by_role_json` (JSONB), `model_version_snapshot` (JSONB), `sandbox_image_digest`, `status`, `finish_reason`, `budget_spent_usd`, `quality_score`, `cognitive_load_proxy`, `wall_time_s`, `iterations`, `started_at`, `finished_at`, `error`, `replay_of` (self-FK), `host`, `process_pid`.
 - **Indices:** `runs_exp_id_idx(exp_id)`, `runs_topology_idx(topology)`, `runs_task_id_idx(task_id)`, `runs_status_idx(status)`, `runs_started_idx(started_at)`, `runs_exp_status_idx(exp_id, status)` (M12).
@@ -83,10 +95,11 @@
 - **Oracle:** `OracleTable`, `build_leave_one_out_oracle`, `build_loo_from_rows`, `load_oracle_table`; config `conf/oracle/type_level_manual.yaml`.
 - **Notebook:** `scripts/gen_analysis_notebook.py` generates `notebooks/analysis_template.ipynb` (6 sections; idempotent).
 
-### Experiment Runner & Config (`experiment/`) — M12 partial (config-schema done)
+### Experiment Runner & Config (`experiment/`) — M12 + fix-dabench-task
 - **GridCfg (M12):** `sweep: dict[str, list[scalar]]` (dotpath-validated) + `parallelism: int` + `seeds: list[int]` + `fail_fast: bool`.
 - **EstimateCfg (M12):** `heuristic_tokens_per_call`, `calls_per_iter`, `use_historical`.
 - **Loader (M12):** `load_config(path, overrides)` + new `load_grid_configs(path, overrides)` for cartesian expansion (moved into `loader.py`; re-exported from `config.py`).
+- **Runner (fix-dabench-task):** `_build_initial_state` always resolves spec; `_augment_task_input_with_metadata` injects task metadata for DABench tasks; `_pre_stage_workspace` downloads & caches DABench CSV files into workspace (respects offline mode + guards network errors).
 - **CLI:** Typer `atm run` command. **TODO (other M12 blocks in flight):** `atm grid` (m12-grid-runner), `atm resume/replay/reconcile` (m12-resume-replay), `atm estimate/status` (m12-estimate-status-cli).
 
 ### LLM Layer (`llm/`)
@@ -108,12 +121,19 @@
 ### Configuration (M12)
 - YAML + OmegaConf + Pydantic. Grid sweep via `GridCfg.sweep: dict[str, list[scalar]]` with dotpath validators; `load_grid_configs` expands via cartesian product over sweep dimensions × `seeds`.
 
+### DABench Workspace Staging (fix-dabench-task)
+- CSV files downloaded from GitHub raw URLs, cached locally @ `data/cache/dabench_tables/`.
+- `stage_workspace_for` called via `_pre_stage_workspace` in both `run_one` and resume/replay paths.
+- Augmented task input includes `[Task metadata]` block with format, constraints, file_name (DABench only).
+- Executor agent system prompt extended with DABench CSV analysis guidance.
+
 ### Testing
 - FakeLLM deterministic mock; scripted fixtures.
-- 1513+ unit tests, ~47 integration tests; PG tests gated by `ATM_ENABLE_PG_TESTS=1`.
+- 1774 unit tests, ~47 integration tests; PG tests gated by `ATM_ENABLE_PG_TESTS=1`.
 
 ## Constraints & Notes
 - **Alembic head:** `0004_m12_runs_replay_and_pid`.
 - **Task tracking:** `dev/done/m12-config-schema`. In flight (parallel orchestrators on `feat/m12`): `m12-grid-runner`, `m12-resume-replay`, `m12-estimate-status-cli`. All depend on `m12-config-schema`. After they merge, `m12-grid-integration` will be the final block.
 - **Grid sweep:** Sweep values restricted to scalars (str/int/float/bool); dotpath validation via `_resolve_dotpath` (handles `X | None` natively); self-FK `replay_of` on `runs.id` (ondelete=SET NULL).
 - **Back-compat:** `from atm.experiment.config import load_config` re-exported from `loader.py`.
+- **DABench staging:** Network errors logged but don't crash; offline mode (`ATM_DABENCH_OFFLINE=1`) disables staging; cache @ `data/cache/dabench_tables/` is gitignored.
