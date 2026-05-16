@@ -64,7 +64,12 @@ TopologyConfig.extra defaults (under namespaced extras.adaptive):
                                uuid4() (omitted from model_dump via exclude_none=True to
                                prevent literal "None" string from being injected)
   phase_router: "rule"       — parsed but NOT consumed by the current builder (forward-compat)
-  topology_router: "rule"    — parsed but NOT consumed by the current builder (forward-compat)
+  topology_router: "rule" | "llm" | "oracle"  — selects the router used to pick
+                                               the active sub-topology each tick.
+                                               "llm" requires kwargs["topology_router_llm"];
+                                               "oracle" requires extras["oracle_table_path"]
+                                               (default data/oracle/e1_leave_one_out.json).
+                                               Missing prerequisites → soft fallback to rule.
 
   Sub-topology extras are forwarded under their own namespace bucket (e.g.
   ``extras.mesh.*`` is passed to the mesh sub-topology builder); adaptive does
@@ -108,7 +113,13 @@ from atm.phases.guards import (
     _violates_min_dwell,
 )
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
-from atm.phases.topology_router import RuleBasedTopologyRouter
+from pathlib import Path
+
+from atm.phases.topology_router import (
+    LLMTopologyRouter,
+    OracleTopologyRouter,
+    RuleBasedTopologyRouter,
+)
 from atm.topology.base import TopologyConfig, TopologyRegistry, get_topology_extras
 
 _log = logging.getLogger(__name__)
@@ -418,13 +429,57 @@ class AdaptiveTopology:
         phase_router = RuleBasedPhaseRouter(limits=limits, guards={})
 
         rule_topo_router = RuleBasedTopologyRouter()
+
+        # Choose topology router based on extras.topology_router.
+        # Soft-fallback to rule on missing prerequisites (LLM wrapper, oracle
+        # file) so e3_full sweep across modes never crashes — a warning is
+        # logged + decided_by reflects whichever router actually ran.
+        topo_router_mode: str = str(extras.get("topology_router", "rule")).lower()
+        inner_topo_router: Any
+        if topo_router_mode == "llm":
+            router_llm: Any = kwargs.get("topology_router_llm")
+            if router_llm is None:
+                _log.warning(
+                    "adaptive: topology_router='llm' but no topology_router_llm "
+                    "kwarg provided; falling back to rule"
+                )
+                inner_topo_router = rule_topo_router
+            else:
+                inner_topo_router = LLMTopologyRouter(
+                    llm=router_llm, rule_fallback=rule_topo_router
+                )
+        elif topo_router_mode == "oracle":
+            oracle_path_str: str = str(
+                extras.get("oracle_table_path") or "data/oracle/e1_leave_one_out.json"
+            )
+            oracle_path = Path(oracle_path_str)
+            if not oracle_path.exists():
+                _log.warning(
+                    "adaptive: topology_router='oracle' but oracle table %s missing; "
+                    "falling back to rule",
+                    oracle_path,
+                )
+                inner_topo_router = rule_topo_router
+            else:
+                try:
+                    inner_topo_router = OracleTopologyRouter(oracle_path)
+                except Exception as exc:  # pragma: no cover — defensive
+                    _log.warning(
+                        "adaptive: OracleTopologyRouter init failed (%s); "
+                        "falling back to rule",
+                        exc,
+                    )
+                    inner_topo_router = rule_topo_router
+        else:
+            inner_topo_router = rule_topo_router
+
         use_guards: bool = bool(extras.get("switch_guards", True))
         if use_guards:
             guards_cfg = extras.get("switch_guards_config") or {}
             switch_guards = SwitchGuards(**dict(guards_cfg.items()))
-            topo_router: Any = GuardedRouter(inner=rule_topo_router, guards=switch_guards)
+            topo_router: Any = GuardedRouter(inner=inner_topo_router, guards=switch_guards)
         else:
-            topo_router = rule_topo_router
+            topo_router = inner_topo_router
 
         # ----------------------------------------------------------------
         # Subgraph cache (lazy compile on first use per topology name)
@@ -649,12 +704,17 @@ class AdaptiveTopology:
             timeout_policy: str = getattr(human_cfg, "timeout_policy", "skip")
 
             if _request_with_timeout is not None and timeout_s is not None:
+                _fallback_gateway: Any = None
+                if timeout_policy == "llm_fallback" and _LLMSimulatedGateway is not None:
+                    _fb_llm: Any = getattr(_gateway, "_llm", None)
+                    _fallback_gateway = _LLMSimulatedGateway(llm=_fb_llm)
                 response = await _request_with_timeout(
                     _gateway,
                     ctx,
                     request_id=request_id,
                     timeout_s=timeout_s,
                     policy=timeout_policy,
+                    llm_fallback_gateway=_fallback_gateway,
                 )
             else:
                 response = await _gateway.request(ctx, request_id=request_id)

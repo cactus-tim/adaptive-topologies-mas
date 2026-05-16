@@ -451,12 +451,17 @@ class MeshTopology:
                 policy: str = getattr(_hcfg, "timeout_policy", "skip")
 
                 if request_with_timeout is not None and timeout_s_val is not None:
+                    _fallback_gateway: Any = None
+                    if policy == "llm_fallback" and LLMSimulatedGateway is not None:
+                        _fb_llm: Any = getattr(_hgw, "_llm", None)
+                        _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
                     response = await request_with_timeout(
                         _hgw,
                         ctx,
                         request_id=request_id,
                         timeout_s=timeout_s_val,
                         policy=policy,
+                        llm_fallback_gateway=_fallback_gateway,
                     )
                 else:
                     response = await _hgw.request(ctx, request_id=request_id)

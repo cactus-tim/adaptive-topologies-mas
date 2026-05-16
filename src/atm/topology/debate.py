@@ -577,12 +577,17 @@ def _build_human_judge_node(
         policy: str = getattr(human_cfg, "timeout_policy", "skip")
 
         if request_with_timeout is not None and timeout_s_val is not None:
+            _fallback_gateway: Any = None
+            if policy == "llm_fallback" and LLMSimulatedGateway is not None:
+                _fb_llm: Any = getattr(gateway, "_llm", None)
+                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
             response = await request_with_timeout(
                 gateway,
                 ctx,
                 request_id=request_id,
                 timeout_s=timeout_s_val,
                 policy=policy,
+                llm_fallback_gateway=_fallback_gateway,
             )
         else:
             response = await gateway.request(ctx, request_id=request_id)
@@ -1074,12 +1079,17 @@ class DebateTopology:
                 h_policy: str = getattr(human_cfg, "timeout_policy", "skip")
 
                 if request_with_timeout is not None and timeout_s_val is not None:
+                    _h_fallback_gateway: Any = None
+                    if h_policy == "llm_fallback" and LLMSimulatedGateway is not None:
+                        _h_fb_llm: Any = getattr(gateway, "_llm", None)
+                        _h_fallback_gateway = LLMSimulatedGateway(llm=_h_fb_llm)
                     h_response = await request_with_timeout(
                         gateway,
                         ctx,
                         request_id=h_request_id,
                         timeout_s=timeout_s_val,
                         policy=h_policy,
+                        llm_fallback_gateway=_h_fallback_gateway,
                     )
                 else:
                     h_response = await gateway.request(ctx, request_id=h_request_id)
