@@ -37,11 +37,16 @@ Stopping precedence (arch.md §7.1):
   3. topology_max        — debate_round >= max_rounds      → END
   4. continue            — loop back to debaters
 
-TopologyConfig.extra defaults:
-  max_rounds: 4          — maximum debate rounds before forced END
-  debater_pro_id:   required in agents dict (any key)
-  debater_contra_id: required in agents dict (any key, must differ from pro)
-  judge_id:         required in agents dict
+TopologyConfig.extra defaults (under namespaced extras.debate):
+  max_rounds: 4                      — maximum debate rounds before forced END
+  debater_pro_id: "debater_pro"      — key in agents dict for pro debater
+  debater_contra_id: "debater_contra" — key in agents dict for contra debater
+  judge_id: "judge"                  — key in agents dict for judge
+
+  Legacy flat keys (e.g. ``extra: {max_rounds: 4}``) are auto-remapped to
+  ``extras.debate.max_rounds`` (and ``extras.hierarchical.max_rounds``) with a
+  ``DeprecationWarning`` by the bw-compat validator in
+  ``atm.experiment.config.TopologyCfg``.
 
 HumanCfg.extra keys (Debate-specific):
   judge: "critic" | "human" | "both"  (default "critic")

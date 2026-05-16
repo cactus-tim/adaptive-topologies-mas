@@ -41,10 +41,14 @@ Edges:
   executor → coordinator
   critic → critic_postprocess → [human_reviewer →] coordinator
 
-TopologyConfig.extra defaults:
-  planning_max_iter: 2
-  exec_max_iter: 5
-  verify_max_iter: 3
+TopologyConfig.extra defaults (under namespaced extras.star):
+  planning_max_iter: 2   — mirrors ``_DEFAULT_PLANNING_MAX_ITER``
+  exec_max_iter: 5       — mirrors ``_DEFAULT_EXEC_MAX_ITER``
+  verify_max_iter: 3     — mirrors ``_DEFAULT_VERIFY_MAX_ITER``
+
+  Legacy flat keys (e.g. ``extra: {planning_max_iter: 2}``) are auto-remapped
+  to ``extras.star.*`` with a ``DeprecationWarning`` by the bw-compat validator
+  in ``atm.experiment.config.TopologyCfg``.
 """
 
 from __future__ import annotations

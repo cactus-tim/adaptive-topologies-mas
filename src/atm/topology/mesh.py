@@ -23,12 +23,22 @@ Nodes:
   mesh_broadcast, mesh_postprocess
   (+ human_peer when human_cfg.enabled=True)
 
-TopologyConfig.extra keys:
-  max_rounds           — max dispatch rounds before forced END (default 6)
-  consensus_threshold  — votes needed to reach consensus (default 3)
-  activation_policy    — "round_robin" (default) or "priority"
-  agent_order          — list of agent_ids for round-robin ordering
-  broadcast_bus_cap    — hard cap on broadcast_bus list length (default 200, MC-5)
+TopologyConfig.extra defaults (under namespaced extras.mesh):
+  max_rounds: 12                                          — mirrors ``_DEFAULT_MAX_ROUNDS``
+  consensus_threshold: 3                                  — mirrors ``_DEFAULT_CONSENSUS_THRESHOLD``
+  max_messages: 200                                       — mirrors ``_DEFAULT_BROADCAST_BUS_CAP``
+  dispatch: "round_robin"                                 — mirrors ``_DEFAULT_ACTIVATION_POLICY``
+  round_robin_order: ["planner","researcher","executor","critic"] — mirrors ``_DEFAULT_AGENT_ORDER``
+
+  NOTE: max_rounds default is 12 (NOT 6) to give the round-robin dispatcher
+  [planner, researcher, executor, critic] at least 3 full passes before END;
+  the historical value of 6 starved the executor when a shared max_rounds was
+  set to 2 for debate/hierarchical experiments.
+
+  Legacy flat key ``mesh_max_rounds`` is auto-remapped to ``extras.mesh.max_rounds``
+  with a ``DeprecationWarning`` by the bw-compat validator in
+  ``atm.experiment.config.TopologyCfg``. The flat key ``max_rounds`` is NOT
+  scattered to mesh (only to debate + hierarchical) to prevent starvation bugs.
 
 HumanCfg.extra keys (when human_cfg.enabled=True):
   activation_round     — first dispatch_round when human_peer participates (default 2)

@@ -53,6 +53,26 @@ Key design decisions:
      # subgraph with real interrupt/resume) is deferred to M9.2.
      # See arch/PLAN.md §M9.1 exit criterion lines 560-561.
 
+TopologyConfig.extra defaults (under namespaced extras.adaptive):
+  planning_max_iter: 3       — max iterations in planning phase (intentionally > star's 2)
+  exec_max_iter: 10          — max iterations in execution phase (intentionally > star's 5)
+  verify_max_iter: 4         — max iterations in verification phase (intentionally > star's 3)
+  subgraph_max_iterations: 10 — max_iterations forwarded to each dispatched sub-topology
+  switch_guards: True        — enable SwitchGuards (cooldown/dwell/max-per-phase checks)
+  switch_guards_config: None — dict of SwitchGuards kwargs; None uses all guard defaults
+  run_id: None               — unique run identifier; None causes builder to generate
+                               uuid4() (omitted from model_dump via exclude_none=True to
+                               prevent literal "None" string from being injected)
+  phase_router: "rule"       — parsed but NOT consumed by the current builder (forward-compat)
+  topology_router: "rule"    — parsed but NOT consumed by the current builder (forward-compat)
+
+  Sub-topology extras are forwarded under their own namespace bucket (e.g.
+  ``extras.mesh.*`` is passed to the mesh sub-topology builder); adaptive does
+  NOT read ``max_rounds`` — that key does not exist on ``AdaptiveExtras``.
+
+  Legacy flat keys are auto-remapped with a ``DeprecationWarning`` by the
+  bw-compat validator in ``atm.experiment.config.TopologyCfg``.
+
 Public API:
   AdaptiveTopology          — topology class (registered under "adaptive")
   build_adaptive_graph()    — convenience factory returning CompiledStateGraph

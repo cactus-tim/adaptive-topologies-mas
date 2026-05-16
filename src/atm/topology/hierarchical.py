@@ -21,11 +21,17 @@ Nodes (top-level):
 Nodes (each subgraph):
   sub_coord_X, worker_X1, worker_X2
 
-TopologyConfig.extra defaults:
-  max_rounds: 4
-  final_answer_strategy: "json_concat"
-  sub_teams: [{team_id: "team_a", workers: [...]}, {team_id: "team_b", workers: [...]}]
-  finalize_signal: "top_coord_finalize"
+TopologyConfig.extra defaults (under namespaced extras.hierarchical):
+  max_rounds: 4                        — mirrors ``_DEFAULT_MAX_ROUNDS``
+  finalize_signal: "top_coord_finalize" — mirrors ``_DEFAULT_FINALIZE_SIGNAL``
+  final_answer_strategy: "json_concat"  — strategy for merging team outputs
+  sub_teams: None                       — list of team defs; builder raises ValueError
+                                          if any entry contains a nested "sub_teams" key
+
+  Legacy flat keys (e.g. ``extra: {max_rounds: 4}``) are auto-remapped to
+  ``extras.hierarchical.max_rounds`` (and ``extras.debate.max_rounds``) with a
+  ``DeprecationWarning`` by the bw-compat validator in
+  ``atm.experiment.config.TopologyCfg``.
 
 HITL (M9.1):
   scope="top" (default): human_top_reviewer node inserted between top_coord
