@@ -96,9 +96,13 @@ _CACHE_KEY = "dabench"
 
 # URL template for downloading a DABench CSV table from the pinned GitHub commit.
 # Caller must format with sha=_DABENCH_COMMIT_SHA and file_name=<table filename>.
+# NB: the directory is ``da-dev-tables`` (plural ``tables``), NOT ``da-dev-data``
+# — the latter is a sibling directory containing the JSONL question/label files
+# (referenced by _DABENCH_QUESTIONS_URL above). Confused these earlier and got
+# 100% 404s on every CSV download.
 _DABENCH_TABLES_URL_TEMPLATE = (
     "https://raw.githubusercontent.com/InfiAgent/InfiAgent/"
-    "{sha}/examples/DA-Agent/data/da-dev-data/{file_name}"
+    "{sha}/examples/DA-Agent/data/da-dev-tables/{file_name}"
 )
 
 # Default byte cache location for CSV tables.
