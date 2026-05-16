@@ -392,7 +392,60 @@ async def _update_run_failed(
         await session.execute(sa.update(Run).where(Run.id == run_id).values(**values))
 
 
-def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
+def _augment_task_input_with_metadata(
+    base: str,
+    metadata: dict[str, Any] | None,
+    spec_id: str | None = None,
+) -> str:
+    """Append a [Task metadata] block to *base* when metadata warrants it.
+
+    Augmentation fires only when all three conditions hold:
+    1. ``metadata`` is non-None and non-empty.
+    2. ``spec_id`` is either None or starts with ``"dabench/"`` — defensive
+       narrowing prevents future task families from accidentally triggering this
+       path by adding a ``format`` key to their metadata.
+    3. At least one of ``metadata["format"]`` or ``metadata["file_name"]`` is
+       present and truthy.
+
+    Lines appended (only when the corresponding key is present and truthy):
+        Dataset file:   {file_name}
+        Constraints:    {constraints}
+        Answer format (must appear verbatim in your final reply): {format}
+
+    Args:
+        base:     The original task input string.
+        metadata: Metadata dict from ``TaskSpec.metadata``, or None.
+        spec_id:  The ``TaskSpec.id`` (e.g. ``"dabench/titanic/0"``), or None.
+
+    Returns:
+        The augmented string, or *base* unchanged if augmentation does not apply.
+    """
+    if not metadata:
+        return base
+    if spec_id is not None and not spec_id.startswith("dabench/"):
+        return base
+    if not (metadata.get("format") or metadata.get("file_name")):
+        return base
+
+    lines: list[str] = ["", "", "[Task metadata]"]
+    file_name = metadata.get("file_name")
+    constraints = metadata.get("constraints")
+    fmt = metadata.get("format")
+    if file_name:
+        lines.append(f"Dataset file: {file_name}")
+    if constraints:
+        lines.append(f"Constraints: {constraints}")
+    if fmt:
+        lines.append(f"Answer format (must appear verbatim in your final reply): {fmt}")
+    return base + "\n".join(lines)
+
+
+def _build_initial_state(
+    cfg: ExperimentConfig,
+    run_id: UUID,
+    *,
+    spec: Any = None,
+) -> dict[str, Any]:
     """Build the initial GraphState with all 14 SharedState keys populated.
 
     Required SharedState keys (arch.md §3.2):
@@ -401,34 +454,39 @@ def _build_initial_state(cfg: ExperimentConfig, run_id: UUID) -> dict[str, Any]:
         topology_history, topology_switch_count, phase_history, human_requests,
         human_responses, broadcast_bus
 
+    ``resolve_spec`` is always attempted so that ``TaskSpec.metadata`` (e.g.
+    DABench ``format`` / ``constraints`` / ``file_name``) can be appended to
+    ``task_input``.  If resolution fails the function falls back gracefully.
+
     Args:
         cfg:    Experiment configuration.
         run_id: UUID of the current run.
+        spec:   Optional pre-resolved ``TaskSpec``.  When provided, ``resolve_spec``
+                is NOT called again — the caller is responsible for resolving the
+                spec once and passing it here to avoid duplicate registry lookups.
+                When omitted (e.g. in unit tests that call this function directly),
+                ``resolve_spec`` is invoked internally.
 
     Returns:
         A fully populated GraphState dict.
     """
-    # task_input resolution:
-    #   1. cfg.task.input (inline-prompt mode used by M6 smoke / unit tests)
-    #   2. resolve_spec(cfg.task).input (dataset-backed benchmark — sampled
-    #      deterministically from cfg.task.shuffle_seed). The same spec is
-    #      re-resolved later in step 11 for evaluation; sample() is keyed on
-    #      (name, n=1, seed) so both calls return the same TaskSpec.
-    #   3. empty string (only happens when both fail; agents will reply with
-    #      a "please provide the task" placeholder — known degenerate state).
-    task_input: str = cfg.task.input or ""
-    if not task_input:
+    _spec = spec
+    if _spec is None:
         try:
             _spec = resolve_spec(cfg.task)
-            if _spec is not None:
-                task_input = _spec.input
         except Exception:
             logger.warning(
-                "resolve_spec failed in _build_initial_state; "
-                "task_input left empty",
-                task=cfg.task.name,
-                exc_info=True,
+                "resolve_spec failed; task_input augmentation may be empty",
+                task_name=cfg.task.name,
             )
+
+    task_input: str = cfg.task.input or (_spec.input if _spec else "") or ""
+    task_input = _augment_task_input_with_metadata(
+        task_input,
+        _spec.metadata if _spec else None,
+        spec_id=_spec.id if _spec else None,
+    )
+
     return {
         "shared": {
             "run_id": run_id,
@@ -495,27 +553,10 @@ def _build_llm_wrappers(
     roles = ["planner", "executor", "critic", "researcher"]
     wrappers: dict[str, LLMWrapper] = {}
 
-    # Resolve provider_opts for a (provider, role) pair. Convention:
-    #   1. provider_opts.get(f"{provider}_{role}") — per-role override (e.g.
-    #      "cerebras_critic" giving the critic a higher reasoning_effort).
-    #   2. provider_opts.get(provider) — provider-wide default.
-    # Returns a fresh dict per call so callers can mutate without aliasing.
-    provider_opts_all: dict[str, Any] = dict(cfg.model.provider_opts or {})
-
-    def _opts_for(provider: str, role: str) -> dict[str, Any]:
-        per_role = provider_opts_all.get(f"{provider}_{role}")
-        if isinstance(per_role, dict):
-            return dict(per_role)
-        provider_default = provider_opts_all.get(provider)
-        if isinstance(provider_default, dict):
-            return dict(provider_default)
-        return {}
-
     for role in roles:
         model_id = cfg.model.get_model_for(role)
         provider = model_id.split(":", 1)[0] if ":" in model_id else model_id
         bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
-        opts_for_role = _opts_for(provider, role)
 
         if provider == "fake" and bare_model == "scripted":
             # Resolve fixture path from cfg.model.fake_fixtures if available
@@ -570,7 +611,6 @@ def _build_llm_wrappers(
                 model_id=model_id,
                 pricing=pricing,
                 budget=budget,
-                cfg=opts_for_role or None,
             )
 
     return wrappers
@@ -647,94 +687,6 @@ def _build_agents(
         agent_cls: type = Critic if role == "critic" else Agent
         agents[role] = agent_cls(
             agent_id=role,
-            cfg=agent_cfg,
-            llm=llm,
-            tools=tools,
-        )
-
-    # ------------------------------------------------------------------
-    # Topology-specific extra workers.
-    #
-    # canonical_4 covers star/chain/mesh/adaptive but NOT:
-    #   - hierarchical: needs per-team worker agents listed under
-    #     cfg.topology.extra.sub_teams[*].workers (e.g. executor_a1).
-    #   - debate: needs debater_pro / debater_contra / judge agents
-    #     identified by cfg.topology.extra.{debater_pro_id,
-    #     debater_contra_id, judge_id} (defaults: those exact strings).
-    # We synthesise each extra worker as a fresh Agent (Critic subclass
-    # for the judge so it emits DECISION). The base config is borrowed
-    # from executor.yaml — workers ARE executors, just with team-scoped
-    # identifiers — which keeps tools (file_write/code_run/...) attached.
-    # The judge borrows critic.yaml so its prompt and DECISION semantics
-    # match the chain/star verifier.
-    # ------------------------------------------------------------------
-    topo_name = getattr(cfg.topology, "name", "")
-    topo_extra = dict(getattr(cfg.topology, "extra", None) or {})
-    extra_workers: list[tuple[str, str]] = []  # [(agent_id, base_role), ...]
-
-    if topo_name == "hierarchical":
-        # Mirror HierarchicalTopology.build defaults: if sub_teams is missing
-        # or has <2 teams, the topology synthesises team_a/team_b with two
-        # executor workers each. _build_agents has to use the SAME default
-        # set, otherwise the topology references agent ids we never built.
-        sub_teams = list(topo_extra.get("sub_teams") or [])
-        if len(sub_teams) < 2:
-            sub_teams = [
-                {"team_id": "team_a", "workers": ["executor_a1", "executor_a2"]},
-                {"team_id": "team_b", "workers": ["executor_b1", "executor_b2"]},
-            ]
-        for team in sub_teams:
-            for worker_id in team.get("workers") or []:
-                extra_workers.append((str(worker_id), "executor"))
-    elif topo_name == "debate":
-        extra_workers.append(
-            (str(topo_extra.get("debater_pro_id") or "debater_pro"), "executor")
-        )
-        extra_workers.append(
-            (str(topo_extra.get("debater_contra_id") or "debater_contra"), "executor")
-        )
-        extra_workers.append(
-            (str(topo_extra.get("judge_id") or "judge"), "critic")
-        )
-
-    for worker_id, base_role in extra_workers:
-        if worker_id in agents:
-            continue  # already built (e.g. judge_id == "critic")
-        base_yaml = agents_conf_dir / f"{base_role}.yaml"
-        if not base_yaml.exists():
-            logger.warning(
-                "topology extra worker base config missing",
-                worker_id=worker_id,
-                base_role=base_role,
-                path=str(base_yaml),
-            )
-            continue
-        try:
-            agent_cfg = load_agent_config(base_yaml)
-        except Exception as e:
-            logger.warning(
-                "topology extra worker config load failed",
-                worker_id=worker_id,
-                error=str(e),
-            )
-            continue
-        # Per-worker LLM resolution: prefer cfg.model.by_role[worker_id]
-        # if explicitly mapped, then by_role[base_role], else default.
-        llm = (
-            llms.get(worker_id)
-            or llms.get(base_role)
-            or llms.get("planner")
-        )
-        if llm is None:
-            logger.warning(
-                "no LLM wrapper for topology extra worker",
-                worker_id=worker_id,
-            )
-            continue
-        tools = tool_registry if tool_registry is not None else ToolRegistry()
-        agent_cls = Critic if base_role == "critic" else Agent
-        agents[worker_id] = agent_cls(
-            agent_id=worker_id,
             cfg=agent_cfg,
             llm=llm,
             tools=tools,
@@ -885,8 +837,13 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             budget_exceed_threshold=Decimal(str(cfg.budget.per_run_usd)),
         )
 
-        # Step 8: build initial state
-        initial_state = _build_initial_state(cfg, run_id)
+        # Step 8: build initial state.
+        # Resolve spec once here so _build_initial_state can augment task_input
+        # with TaskSpec.metadata (e.g. DABench format/constraints/file_name)
+        # and the same resolved spec is reused at the evaluation step below,
+        # avoiding a second registry lookup.
+        _run_spec = resolve_spec(cfg.task)
+        initial_state = _build_initial_state(cfg, run_id, spec=_run_spec)
 
         # Step 6: build topology
         topology_cfg = TopologyConfig(
@@ -964,60 +921,12 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         final_answer = str(shared_final.get("final_answer") or "")
         iterations = int(shared_final.get("iter_total") or 0)
 
-        # Workspace artifact safety net.
-        #
-        # Each topology is responsible for writing the executor's best
-        # artifact into ``shared.final_answer`` before terminating
-        # (chain._critic_postprocess + star.coordinator do this
-        # unconditionally; debate/hierarchical use their own logic).
-        # When that contract is violated — typically because a topology has
-        # custom extraction logic that pre-dates the file_write tool, or
-        # because the run aborted before the topology's finalize step — we
-        # fall back to the on-disk ``solution.py`` written via the
-        # ``file_write`` tool. This is task-shape-aware: only programming
-        # tasks expect a Python file, and only programming evaluators
-        # interpret it as code, so reading this for gsm8k / commongen /
-        # dabench is harmless (it simply won't exist there).
-        # Triggers when:
-        #   (a) topology produced nothing usable (empty / "<incomplete>"), OR
-        #   (b) task is programming-style AND topology's final_answer is not
-        #       Python (e.g. hierarchical's json_concat returns a JSON dict
-        #       enumerating each team's draft — valid for hierarchical's
-        #       semantics but unevaluatable by humaneval_pytest).
-        # In both cases, prefer the on-disk solution.py the executor wrote
-        # via file_write — that's the actual artifact for code tasks.
-        _is_code_task = cfg.task.name in ("humaneval",)
-        _looks_like_python = "def " in final_answer or "import " in final_answer
-        if (
-            not final_answer
-            or final_answer == "<incomplete>"
-            or (_is_code_task and not _looks_like_python)
-        ):
-            try:
-                _ws_solution = tools_workspace / "solution.py"
-                if _ws_solution.is_file():
-                    _disk_text = _ws_solution.read_text(encoding="utf-8")
-                    if _disk_text.strip():
-                        final_answer = _disk_text
-                        logger.info(
-                            "final_answer recovered from workspace/solution.py",
-                            run_id=str(run_id),
-                            topology=cfg.topology.name,
-                            chars=len(_disk_text),
-                        )
-            except Exception:
-                logger.warning(
-                    "workspace solution.py recovery failed",
-                    run_id=str(run_id),
-                    exc_info=True,
-                )
-
         # Get actual budget spent from tracker
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
         # Step 11: evaluate
         sandbox = SubprocessSandbox()  # assigned to outer-scope var for finally digest capture
-        spec = resolve_spec(cfg.task)
+        spec = _run_spec
         if spec is None:
             logger.debug(
                 "resolve_spec returned None (inline-prompt path); setting quality_score=0.0",
@@ -1942,32 +1851,6 @@ async def _execute_existing_run(
         final_answer = str(shared_final.get("final_answer") or "")
         iterations = int(shared_final.get("iter_total") or 0)
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
-
-        # Workspace artifact safety net (mirror of run_one — see comment there).
-        _is_code_task = cfg.task.name in ("humaneval",)
-        _looks_like_python = "def " in final_answer or "import " in final_answer
-        if (
-            not final_answer
-            or final_answer == "<incomplete>"
-            or (_is_code_task and not _looks_like_python)
-        ):
-            try:
-                _ws_solution = tools_workspace / "solution.py"
-                if _ws_solution.is_file():
-                    _disk_text = _ws_solution.read_text(encoding="utf-8")
-                    if _disk_text.strip():
-                        final_answer = _disk_text
-                        logger.info(
-                            "final_answer recovered from workspace/solution.py",
-                            run_id=str(run_id),
-                            topology=cfg.topology.name,
-                        )
-            except Exception:
-                logger.warning(
-                    "workspace solution.py recovery failed",
-                    run_id=str(run_id),
-                    exc_info=True,
-                )
 
         sandbox = SubprocessSandbox()
         spec = resolve_spec(cfg.task)

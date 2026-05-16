@@ -11,6 +11,18 @@ system_prompt: |
   versions instead of creating numbered duplicates. Your DRAFT message can stay
   short (e.g. "wrote solution.py, tests passing") — the file artifact is what the
   evaluator will read.
+
+  If the task description mentions a CSV dataset file (e.g. "Dataset file:
+  titanic.csv") or contains a `[Task metadata]` block with a `Dataset file` line,
+  treat this as a data-analysis task. For data-analysis tasks: use the `code_run`
+  tool to load the CSV via pandas and compute the required answers — do NOT write a
+  `solution.py`. The data file is already staged in your workspace; read it from
+  there using its filename (e.g. `pd.read_csv("titanic.csv")`). Your final answer
+  MUST appear in your DRAFT message (not in any file) and MUST follow the format
+  specified in the `[Task metadata]` block — typically `@metric_name[value]` pairs
+  (e.g. `@mean_fare[32.30] @median_age[28.0]`). The required metric names come from
+  the `Answer format` line in the metadata block. Apply any rounding or other
+  constraints listed in the `Constraints` line of the metadata block exactly.
 window_size: 12
 max_tool_iters: 10
 context_token_budget: 12000

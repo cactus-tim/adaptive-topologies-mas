@@ -46,9 +46,11 @@ import json
 import math
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
+from urllib.request import urlopen
 
 import datasets  # type: ignore[import-untyped]
 import structlog
@@ -62,6 +64,7 @@ __all__ = [
     "DABenchLoader",
     "_load_curated_jsonl",
     "_serialise_common_answers",
+    "stage_workspace_for",
 ]
 
 # ---------------------------------------------------------------------------
@@ -91,7 +94,105 @@ _CURATED_FIXTURE = (
 
 _CACHE_KEY = "dabench"
 
+# URL template for downloading a DABench CSV table from the pinned GitHub commit.
+# Caller must format with sha=_DABENCH_COMMIT_SHA and file_name=<table filename>.
+_DABENCH_TABLES_URL_TEMPLATE = (
+    "https://raw.githubusercontent.com/InfiAgent/InfiAgent/"
+    "{sha}/examples/DA-Agent/data/da-dev-data/{file_name}"
+)
+
+# Default byte cache location for CSV tables.
+# CWD-relative — resolves to <project_root>/data/cache/dabench_tables/ when
+# the process is started from the project root (the normal invocation pattern).
+_DEFAULT_TABLES_CACHE: Path = Path("data") / "cache" / "dabench_tables"
+
 _log = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Workspace staging
+# ---------------------------------------------------------------------------
+
+
+def stage_workspace_for(
+    spec: TaskSpec,
+    workspace_path: Path,
+    cache_dir: Path | None = None,
+) -> list[Path]:
+    """Download and stage the CSV table referenced by a DABench ``spec``.
+
+    For non-DABench specs or specs without a ``file_name`` metadata key this
+    function is a no-op and returns an empty list.  This preserves back-compat
+    with HumanEval, GSM8K, and CommonGen which do not carry ``file_name``.
+
+    Download behaviour:
+    1. If ``ATM_DABENCH_OFFLINE=1`` is set → return ``[]`` (mirrors
+       ``DABenchLoader.load`` offline short-circuit).
+    2. Cache hit (``cache_dir / file_name`` exists) → copy straight to workspace.
+    3. Cache miss → fetch from ``_DABENCH_TABLES_URL_TEMPLATE``, write
+       atomically via a ``.tmp`` intermediate, copy to workspace.
+    4. On any ``(URLError, OSError, TimeoutError)`` → log a warning and return
+       ``[]`` so the calling run path degrades gracefully.
+
+    Args:
+        spec:           The ``TaskSpec`` to stage tables for.
+        workspace_path: Per-run tools workspace directory (must already exist
+                        or be creatable).
+        cache_dir:      Override for the default byte-cache directory.
+                        Defaults to ``_DEFAULT_TABLES_CACHE``.
+
+    Returns:
+        A list containing the ``Path`` of the staged file inside
+        ``workspace_path``, or ``[]`` if staging was skipped or failed.
+    """
+    # Guard 1: only handle dabench specs
+    if not spec.id.startswith("dabench/"):
+        return []
+
+    # Guard 2: file_name must be present and non-empty
+    file_name: str = spec.metadata.get("file_name", "") or ""
+    if not file_name:
+        return []
+
+    # Guard 3: offline mode short-circuit
+    if os.getenv("ATM_DABENCH_OFFLINE", "0") == "1":
+        return []
+
+    resolved_cache_dir: Path = cache_dir if cache_dir is not None else _DEFAULT_TABLES_CACHE
+    cached_file = resolved_cache_dir / file_name
+
+    try:
+        if not cached_file.exists():
+            # Download to a .tmp file first, then atomically rename
+            tmp_dir = resolved_cache_dir / ".tmp"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_file = tmp_dir / f"{file_name}.tmp"
+
+            url = _DABENCH_TABLES_URL_TEMPLATE.format(
+                sha=_DABENCH_COMMIT_SHA,
+                file_name=file_name,
+            )
+            with urlopen(url) as response:
+                data: bytes = response.read()
+
+            tmp_file.write_bytes(data)
+            resolved_cache_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(tmp_file, cached_file)
+
+        # Copy from cache to workspace
+        workspace_path.mkdir(parents=True, exist_ok=True)
+        dest = workspace_path / file_name
+        shutil.copy2(cached_file, dest)
+        return [dest]
+
+    except (URLError, OSError, TimeoutError) as exc:
+        _log.warning(
+            "dabench stage_workspace_for failed",
+            file_name=file_name,
+            spec_id=spec.id,
+            error=str(exc),
+        )
+        return []
+
 
 # ---------------------------------------------------------------------------
 # Regex for parsing @name[value] pairs
