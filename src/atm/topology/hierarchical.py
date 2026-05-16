@@ -133,6 +133,72 @@ def _extract_draft(state: dict[str, Any], agent_id: str) -> str | None:
     return None
 
 
+def _extract_hierarchical_artifact(
+    agents: dict[str, Any],
+    sub_team_worker_ids: list[str],
+) -> str | None:
+    """Return the best code artifact written by any sub-team worker.
+
+    Mirrors ``atm.topology.star._extract_final_answer`` /
+    ``atm.topology.debate._extract_winner_artifact``: walks each worker's
+    ``tool_calls`` in reverse, prefers a successful ``file_write`` to
+    ``solution.py`` / ``main.py``, then any ``.py`` path, then any file.
+    Filtered by ``ToolResult.ok`` so writes rejected by the tool layer
+    (e.g. ``overwrite=False``) don't shadow earlier valid writes.
+
+    Returns ``None`` when no usable ``file_write`` artifact is found — the
+    caller should then fall back to the configured ``final_answer_strategy``
+    (e.g. ``json_concat`` for gsm8k/commongen).
+    """
+    py_solution: str | None = None
+    py_any: str | None = None
+    any_file: str | None = None
+
+    for worker_id in sub_team_worker_ids:
+        worker_state: dict[str, Any] = dict(agents.get(worker_id) or {})
+        tool_calls: list[Any] = list(worker_state.get("tool_calls") or [])
+        tool_results: list[Any] = list(worker_state.get("tool_results") or [])
+        ok_call_ids: set[Any] = {
+            getattr(r, "call_id", None)
+            for r in tool_results
+            if getattr(r, "ok", False)
+        }
+
+        for tc in reversed(tool_calls):
+            if getattr(tc, "tool_name", None) != "file_write":
+                continue
+            if tool_results and getattr(tc, "id", None) not in ok_call_ids:
+                continue
+            args = getattr(tc, "args", None) or {}
+            if not isinstance(args, dict):
+                continue
+            content = args.get("content")
+            path = args.get("path")
+            if not content:
+                continue
+            if any_file is None:
+                any_file = str(content)
+            if isinstance(path, str) and path.endswith(".py"):
+                if py_any is None:
+                    py_any = str(content)
+                if py_solution is None and (
+                    path.endswith("solution.py") or path.endswith("main.py")
+                ):
+                    py_solution = str(content)
+                    break
+
+        if py_solution is not None:
+            break
+
+    if py_solution is not None:
+        return py_solution
+    if py_any is not None:
+        return py_any
+    if any_file is not None:
+        return any_file
+    return None
+
+
 # ---------------------------------------------------------------------------
 # HITL node builder — top-scope
 # ---------------------------------------------------------------------------
@@ -814,6 +880,20 @@ class HierarchicalTopology:
                     if draft:
                         team_b_draft = draft
                         break
+
+            # Prefer a successful file_write artifact (e.g. solution.py) over
+            # the JSON envelope — DRAFT messages typically contain narrative
+            # ("Solution written to solution.py") while the real code lives in
+            # a tool call. Mirrors star._extract_final_answer /
+            # debate._extract_winner_artifact. When no file_write exists
+            # (gsm8k / commongen), falls through to the json_concat strategy.
+            agents_state: dict[str, Any] = dict(state.get("agents") or {})
+            all_workers: list[str] = list(_team_a_workers) + list(_team_b_workers)
+            artifact = _extract_hierarchical_artifact(agents_state, all_workers)
+            if artifact:
+                shared["final_answer"] = artifact
+                shared["signals"] = signals
+                return {"shared": shared}
 
             # Build JSON-concat final answer
             if final_answer_strategy == "json_concat":

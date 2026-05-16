@@ -809,6 +809,33 @@ def _build_agents(
                 error=str(e),
             )
             continue
+        # Topology-specific prompt injection.
+        # For debate, the debater_pro / debater_contra agents inherit the
+        # executor.yaml system prompt, but the debate-stance framing tends
+        # to push the model toward "argue" rather than "execute". Append a
+        # debate-specific suffix that makes solution.py writing imperative
+        # before any argumentation — otherwise debate falls back to DRAFT
+        # text and downstream extraction can't find the code artifact.
+        if topo_name == "debate" and worker_id in (
+            str(topo_extra.get("debater_pro_id") or "debater_pro"),
+            str(topo_extra.get("debater_contra_id") or "debater_contra"),
+        ):
+            debate_suffix = (
+                "\n\n[Debate Role Override]\n"
+                "Even though you are debating, you are FIRST AND FOREMOST an "
+                "executor. For any code-task: "
+                "(1) Write your COMPLETE candidate solution to `solution.py` "
+                "via the `file_write` tool BEFORE you write your DRAFT argument. "
+                "(2) Your DRAFT message should reference the code you wrote and "
+                "argue why it's correct, but the AUTHORITATIVE answer is the "
+                "file on disk. "
+                "(3) The judge will pick a winner from the file_write tool "
+                "calls of the winning side — if you don't write a file, you "
+                "cannot win, regardless of how good your argument is."
+            )
+            patched_prompt = (agent_cfg.system_prompt or "") + debate_suffix
+            agent_cfg = agent_cfg.model_copy(update={"system_prompt": patched_prompt})
+
         # Per-worker LLM resolution: prefer cfg.model.by_role[worker_id]
         # if explicitly mapped, then by_role[base_role], else default.
         llm = (

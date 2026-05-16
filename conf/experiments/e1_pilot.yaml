@@ -45,9 +45,12 @@ topology:
   name: star
   max_iterations: 8
   extra:
-    exec_max_iter: 3      # star
-    verify_max_iter: 2    # star
-    max_rounds: 2         # debate / hierarchical
+    exec_max_iter: 3        # star
+    verify_max_iter: 2      # star
+    max_rounds: 2           # debate / hierarchical
+    mesh_max_rounds: 12     # mesh round-robin needs ≥1 full pass over 4 agents
+                            # + retries before the executor's solution.py is
+                            # mature enough to extract.
 
 # ---- model lineup (Variant B'.1, 2026-05-15) -----------------------------
 # Workers + Critic + Summarizer + Router on Cerebras gpt-oss-120b.
