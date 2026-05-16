@@ -56,7 +56,7 @@ from langgraph.graph import END, START, StateGraph
 
 from atm.core.state import GraphState
 from atm.core.types import MessageKind, Phase
-from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
+from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop, get_topology_extras
 
 if TYPE_CHECKING:
     from atm.experiment.config import HumanCfg
@@ -215,11 +215,11 @@ class StarTopology:
         """
         checkpointer = kwargs.get("checkpointer")
 
-        # Extract phase caps from extra dict with defaults
-        extra = cfg.extra or {}
-        planning_max_iter: int = int(extra.get("planning_max_iter", _DEFAULT_PLANNING_MAX_ITER))
-        exec_max_iter: int = int(extra.get("exec_max_iter", _DEFAULT_EXEC_MAX_ITER))
-        verify_max_iter: int = int(extra.get("verify_max_iter", _DEFAULT_VERIFY_MAX_ITER))
+        # Extract phase caps from per-topology extras bucket with defaults
+        extras = get_topology_extras(cfg, "star")
+        planning_max_iter: int = int(extras.get("planning_max_iter", _DEFAULT_PLANNING_MAX_ITER))
+        exec_max_iter: int = int(extras.get("exec_max_iter", _DEFAULT_EXEC_MAX_ITER))
+        verify_max_iter: int = int(extras.get("verify_max_iter", _DEFAULT_VERIFY_MAX_ITER))
 
         # ----------------------------------------------------------------
         # Build coordinator node (closure captures cfg + phase caps)

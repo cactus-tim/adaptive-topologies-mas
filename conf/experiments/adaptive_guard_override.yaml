@@ -30,20 +30,21 @@ topology:
   name: adaptive
   max_iterations: 30
   extra:
-    phase_router: "rule"
-    topology_router: "rule"
-    # Hard block: zero topology switches allowed per phase.
-    # Every switch attempt gets stay-decision with decided_by="guard_override".
-    switch_guards: true
-    switch_guards_config:
-      min_dwell_iters: 0
-      cooldown_iters: 0
-      max_per_run: 10
-      max_per_phase: 0
-    planning_max_iter: 3
-    exec_max_iter: 12
-    verify_max_iter: 4
-    subgraph_max_iterations: 10
+    adaptive:
+      phase_router: "rule"
+      topology_router: "rule"
+      # Hard block: zero topology switches allowed per phase.
+      # Every switch attempt gets stay-decision with decided_by="guard_override".
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 0
+        cooldown_iters: 0
+        max_per_run: 10
+        max_per_phase: 0
+      planning_max_iter: 3
+      exec_max_iter: 12
+      verify_max_iter: 4
+      subgraph_max_iterations: 10
 
 budget:
   per_call_usd: 0.10

@@ -1093,7 +1093,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         topology_cfg = TopologyConfig(
             name=cfg.topology.name,
             max_iterations=cfg.topology.max_iterations,
-            extra=cfg.topology.extra,
+            extra=cfg.topology.extra.model_dump(exclude_none=True),
         )
 
         # Step 9: run graph
@@ -2046,7 +2046,7 @@ async def _execute_existing_run(
         topology_cfg = TopologyConfig(
             name=cfg.topology.name,
             max_iterations=cfg.topology.max_iterations,
-            extra=cfg.topology.extra,
+            extra=cfg.topology.extra.model_dump(exclude_none=True),
         )
 
         # HITL wiring (replicated from run_one verbatim).

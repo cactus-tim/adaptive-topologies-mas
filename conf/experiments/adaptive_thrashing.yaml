@@ -28,19 +28,20 @@ topology:
   name: adaptive
   max_iterations: 30
   extra:
-    phase_router: "rule"
-    topology_router: "rule"
-    # Tight guards — first switch goes through, second is blocked → guard_override
-    switch_guards: true
-    switch_guards_config:
-      min_dwell_iters: 0
-      cooldown_iters: 0
-      max_per_run: 1     # only ONE real switch allowed in the whole run
-      max_per_phase: 1   # only ONE switch per phase
-    planning_max_iter: 3
-    exec_max_iter: 12
-    verify_max_iter: 4
-    subgraph_max_iterations: 10
+    adaptive:
+      phase_router: "rule"
+      topology_router: "rule"
+      # Tight guards — first switch goes through, second is blocked → guard_override
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 0
+        cooldown_iters: 0
+        max_per_run: 1     # only ONE real switch allowed in the whole run
+        max_per_phase: 1   # only ONE switch per phase
+      planning_max_iter: 3
+      exec_max_iter: 12
+      verify_max_iter: 4
+      subgraph_max_iterations: 10
 
 budget:
   per_call_usd: 0.10

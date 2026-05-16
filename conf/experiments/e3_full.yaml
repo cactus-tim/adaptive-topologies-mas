@@ -39,25 +39,29 @@ topology:
   name: adaptive
   max_iterations: 6
   extra:
-    # Phase router and topology router selection (default = rule_based for
-    # this run; rerun with topology_router=llm_router and =oracle).
-    phase_router: rule
-    topology_router: rule
-    # Subgraph caps (per-tick budget for the active sub-topology).
-    subgraph_max_iterations: 4
-    # SwitchGuards prevent thrashing.
-    switch_guards: true
-    switch_guards_config:
-      min_dwell_iters: 1
-      cooldown_iters: 2
-      max_per_run: 6
-      max_per_phase: 3
-    # Per-phase iter caps used by the dispatched sub-topology.
-    planning_max_iter: 3
-    exec_max_iter: 3
-    verify_max_iter: 2
-    # Same smart-cut keys read by sub-topologies (chain/star/etc).
-    max_rounds: 2
+    adaptive:
+      # Phase router and topology router selection (default = rule_based for
+      # this run; rerun with topology_router=llm_router and =oracle).
+      phase_router: rule
+      topology_router: rule
+      # Subgraph caps (per-tick budget for the active sub-topology).
+      subgraph_max_iterations: 4
+      # SwitchGuards prevent thrashing.
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      # Per-phase iter caps used by the dispatched sub-topology.
+      planning_max_iter: 3
+      exec_max_iter: 3
+      verify_max_iter: 2
+    # Smart-cut caps for sub-topologies dispatched by adaptive.
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
 
 model:
   default: cerebras:gpt-oss-120b

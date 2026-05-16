@@ -33,19 +33,24 @@ topology:
   name: adaptive
   max_iterations: 6
   extra:
-    phase_router: rule
-    topology_router: rule    # use E3's best router (rule_based as default)
-    subgraph_max_iterations: 4
-    switch_guards: true
-    switch_guards_config:
-      min_dwell_iters: 1
-      cooldown_iters: 2
-      max_per_run: 6
-      max_per_phase: 3
-    planning_max_iter: 3
-    exec_max_iter: 3
-    verify_max_iter: 2
-    max_rounds: 2
+    adaptive:
+      phase_router: rule
+      topology_router: rule    # use E3's best router (rule_based as default)
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 3
+      verify_max_iter: 2
+    # Smart-cut caps for sub-topologies dispatched by adaptive.
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
 
 model:
   default: cerebras:gpt-oss-120b

@@ -94,7 +94,7 @@ from langgraph.graph import END, START, StateGraph
 
 from atm.core.state import GraphState
 from atm.core.types import HumanContext, MessageKind
-from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
+from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop, get_topology_extras
 
 if TYPE_CHECKING:
     from atm.experiment.config import HumanCfg
@@ -715,12 +715,12 @@ class DebateTopology:
                     else None
                 )
 
-        extra: dict[str, Any] = cfg.extra or {}
+        extras: dict[str, Any] = get_topology_extras(cfg, "debate")
 
-        max_rounds: int = int(extra.get("max_rounds", _DEFAULT_MAX_ROUNDS))
-        debater_pro_id: str = str(extra.get("debater_pro_id", "debater_pro"))
-        debater_contra_id: str = str(extra.get("debater_contra_id", "debater_contra"))
-        judge_id: str = str(extra.get("judge_id", "judge"))
+        max_rounds: int = int(extras.get("max_rounds", _DEFAULT_MAX_ROUNDS))
+        debater_pro_id: str = str(extras.get("debater_pro_id", "debater_pro"))
+        debater_contra_id: str = str(extras.get("debater_contra_id", "debater_contra"))
+        judge_id: str = str(extras.get("judge_id", "judge"))
 
         # Determine judge mode (only active when human_cfg.enabled is True)
         judge_mode: str = "critic"  # default — back-compat

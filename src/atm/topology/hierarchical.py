@@ -55,7 +55,7 @@ from langgraph.graph import END, START, StateGraph
 
 from atm.core.state import GraphState
 from atm.core.types import HumanContext, MessageKind
-from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
+from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop, get_topology_extras
 
 if TYPE_CHECKING:
     from atm.experiment.config import HumanCfg
@@ -588,13 +588,13 @@ class HierarchicalTopology:
         """
         checkpointer = kwargs.get("checkpointer")
 
-        # Extract configuration
-        extra = cfg.extra or {}
-        max_rounds: int = int(extra.get("max_rounds", _DEFAULT_MAX_ROUNDS))
-        final_answer_strategy: str = str(extra.get("final_answer_strategy", "json_concat"))
-        finalize_signal: str = str(extra.get("finalize_signal", _DEFAULT_FINALIZE_SIGNAL))
+        # Extract configuration from per-topology extras bucket
+        extras = get_topology_extras(cfg, "hierarchical")
+        max_rounds: int = int(extras.get("max_rounds", _DEFAULT_MAX_ROUNDS))
+        final_answer_strategy: str = str(extras.get("final_answer_strategy", "json_concat"))
+        finalize_signal: str = str(extras.get("finalize_signal", _DEFAULT_FINALIZE_SIGNAL))
 
-        sub_teams: list[dict[str, Any]] = list(extra.get("sub_teams") or [])
+        sub_teams: list[dict[str, Any]] = list(extras.get("sub_teams") or [])
         if len(sub_teams) < 2:
             # Default to two teams if not configured
             sub_teams = [

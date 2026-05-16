@@ -28,23 +28,24 @@ topology:
   name: adaptive
   max_iterations: 30
   extra:
-    # Phase router: deterministic rule-based for smoke test
-    phase_router: "rule"
-    # Topology router: deterministic rule-based for reproducibility
-    topology_router: "rule"
-    # SwitchGuards enabled with relaxed thresholds for smoke test
-    switch_guards: true
-    switch_guards_config:
-      min_dwell_iters: 1
-      cooldown_iters: 2
-      max_per_run: 10
-      max_per_phase: 5
-    # Phase iteration caps
-    planning_max_iter: 3
-    exec_max_iter: 10
-    verify_max_iter: 4
-    # Subgraph iteration cap per tick
-    subgraph_max_iterations: 10
+    adaptive:
+      # Phase router: deterministic rule-based for smoke test
+      phase_router: "rule"
+      # Topology router: deterministic rule-based for reproducibility
+      topology_router: "rule"
+      # SwitchGuards enabled with relaxed thresholds for smoke test
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 10
+        max_per_phase: 5
+      # Phase iteration caps
+      planning_max_iter: 3
+      exec_max_iter: 10
+      verify_max_iter: 4
+      # Subgraph iteration cap per tick
+      subgraph_max_iterations: 10
 
 budget:
   per_call_usd: 0.10

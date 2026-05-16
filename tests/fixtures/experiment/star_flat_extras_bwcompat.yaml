@@ -1,0 +1,46 @@
+# Deliberately uses flat topology.extra keys to exercise the bw-compat
+# remapping path in TopologyCfg._bw_compat_flat_extras.
+# This fixture should emit a DeprecationWarning when loaded; it is kept
+# intentionally in flat form (not migrated) to keep the bw-compat path
+# covered by smoke-load tests.
+#
+# See: dev/active/namespace-topology-extra/namespace-topology-extra-plan.md
+# (Step 2.3 — "at least one legacy-flat fixture retained")
+
+name: "test_star_flat_extras_bwcompat"
+seed: 0
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.20
+  per_experiment_usd: 10.0
+
+model:
+  default: "fake:scripted"
+  by_role:
+    planner: "fake:scripted"
+    executor: "fake:scripted"
+    critic: "fake:scripted"
+
+agents:
+  set: "canonical_4"
+
+topology:
+  name: "star"
+  max_iterations: 5
+  extra:
+    # legacy flat form — remapped to extra.star.* by bw-compat validator
+    planning_max_iter: 2
+    exec_max_iter: 5
+    verify_max_iter: 3
+
+task:
+  name: "smoke_test"
+  input: "Write a function that returns 42."
+  split: "test"
+  limit: 1
+
+observability:
+  parquet_dir: "data/test_experiments"
+  pg_dsn: "postgresql://test:test@localhost:5432/test_db"
+  callback_sync: true
