@@ -153,7 +153,41 @@ def stage_workspace_for(
     if not file_name:
         return []
 
-    # Guard 3: offline mode short-circuit
+    # Guard 3: validate file_name against path traversal and injection
+    # Whitelist: only allow safe filename characters (no slashes, dots-dot, etc.)
+    if not re.match(r"^[A-Za-z0-9._-]+$", file_name):
+        _log.warning(
+            "rejecting file_name with disallowed characters",
+            file_name=file_name,
+            spec_id=spec.id,
+        )
+        return []
+    # Reject absolute paths
+    if Path(file_name).is_absolute():
+        _log.warning(
+            "rejecting absolute file_name",
+            file_name=file_name,
+            spec_id=spec.id,
+        )
+        return []
+    # Reject path traversal sequences
+    if ".." in Path(file_name).parts:
+        _log.warning(
+            "rejecting file_name containing path traversal",
+            file_name=file_name,
+            spec_id=spec.id,
+        )
+        return []
+    # Reject filenames that are too long
+    if len(file_name) > 255:
+        _log.warning(
+            "rejecting file_name exceeding maximum length",
+            file_name=file_name[:40],
+            spec_id=spec.id,
+        )
+        return []
+
+    # Guard 4: offline mode short-circuit
     if os.getenv("ATM_DABENCH_OFFLINE", "0") == "1":
         return []
 
@@ -162,21 +196,19 @@ def stage_workspace_for(
 
     try:
         if not cached_file.exists():
-            # Download to a .tmp file first, then atomically rename
-            tmp_dir = resolved_cache_dir / ".tmp"
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            tmp_file = tmp_dir / f"{file_name}.tmp"
+            # Download to a sibling .tmp file first, then atomically rename
+            resolved_cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = resolved_cache_dir / f"{file_name}.tmp"
 
             url = _DABENCH_TABLES_URL_TEMPLATE.format(
                 sha=_DABENCH_COMMIT_SHA,
                 file_name=file_name,
             )
-            with urlopen(url) as response:
+            with urlopen(url, timeout=30) as response:
                 data: bytes = response.read()
 
-            tmp_file.write_bytes(data)
-            resolved_cache_dir.mkdir(parents=True, exist_ok=True)
-            os.replace(tmp_file, cached_file)
+            tmp_path.write_bytes(data)
+            os.replace(tmp_path, cached_file)
 
         # Copy from cache to workspace
         workspace_path.mkdir(parents=True, exist_ok=True)

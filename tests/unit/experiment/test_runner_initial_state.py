@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+from atm.core.types import TaskSpec
 from atm.experiment.config import (
     AgentSetCfg,
     BudgetCfg,
@@ -32,7 +33,6 @@ from atm.experiment.config import (
     TopologyCfg,
 )
 from atm.experiment.runner import _build_initial_state, _pre_stage_workspace
-from atm.core.types import TaskSpec
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -323,9 +323,7 @@ def test_build_initial_state_augments_dabench_metadata() -> None:
     assert "Answer format" in task_input, (
         f"Expected 'Answer format' line in task_input; got: {task_input!r}"
     )
-    assert "@mean[1.0]" in task_input, (
-        f"Expected '@mean[1.0]' in task_input; got: {task_input!r}"
-    )
+    assert "@mean[1.0]" in task_input, f"Expected '@mean[1.0]' in task_input; got: {task_input!r}"
 
 
 # ---------------------------------------------------------------------------

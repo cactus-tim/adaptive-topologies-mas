@@ -32,7 +32,7 @@ import re
 import urllib.error
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -433,9 +433,7 @@ def test_stage_workspace_for_non_dabench_spec_returns_empty(tmp_path: Path) -> N
     result = stage_workspace_for(spec, workspace_path=tmp_path)
 
     # Assert
-    assert result == [], (
-        f"Expected [] for non-dabench spec, got {result!r}"
-    )
+    assert result == [], f"Expected [] for non-dabench spec, got {result!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -492,9 +490,7 @@ def test_stage_workspace_for_downloads_and_caches(
         assert (tmp_workspace_1 / "titanic.csv").read_bytes() == csv_bytes, (
             "Staged file content does not match downloaded bytes"
         )
-        assert (tmp_cache / "titanic.csv").exists(), (
-            "Downloaded CSV was not written to cache_dir"
-        )
+        assert (tmp_cache / "titanic.csv").exists(), "Downloaded CSV was not written to cache_dir"
         urlopen_count_after_first = mock_urlopen.call_count
         assert urlopen_count_after_first == 1, (
             f"Expected exactly 1 urlopen call on first (cache miss) call, got {urlopen_count_after_first}"
@@ -547,9 +543,7 @@ def test_stage_workspace_for_offline_returns_empty(
         result = stage_workspace_for(spec, workspace_path=tmp_workspace, cache_dir=tmp_cache)
 
     # Assert
-    assert result == [], (
-        f"Expected [] when ATM_DABENCH_OFFLINE=1, got {result!r}"
-    )
+    assert result == [], f"Expected [] when ATM_DABENCH_OFFLINE=1, got {result!r}"
     mock_urlopen.assert_not_called()
 
 
@@ -589,10 +583,78 @@ def test_stage_workspace_for_network_error_returns_empty_and_logs(
         result = stage_workspace_for(spec, workspace_path=tmp_workspace, cache_dir=tmp_cache)
 
     # Assert
-    assert result == [], (
-        f"Expected [] when URLError is raised, got {result!r}"
-    )
+    assert result == [], f"Expected [] when URLError is raised, got {result!r}"
     # The workspace file must NOT have been created (nothing to copy)
     assert not (tmp_workspace / "titanic.csv").exists(), (
         "Workspace file should not exist after a network error"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 16: stage_workspace_for — path traversal in file_name is rejected
+# ---------------------------------------------------------------------------
+
+
+def test_stage_workspace_for_rejects_path_traversal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """file_name containing '../' path traversal sequences is rejected; returns [].
+
+    urlopen must NOT be called — validation must happen before any network or
+    filesystem activity.
+    """
+    monkeypatch.delenv("ATM_DABENCH_OFFLINE", raising=False)
+
+    spec = TaskSpec(
+        id="dabench/evil",
+        type="decision",
+        input="",
+        expected="",
+        evaluator_key="dabench_numeric_exact",
+        metadata={"file_name": "../etc/passwd"},
+    )
+
+    # If urlopen is called the test fails immediately
+    mock_urlopen = MagicMock(side_effect=AssertionError("urlopen must not be called"))
+
+    with patch("atm.tasks.dabench.urlopen", mock_urlopen):
+        result = stage_workspace_for(spec, workspace_path=tmp_path)
+
+    assert result == [], f"Expected [] for path traversal file_name, got {result!r}"
+    mock_urlopen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Test 17: stage_workspace_for — absolute path in file_name is rejected
+# ---------------------------------------------------------------------------
+
+
+def test_stage_workspace_for_rejects_absolute_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """file_name that is an absolute path (e.g. '/etc/passwd') is rejected; returns [].
+
+    urlopen must NOT be called — validation must happen before any network or
+    filesystem activity.
+    """
+    monkeypatch.delenv("ATM_DABENCH_OFFLINE", raising=False)
+
+    spec = TaskSpec(
+        id="dabench/evil",
+        type="decision",
+        input="",
+        expected="",
+        evaluator_key="dabench_numeric_exact",
+        metadata={"file_name": "/etc/passwd"},
+    )
+
+    # If urlopen is called the test fails immediately
+    mock_urlopen = MagicMock(side_effect=AssertionError("urlopen must not be called"))
+
+    with patch("atm.tasks.dabench.urlopen", mock_urlopen):
+        result = stage_workspace_for(spec, workspace_path=tmp_path)
+
+    assert result == [], f"Expected [] for absolute file_name, got {result!r}"
+    mock_urlopen.assert_not_called()
