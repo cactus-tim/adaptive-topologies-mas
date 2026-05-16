@@ -21,10 +21,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 # Side-effect import: triggers @TopologyRegistry.register("debate")
 import atm.topology.debate  # noqa: F401
-from atm.core.types import Message, MessageKind
+from atm.core.types import Message, MessageKind, ToolCall, ToolResult
 from atm.topology.base import TopologyConfig, TopologyRegistry
 from atm.topology.debate import (
     DebateTopology,
+    _extract_winner_artifact,
     _judge_postprocess,
     _route_from_judge,
 )
@@ -443,6 +444,114 @@ class TestJudgePostprocess:
         final_state = asyncio.run(run_three_rounds())
         assert final_state["shared"]["iter_total"] == 3
         assert final_state["shared"]["debate_round"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests for _extract_winner_artifact — the in-topology code-artifact extractor
+# that removes reliance on the runner-level workspace fallback for code tasks.
+# ---------------------------------------------------------------------------
+
+
+class TestExtractWinnerArtifact:
+    """_extract_winner_artifact prefers file_write artifacts over DRAFT text."""
+
+    @staticmethod
+    def _file_write_call(path: str, content: str) -> ToolCall:
+        return ToolCall(
+            tool_name="file_write",
+            args={"path": path, "content": content},
+            issued_by="debater_pro",
+        )
+
+    @staticmethod
+    def _ok_result(call: ToolCall) -> ToolResult:
+        return ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
+
+    @staticmethod
+    def _bad_result(call: ToolCall) -> ToolResult:
+        return ToolResult(
+            call_id=call.id, ok=False, output=None, latency_ms=1, error="overwrite"
+        )
+
+    def test_prefers_solution_py_over_draft(self) -> None:
+        """When debater wrote solution.py via file_write, that wins over DRAFT text."""
+        call = self._file_write_call("solution.py", "def add(a,b): return a+b")
+        agents = {
+            "debater_pro": {
+                "outbox": [_make_draft_msg(content="my pro argument")],
+                "tool_calls": [call],
+                "tool_results": [self._ok_result(call)],
+            }
+        }
+        assert (
+            _extract_winner_artifact(agents, "debater_pro")
+            == "def add(a,b): return a+b"
+        )
+
+    def test_skips_rejected_overwrite(self) -> None:
+        """A rejected (ok=False) file_write is ignored; later valid one wins."""
+        good = self._file_write_call("solution.py", "GOOD")
+        bad = self._file_write_call("solution.py", "BAD")
+        agents = {
+            "debater_pro": {
+                "outbox": [_make_draft_msg(content="argument")],
+                "tool_calls": [good, bad],  # bad is later in list
+                "tool_results": [self._ok_result(good), self._bad_result(bad)],
+            }
+        }
+        # bad is rejected → should fall through to good
+        assert _extract_winner_artifact(agents, "debater_pro") == "GOOD"
+
+    def test_falls_back_to_draft_when_no_file_write(self) -> None:
+        """No tool_calls → returns DRAFT text (legacy / non-tool path)."""
+        agents = {
+            "debater_pro": {"outbox": [_make_draft_msg(content="just argument text")]}
+        }
+        assert (
+            _extract_winner_artifact(agents, "debater_pro") == "just argument text"
+        )
+
+    def test_returns_incomplete_when_nothing_present(self) -> None:
+        """Empty outbox + no tool_calls → '<incomplete>'."""
+        agents = {"debater_pro": {"outbox": []}}
+        assert _extract_winner_artifact(agents, "debater_pro") == "<incomplete>"
+
+    def test_judge_postprocess_extracts_file_write_artifact(self) -> None:
+        """End-to-end: _judge_postprocess pulls from winner's tool_calls when present."""
+        call = ToolCall(
+            tool_name="file_write",
+            args={"path": "solution.py", "content": "def f(): return 42"},
+            issued_by="debater_pro",
+        )
+        state: dict[str, Any] = {
+            "shared": _make_shared(),
+            "agents": {
+                "judge": {
+                    "outbox": [_make_decision_msg(approved=True, winner="pro")]
+                },
+                "debater_pro": {
+                    "outbox": [_make_draft_msg(content="my pro argument")],
+                    "tool_calls": [call],
+                    "tool_results": [
+                        ToolResult(
+                            call_id=call.id, ok=True, output=None, latency_ms=1
+                        )
+                    ],
+                },
+            },
+        }
+
+        async def run() -> dict[str, Any]:
+            return await _judge_postprocess(
+                state,  # type: ignore[arg-type]
+                judge_id="judge",
+                debater_pro_id="debater_pro",
+                debater_contra_id="debater_contra",
+                cfg=_make_cfg(),
+            )
+
+        delta = asyncio.run(run())
+        assert delta["shared"]["final_answer"] == "def f(): return 42"
 
 
 # ---------------------------------------------------------------------------

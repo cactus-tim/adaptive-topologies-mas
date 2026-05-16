@@ -321,6 +321,9 @@ sanity → e1-mini → e1_full.
 
 ## 12. Следующие шаги (актуальная последовательность запуска)
 
+> Action-oriented runbook с командами, чекбоксами и точками синхронизации:
+> **`dev/experiments_runbook.md`**. Здесь — высокоуровневая последовательность.
+
 1. ✓ M0–M13 закрыты (фреймворк + все 5 топологий + analysis tooling)
 2. ✓ **Sanity** (`conf/experiments/e1_pilot_sanity.yaml`) — отлавливает
    живых багов в pipeline (Bug #1–10), быстрый цикл итерации
