@@ -476,7 +476,7 @@ class TestExtractWinnerArtifact:
         return ToolResult(call_id=call.id, ok=False, output=None, latency_ms=1, error="overwrite")
 
     def test_prefers_solution_py_over_draft(self) -> None:
-        """When debater wrote solution.py via file_write, that wins over DRAFT text."""
+        """For code tasks, solution.py file_write wins over DRAFT text."""
         call = self._file_write_call("solution.py", "def add(a,b): return a+b")
         agents = {
             "debater_pro": {
@@ -485,7 +485,10 @@ class TestExtractWinnerArtifact:
                 "tool_results": [self._ok_result(call)],
             }
         }
-        assert _extract_winner_artifact(agents, "debater_pro") == "def add(a,b): return a+b"
+        assert (
+            _extract_winner_artifact(agents, "debater_pro", task_id="humaneval")
+            == "def add(a,b): return a+b"
+        )
 
     def test_skips_rejected_overwrite(self) -> None:
         """A rejected (ok=False) file_write is ignored; later valid one wins."""
@@ -499,7 +502,10 @@ class TestExtractWinnerArtifact:
             }
         }
         # bad is rejected → should fall through to good
-        assert _extract_winner_artifact(agents, "debater_pro") == "GOOD"
+        assert (
+            _extract_winner_artifact(agents, "debater_pro", task_id="humaneval")
+            == "GOOD"
+        )
 
     def test_falls_back_to_draft_when_no_file_write(self) -> None:
         """No tool_calls → returns DRAFT text (legacy / non-tool path)."""
@@ -512,14 +518,16 @@ class TestExtractWinnerArtifact:
         assert _extract_winner_artifact(agents, "debater_pro") == "<incomplete>"
 
     def test_judge_postprocess_extracts_file_write_artifact(self) -> None:
-        """End-to-end: _judge_postprocess pulls from winner's tool_calls when present."""
+        """End-to-end: _judge_postprocess pulls from winner's tool_calls for CODE tasks."""
         call = ToolCall(
             tool_name="file_write",
             args={"path": "solution.py", "content": "def f(): return 42"},
             issued_by="debater_pro",
         )
+        shared = _make_shared()
+        shared["task_id"] = "humaneval"
         state: dict[str, Any] = {
-            "shared": _make_shared(),
+            "shared": shared,
             "agents": {
                 "judge": {"outbox": [_make_decision_msg(approved=True, winner="pro")]},
                 "debater_pro": {
@@ -543,6 +551,104 @@ class TestExtractWinnerArtifact:
 
         delta = asyncio.run(run())
         assert delta["shared"]["final_answer"] == "def f(): return 42"
+
+
+# ---------------------------------------------------------------------------
+# Regression: _extract_winner_artifact task-aware preference (port of chain
+# d585bbb). For non-code tasks the prompt override instructs debaters to use
+# a ###ANSWER###...###END### marker; the extractor must prefer DRAFT (with
+# marker extraction) over any solution.py artifact, since the executor.yaml
+# unconditionally tells debaters to dump "programming tasks" to solution.py.
+# ---------------------------------------------------------------------------
+
+
+class TestExtractWinnerArtifactTaskAware:
+    """_extract_winner_artifact respects task_id when ranking artifacts."""
+
+    @staticmethod
+    def _agents_with_both(*, draft_content: str) -> dict[str, Any]:
+        call = ToolCall(
+            tool_name="file_write",
+            args={"path": "solution.py", "content": "PYCODE"},
+            issued_by="debater_pro",
+        )
+        return {
+            "debater_pro": {
+                "outbox": [_make_draft_msg(content=draft_content)],
+                "tool_calls": [call],
+                "tool_results": [
+                    ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
+                ],
+            }
+        }
+
+    def test_code_task_prefers_solution_py(self) -> None:
+        agents = self._agents_with_both(draft_content="pro argument")
+        assert (
+            _extract_winner_artifact(agents, "debater_pro", task_id="humaneval")
+            == "PYCODE"
+        )
+
+    def test_non_code_task_prefers_draft(self) -> None:
+        for non_code in ("gsm8k", "commongen", "dabench"):
+            agents = self._agents_with_both(draft_content="42")
+            assert (
+                _extract_winner_artifact(agents, "debater_pro", task_id=non_code)
+                == "42"
+            ), f"task_id={non_code!r} should prefer DRAFT over solution.py"
+
+    def test_non_code_extracts_answer_marker_from_draft(self) -> None:
+        """For non-code, ###ANSWER###...###END### marker yields just the block content."""
+        marker_draft = (
+            "Some preamble that should be stripped.\n"
+            "###ANSWER###\n"
+            "42\n"
+            "###END###\n"
+            "Trailing argument that should be stripped."
+        )
+        agents = self._agents_with_both(draft_content=marker_draft)
+        assert (
+            _extract_winner_artifact(agents, "debater_pro", task_id="gsm8k") == "42"
+        )
+
+    def test_judge_postprocess_threads_task_id(self) -> None:
+        """_judge_postprocess reads shared.task_id and forwards into the extractor."""
+        import asyncio
+
+        call = ToolCall(
+            tool_name="file_write",
+            args={"path": "solution.py", "content": "PYCODE"},
+            issued_by="debater_pro",
+        )
+        shared = _make_shared()
+        shared["task_id"] = "gsm8k"
+        state: dict[str, Any] = {
+            "shared": shared,
+            "agents": {
+                "judge": {
+                    "outbox": [_make_decision_msg(approved=True, winner="pro")]
+                },
+                "debater_pro": {
+                    "outbox": [_make_draft_msg(content="42")],
+                    "tool_calls": [call],
+                    "tool_results": [
+                        ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
+                    ],
+                },
+            },
+        }
+
+        async def run() -> dict[str, Any]:
+            return await _judge_postprocess(
+                state,  # type: ignore[arg-type]
+                judge_id="judge",
+                debater_pro_id="debater_pro",
+                debater_contra_id="debater_contra",
+                cfg=_make_cfg(),
+            )
+
+        delta = asyncio.run(run())
+        assert delta["shared"]["final_answer"] == "42"
 
 
 # ---------------------------------------------------------------------------

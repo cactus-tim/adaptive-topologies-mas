@@ -236,6 +236,11 @@ async def _judge_postprocess(
     iter_total: int = int(existing_shared.get("iter_total") or 0) + 1
     existing_shared["iter_total"] = iter_total
 
+    # Task-aware extraction: forwarded into _extract_winner_artifact so the
+    # solution.py-vs-DRAFT preference matches the task type (mirror chain
+    # d585bbb).
+    task_id: str = str(existing_shared.get("task_id") or "")
+
     if approved:
         existing_signals["judge_decided"] = True
         existing_signals["debate_winner"] = winner
@@ -245,7 +250,7 @@ async def _judge_postprocess(
         # DRAFT typically contains the debater's argument while the actual
         # solution is written via the file_write tool.
         winner_id = debater_pro_id if winner == "pro" else debater_contra_id
-        final_answer = _extract_winner_artifact(agents, winner_id)
+        final_answer = _extract_winner_artifact(agents, winner_id, task_id=task_id)
         existing_shared["final_answer"] = final_answer
     else:
         # Explicitly set judge_decided=False on rejection (star.py pattern)
@@ -259,8 +264,8 @@ async def _judge_postprocess(
         # workspace fallback that read solution.py from disk; that
         # fallback no longer fires because final_answer is non-empty for
         # rejected rounds only when the judge eventually rejects.
-        pro_answer = _extract_winner_artifact(agents, debater_pro_id)
-        contra_answer = _extract_winner_artifact(agents, debater_contra_id)
+        pro_answer = _extract_winner_artifact(agents, debater_pro_id, task_id=task_id)
+        contra_answer = _extract_winner_artifact(agents, debater_contra_id, task_id=task_id)
         # Pick the longer non-incomplete answer; ties → pro (deterministic).
         pro_len = len(pro_answer) if pro_answer != "<incomplete>" else 0
         contra_len = len(contra_answer) if contra_answer != "<incomplete>" else 0
@@ -350,28 +355,51 @@ def _extract_draft(agents: dict[str, Any], agent_id: str) -> str:
     return "<incomplete>"
 
 
-def _extract_winner_artifact(agents: dict[str, Any], agent_id: str) -> str:
+_CODE_TASKS: set[str] = {"humaneval"}
+
+
+def _extract_winner_artifact(
+    agents: dict[str, Any],
+    agent_id: str,
+    task_id: str = "",
+) -> str:
     """Extract winner debater's primary artifact (final answer for the topology).
 
-    Tool-using debaters typically write the actual solution into a
-    ``file_write`` tool call (e.g. ``solution.py``) while their DRAFT message
-    only contains the argument/rationale. Mirrors the strategy in
-    ``atm.topology.star._extract_final_answer``:
+    Task-aware preference (mirrors atm.topology.chain post-d585bbb):
+
+    * CODE tasks (``task_id`` in ``_CODE_TASKS``, currently ``humaneval``):
+      prefer a written ``solution.py`` / ``main.py`` over DRAFT — debaters
+      using the ``file_write`` tool put the actual solution there while the
+      DRAFT carries argument/rationale only.
+
+    * NON-CODE tasks (``gsm8k`` / ``commongen`` / ``dabench``): prefer the
+      DRAFT message. The debate prompt override in ``runner._build_agents``
+      instructs debaters to begin DRAFTs with a ``###ANSWER###...###END###``
+      marker for non-code; we extract the marker block when present.
+      Falling back to a ``solution.py`` artifact for non-code returns
+      Python intermediates rather than the human-readable answer
+      (executor.yaml unconditionally tells the model to dump "programming
+      tasks" to solution.py).
+
+    Unknown/empty ``task_id`` is treated as non-code so the
+    DRAFT/marker path dominates — mirrors chain's behavior on unset
+    ``shared.task_id``. Callers that genuinely test the code-task path
+    must pass ``task_id="humaneval"``.
+
+    Strategy order, applied within the task-aware preference:
 
       1. Last successful ``file_write`` to ``solution.py`` / ``main.py`` /
-         any ``.py`` (filtered by ``ToolResult.ok`` to skip rejected overwrites).
-      2. Last DRAFT message from the agent's outbox (legacy / non-tool case).
+         any ``.py`` (filtered by ``ToolResult.ok`` to skip rejected
+         overwrites).
+      2. DRAFT message (with ``###ANSWER###`` marker extraction when
+         present).
       3. Any non-Python file artifact (last resort).
       4. Fallback: ``"<incomplete>"``.
-
-    The previous implementation only consulted DRAFT (#2), forcing the
-    runner-level workspace fallback to fire on every code-task debate run.
-    Now the topology natively returns the code artifact when the debater
-    used the ``file_write`` tool.
     """
     agent_state: dict[str, Any] = dict(agents.get(agent_id) or {})
+    is_code_task: bool = task_id.lower() in _CODE_TASKS
 
-    # Strategy 1: prefer a successful file_write artifact.
+    # Collect file_write candidates.
     tool_calls: list[Any] = list(agent_state.get("tool_calls") or [])
     tool_results: list[Any] = list(agent_state.get("tool_results") or [])
     ok_call_ids: set[Any] = {
@@ -400,33 +428,31 @@ def _extract_winner_artifact(agents: dict[str, Any], agent_id: str) -> str:
             if py_solution is None and (path.endswith("solution.py") or path.endswith("main.py")):
                 py_solution = str(content)
                 break
-    if py_solution is not None:
-        return py_solution
-    if py_any is not None:
-        return py_any
+    file_artifact: str | None = py_solution or py_any
 
-    # Strategy 2: DRAFT message. For non-code tasks the debater is instructed
-    # (via the [DEBATE ROLE — HARD RULES] prompt override in
-    # runner._build_agents) to begin its DRAFT with a structured marker
-    # block:  ###ANSWER###\n<answer>\n###END###
-    # If we find that block, extract just the answer — otherwise return the
-    # full DRAFT (legacy behavior).
-    draft = _extract_draft(agents, agent_id)
-    if draft and draft != "<incomplete>":
+    # Collect DRAFT candidate. For non-code tasks the debater is instructed
+    # (via the [DEBATE ROLE — HARD RULES] prompt override) to begin its DRAFT
+    # with ``###ANSWER###\\n<answer>\\n###END###``; extract just the answer
+    # when the marker is present.
+    draft: str | None = None
+    raw_draft = _extract_draft(agents, agent_id)
+    if raw_draft and raw_draft != "<incomplete>":
         import re as _re
 
-        m = _re.search(r"###ANSWER###\s*\n(.*?)\n\s*###END###", draft, _re.DOTALL)
+        m = _re.search(r"###ANSWER###\s*\n(.*?)\n\s*###END###", raw_draft, _re.DOTALL)
         if m:
             extracted = m.group(1).strip()
-            if extracted:
-                return extracted
-        return draft
+            draft = extracted or raw_draft
+        else:
+            draft = raw_draft
 
-    # Strategy 3: any non-Python file artifact (last resort).
-    if any_file is not None:
-        return any_file
+    # Task-aware preference.
+    if is_code_task:
+        primary, secondary = file_artifact, draft
+    else:
+        primary, secondary = draft, file_artifact
 
-    return "<incomplete>"
+    return primary or secondary or any_file or "<incomplete>"
 
 
 # ---------------------------------------------------------------------------

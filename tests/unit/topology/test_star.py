@@ -541,3 +541,65 @@ class TestCoordinatorCounters:
         )
 
         assert result["shared"]["iter_total"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Regression: _extract_final_answer task-aware preference (port of chain
+# d585bbb). For non-code tasks the executor still writes solution.py per
+# executor.yaml's unconditional instruction, but that file holds Python
+# intermediates rather than the human-readable answer — DRAFT should win.
+# ---------------------------------------------------------------------------
+
+
+class TestExtractFinalAnswerTaskAware:
+    """_extract_final_answer respects shared.task_id when ranking artifacts."""
+
+    @staticmethod
+    def _state_with_both_artifacts(*, task_id: str) -> dict[str, Any]:
+        from atm.core.types import Message, ToolCall, ToolResult
+
+        call = ToolCall(
+            tool_name="file_write",
+            args={"path": "solution.py", "content": "PYCODE"},
+            issued_by="executor",
+        )
+        draft_msg = Message(
+            sender="executor",
+            kind=MessageKind.DRAFT,
+            content="HUMAN_ANSWER",
+        )
+        return {
+            "shared": {"task_id": task_id},
+            "agents": {
+                "executor": {
+                    "outbox": [draft_msg],
+                    "tool_calls": [call],
+                    "tool_results": [
+                        ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
+                    ],
+                }
+            },
+            "messages": [],
+        }
+
+    def test_code_task_prefers_solution_py(self) -> None:
+        from atm.topology.star import _extract_final_answer
+
+        state = self._state_with_both_artifacts(task_id="humaneval")
+        assert _extract_final_answer(state) == "PYCODE"
+
+    def test_non_code_task_prefers_draft(self) -> None:
+        from atm.topology.star import _extract_final_answer
+
+        for non_code in ("gsm8k", "commongen", "dabench"):
+            state = self._state_with_both_artifacts(task_id=non_code)
+            assert _extract_final_answer(state) == "HUMAN_ANSWER", (
+                f"non-code task_id={non_code!r} should prefer DRAFT over solution.py"
+            )
+
+    def test_unknown_task_treated_as_non_code(self) -> None:
+        """Empty/unknown task_id falls into the DRAFT-preferred branch (chain parity)."""
+        from atm.topology.star import _extract_final_answer
+
+        state = self._state_with_both_artifacts(task_id="")
+        assert _extract_final_answer(state) == "HUMAN_ANSWER"

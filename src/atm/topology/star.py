@@ -503,33 +503,47 @@ class StarTopology:
 # ---------------------------------------------------------------------------
 
 
+_CODE_TASKS: set[str] = {"humaneval"}
+
+
 def _extract_final_answer(state: GraphState) -> str:
     """Extract final_answer from the executor's output in state.
 
-    Tool-using executors typically emit short DRAFT messages ("Solution
-    written to solution.py") while the actual artifact lives inside a
-    ``file_write`` tool call's ``args["content"]``. Strategy order
-    therefore prefers concrete file artifacts over chatty DRAFT text:
+    Task-aware preference (mirrors atm.topology.chain post-d585bbb):
 
-      1. state["agents"]["executor"]["tool_calls"] — last ``file_write``
-         (preferring solution.py / main.py, then any ``.py`` path).
-      2. state["agents"]["executor"]["outbox"] for last DRAFT message
-         (text-only executors, no tool use).
-      3. state["messages"] for last DRAFT message from executor.
+    * CODE tasks (``shared.task_id`` in ``_CODE_TASKS``, currently
+      ``humaneval``): prefer a written file artifact — tool-using executors
+      emit short DRAFT messages ("Solution written to solution.py") while
+      the actual code lives inside a ``file_write`` tool call.
+
+    * NON-CODE tasks (``gsm8k`` / ``commongen`` / ``dabench``): prefer the
+      DRAFT message. ``executor.yaml`` unconditionally tells the model to
+      dump "programming tasks" to ``solution.py``, so non-code executors
+      still write a ``solution.py`` — but it contains Python intermediates
+      (problem restatement, helper functions, debug prints) rather than
+      the human-readable answer. The DRAFT message is where the executor
+      actually states its answer in plain form.
+
+    Strategy order, applied within the task-aware preference:
+
+      1. Last successful ``file_write`` to ``solution.py`` / ``main.py``,
+         then any ``.py`` path (filtered by ``ToolResult.ok`` so a
+         rejected ``overwrite=False`` second write does not shadow the
+         valid first write).
+      2. Last DRAFT message in ``state["agents"]["executor"]["outbox"]``.
+      3. Last DRAFT from ``executor`` in ``state["messages"]`` (text-only
+         executors with no tool use).
       4. Any non-python file artifact (last resort).
-      5. Fallback: "<incomplete>".
+      5. Fallback: ``"<incomplete>"``.
     """
     agents: dict[str, Any] = dict(state.get("agents") or {})
     executor_state: dict[str, Any] = dict(agents.get("executor") or {})
 
-    # Strategy 1: prefer a written file artifact (most accurate for tool-using
-    # executors). Walk tool_calls in REVERSE so the most recent write wins;
-    # within ties, prefer paths ending in solution.py / main.py / .py.
-    # IMPORTANT: only consider writes whose ``ToolResult.ok`` is True. The
-    # ``file_write`` tool defaults ``overwrite=False``, so a model that calls
-    # it twice on the same path gets the SECOND call rejected — taking the
-    # latest call blindly would return the rejected (often degenerate, e.g.
-    # "# test") payload while the file on disk still holds the first write.
+    shared: dict[str, Any] = dict(state.get("shared") or {})
+    task_id: str = str(shared.get("task_id") or "").lower()
+    is_code_task: bool = task_id in _CODE_TASKS
+
+    # Collect file_write candidates (Strategy 1 + 4).
     tool_calls: list[Any] = list(executor_state.get("tool_calls") or [])
     tool_results: list[Any] = list(executor_state.get("tool_results") or [])
     ok_call_ids: set[Any] = {
@@ -541,9 +555,6 @@ def _extract_final_answer(state: GraphState) -> str:
     for tc in reversed(tool_calls):
         if getattr(tc, "tool_name", None) != "file_write":
             continue
-        # Skip writes that the tool layer rejected (e.g. overwrite=False).
-        # If tool_results is empty (e.g. older runs without result tracking)
-        # treat absence as success to preserve back-compat.
         if tool_results and getattr(tc, "id", None) not in ok_call_ids:
             continue
         args = getattr(tc, "args", None) or {}
@@ -559,32 +570,33 @@ def _extract_final_answer(state: GraphState) -> str:
             if py_solution is None and (path.endswith("solution.py") or path.endswith("main.py")):
                 py_solution = str(content)
                 break  # best-quality match — stop early
-    if py_solution is not None:
-        return py_solution
-    if py_any is not None:
-        return py_any
+    file_artifact: str | None = py_solution or py_any
 
-    # Strategy 2: check executor outbox for DRAFT
+    # Collect DRAFT candidates (Strategy 2 + 3).
+    draft: str | None = None
     outbox: list[Any] = list(executor_state.get("outbox") or [])
     for msg in reversed(outbox):
         kind = getattr(msg, "kind", None)
         if kind == MessageKind.DRAFT or str(kind) == "draft":
             content = getattr(msg, "content", None)
             if content:
-                return str(content)
+                draft = str(content)
+                break
+    if draft is None:
+        messages: list[Any] = list(state.get("messages") or [])
+        for msg in reversed(messages):
+            sender = getattr(msg, "sender", "")
+            kind = getattr(msg, "kind", None)
+            if (sender == "executor") and (kind == MessageKind.DRAFT or str(kind) == "draft"):
+                content = getattr(msg, "content", None)
+                if content:
+                    draft = str(content)
+                    break
 
-    # Strategy 3: search global messages
-    messages: list[Any] = list(state.get("messages") or [])
-    for msg in reversed(messages):
-        sender = getattr(msg, "sender", "")
-        kind = getattr(msg, "kind", None)
-        if (sender == "executor") and (kind == MessageKind.DRAFT or str(kind) == "draft"):
-            content = getattr(msg, "content", None)
-            if content:
-                return str(content)
+    # Task-aware preference.
+    if is_code_task:
+        primary, secondary = file_artifact, draft
+    else:
+        primary, secondary = draft, file_artifact
 
-    # Strategy 4: any non-python file artifact (last resort)
-    if any_file is not None:
-        return any_file
-
-    return "<incomplete>"
+    return primary or secondary or any_file or "<incomplete>"
