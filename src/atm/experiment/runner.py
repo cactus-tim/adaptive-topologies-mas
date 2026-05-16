@@ -862,6 +862,56 @@ def _build_agents(
             patched_prompt = debate_override + (agent_cfg.system_prompt or "")
             agent_cfg = agent_cfg.model_copy(update={"system_prompt": patched_prompt})
 
+        # Topology-specific prompt injection — Debate JUDGE.
+        # The judge (critic.yaml) is hardcoded around `solution.py` /
+        # file_read inspection. For non-code tasks (gsm8k, commongen,
+        # dabench) no `solution.py` is ever written, so the judge sees
+        # nothing to inspect and unconditionally REJECTs every round.
+        # After max_rounds the topology exits with approved=False and
+        # final_answer="" → quality_score=0. PREPEND an override that
+        # tells the judge how to evaluate the new ###ANSWER### marker
+        # format for non-code tasks. Mirrors the placement strategy used
+        # for debaters above.
+        if topo_name == "debate" and worker_id == str(
+            topo_extra.get("judge_id") or "judge"
+        ):
+            judge_override = (
+                "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"
+                "You judge a debate between two debaters (pro / contra). "
+                "Output a DECISION message containing APPROVE or REJECT.\n"
+                "\n"
+                "WHERE TO LOOK FOR THE ANSWER (in priority order):\n"
+                "  1. CODE TASKS (the task mentions `def `, `function`, "
+                "a programming problem like HumanEval): inspect the "
+                "`solution.py` file via the `file_read` tool. The winning "
+                "side's `solution.py` is the authoritative answer.\n"
+                "  2. NON-CODE TASKS (math word problems / sentence "
+                "generation / data-analysis / anything else): DO NOT call "
+                "`file_read`. Instead, read each debater's last DRAFT and "
+                "find the block delimited by `###ANSWER###` and "
+                "`###END###`. The text between those markers is each "
+                "side's submission. Compare the two and judge correctness.\n"
+                "\n"
+                "VERDICT RULES:\n"
+                "  • APPROVE whenever at least ONE side has a plausibly "
+                "correct answer (a working `solution.py` for code, or a "
+                "well-formed `###ANSWER###` block for non-code). Set "
+                "`winner` to that side: \"pro\" or \"contra\".\n"
+                "  • REJECT only when BOTH sides are clearly wrong, both "
+                "drafts are missing the required artifact (no file for "
+                "code tasks, no `###ANSWER###` block for non-code), or the "
+                "answers are obviously malformed. Refusing to decide is "
+                "EXPENSIVE — every REJECT triggers another debate round.\n"
+                "\n"
+                "DECISION FORMAT (last line of your reply, exact tokens):\n"
+                "  APPROVE  — followed by `winner: pro` or `winner: contra`\n"
+                "  REJECT   — only when both sides are unrecoverably wrong\n"
+                "\n"
+                "[END DEBATE JUDGE RULES]\n\n"
+            )
+            patched_prompt = judge_override + (agent_cfg.system_prompt or "")
+            agent_cfg = agent_cfg.model_copy(update={"system_prompt": patched_prompt})
+
         # Per-worker LLM resolution: prefer cfg.model.by_role[worker_id]
         # if explicitly mapped, then by_role[base_role], else default.
         llm = (

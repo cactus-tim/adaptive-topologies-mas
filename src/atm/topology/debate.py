@@ -246,6 +246,32 @@ async def _judge_postprocess(
         # Explicitly set judge_decided=False on rejection (star.py pattern)
         existing_signals["judge_decided"] = False
 
+        # Safety net: when the judge fails to converge (REJECT every round,
+        # max_rounds reached), still extract the best DRAFT artifact so
+        # the run reports SOMETHING rather than quality_score=0 on an
+        # otherwise-correct debate. Pick the side whose extracted artifact
+        # has more content. This used to be masked by a runner-level
+        # workspace fallback that read solution.py from disk; that
+        # fallback no longer fires because final_answer is non-empty for
+        # rejected rounds only when the judge eventually rejects.
+        pro_answer = _extract_winner_artifact(agents, debater_pro_id)
+        contra_answer = _extract_winner_artifact(agents, debater_contra_id)
+        # Pick the longer non-incomplete answer; ties → pro (deterministic).
+        pro_len = len(pro_answer) if pro_answer != "<incomplete>" else 0
+        contra_len = len(contra_answer) if contra_answer != "<incomplete>" else 0
+        if pro_len == 0 and contra_len == 0:
+            fallback = "<incomplete>"
+        elif contra_len > pro_len:
+            fallback = contra_answer
+            existing_signals["debate_winner"] = "contra"
+        else:
+            fallback = pro_answer
+            existing_signals["debate_winner"] = "pro"
+        # Only overwrite final_answer if it isn't already set from an
+        # earlier approved round in this run.
+        if not existing_shared.get("final_answer"):
+            existing_shared["final_answer"] = fallback
+
     existing_shared["signals"] = existing_signals
     return {"shared": existing_shared}
 

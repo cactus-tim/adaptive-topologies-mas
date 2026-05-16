@@ -385,7 +385,22 @@ async def _critic_postprocess(state: dict[str, Any]) -> dict[str, Any]:
             draft_text = raw_payload.get("draft") or getattr(msg, "content", None)
             break
 
-    final_answer = file_artifact or draft_text or "<incomplete>"
+    # 4c. Task-aware preference. For CODE tasks (executor told to write
+    # solution.py), prefer the file artifact — the DRAFT is usually just
+    # narrative ("Solution written to solution.py"). For NON-CODE tasks
+    # (gsm8k / commongen / dabench), the executor STILL writes solution.py
+    # under instruction (executor.yaml unconditionally tells it to dump
+    # "programming tasks" to solution.py), but that file contains Python
+    # full of intermediate variables, test cases, and restated problem
+    # numbers — and GSM8KMatcher takes the LAST numeric token, which is
+    # almost never the right answer. Use the DRAFT (where the executor
+    # writes the human-readable answer) for these tasks.
+    task_id = str(shared.get("task_id") or "").lower()
+    _code_tasks = {"humaneval"}
+    if task_id in _code_tasks:
+        final_answer = file_artifact or draft_text or "<incomplete>"
+    else:
+        final_answer = draft_text or file_artifact or "<incomplete>"
 
     # --- Step 5: Pin phase to "execution" ---
     shared["phase"] = "execution"

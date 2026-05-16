@@ -364,7 +364,11 @@ class TestJudgePostprocess:
         delta = asyncio.run(run())
         signals = delta["shared"]["signals"]
         assert signals.get("judge_decided") is not True
-        assert delta["shared"].get("final_answer") is None
+        # New contract (post-safety-net): on rejection, we still extract the
+        # best DRAFT artifact so the run reports SOMETHING instead of
+        # quality_score=0 on otherwise-correct debates. With no DRAFT data
+        # in this test fixture, the fallback returns "<incomplete>".
+        assert delta["shared"].get("final_answer") == "<incomplete>"
 
     def test_judge_postprocess_no_decision_message_treated_as_rejected(self) -> None:
         """Empty outbox → no DECISION found → treated as rejected."""
