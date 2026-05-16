@@ -760,7 +760,21 @@ def _build_agents(
     # match the chain/star verifier.
     # ------------------------------------------------------------------
     topo_name = getattr(cfg.topology, "name", "")
-    topo_extra = dict(getattr(cfg.topology, "extra", None) or {})
+    # Resolve topology-specific extras from the typed TopologyExtras model.
+    # cfg.topology.extra is a TopologyExtras Pydantic model post-refactor;
+    # using dict() on a BaseModel iterates __fields_set__, not values — we
+    # must use the typed attributes directly so user-configured values are
+    # not silently ignored.
+    raw_extra = getattr(cfg.topology, "extra", None)
+    if raw_extra is not None and hasattr(raw_extra, "model_dump"):
+        # Production path — typed TopologyExtras: read namespace bucket directly.
+        hier_extra = raw_extra.hierarchical.model_dump(exclude_none=True)
+        debate_extra = raw_extra.debate.model_dump(exclude_none=True)
+    else:
+        # Legacy dict path (tests or direct TopologyConfig construction).
+        flat = dict(raw_extra) if raw_extra else {}
+        hier_extra = flat.get("hierarchical", flat)
+        debate_extra = flat.get("debate", flat)
     extra_workers: list[tuple[str, str]] = []  # [(agent_id, base_role), ...]
 
     if topo_name == "hierarchical":
@@ -768,7 +782,7 @@ def _build_agents(
         # or has <2 teams, the topology synthesises team_a/team_b with two
         # executor workers each. _build_agents has to use the SAME default
         # set, otherwise the topology references agent ids we never built.
-        sub_teams = list(topo_extra.get("sub_teams") or [])
+        sub_teams = list(hier_extra.get("sub_teams") or [])
         if len(sub_teams) < 2:
             sub_teams = [
                 {"team_id": "team_a", "workers": ["executor_a1", "executor_a2"]},
@@ -779,13 +793,13 @@ def _build_agents(
                 extra_workers.append((str(worker_id), "executor"))
     elif topo_name == "debate":
         extra_workers.append(
-            (str(topo_extra.get("debater_pro_id") or "debater_pro"), "executor")
+            (str(debate_extra.get("debater_pro_id") or "debater_pro"), "executor")
         )
         extra_workers.append(
-            (str(topo_extra.get("debater_contra_id") or "debater_contra"), "executor")
+            (str(debate_extra.get("debater_contra_id") or "debater_contra"), "executor")
         )
         extra_workers.append(
-            (str(topo_extra.get("judge_id") or "judge"), "critic")
+            (str(debate_extra.get("judge_id") or "judge"), "critic")
         )
 
     for worker_id, base_role in extra_workers:
@@ -820,8 +834,8 @@ def _build_agents(
         # tasks so downstream extraction can find the actual answer, not the
         # debate argument around it.
         if topo_name == "debate" and worker_id in (
-            str(topo_extra.get("debater_pro_id") or "debater_pro"),
-            str(topo_extra.get("debater_contra_id") or "debater_contra"),
+            str(debate_extra.get("debater_pro_id") or "debater_pro"),
+            str(debate_extra.get("debater_contra_id") or "debater_contra"),
         ):
             debate_override = (
                 "[DEBATE ROLE — HARD RULES, READ FIRST]\n"
@@ -873,7 +887,7 @@ def _build_agents(
         # format for non-code tasks. Mirrors the placement strategy used
         # for debaters above.
         if topo_name == "debate" and worker_id == str(
-            topo_extra.get("judge_id") or "judge"
+            debate_extra.get("judge_id") or "judge"
         ):
             judge_override = (
                 "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"

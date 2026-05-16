@@ -26,9 +26,9 @@ Nodes:
 TopologyConfig.extra defaults (under namespaced extras.mesh):
   max_rounds: 12                                          — mirrors ``_DEFAULT_MAX_ROUNDS``
   consensus_threshold: 3                                  — mirrors ``_DEFAULT_CONSENSUS_THRESHOLD``
-  max_messages: 200                                       — mirrors ``_DEFAULT_BROADCAST_BUS_CAP``
-  dispatch: "round_robin"                                 — mirrors ``_DEFAULT_ACTIVATION_POLICY``
-  round_robin_order: ["planner","researcher","executor","critic"] — mirrors ``_DEFAULT_AGENT_ORDER``
+  broadcast_bus_cap: 200                                  — mirrors ``_DEFAULT_BROADCAST_BUS_CAP``
+  activation_policy: "round_robin"                        — mirrors ``_DEFAULT_ACTIVATION_POLICY``
+  agent_order: ["planner","researcher","executor","critic"] — mirrors ``_DEFAULT_AGENT_ORDER``
 
   NOTE: max_rounds default is 12 (NOT 6) to give the round-robin dispatcher
   [planner, researcher, executor, critic] at least 3 full passes before END;

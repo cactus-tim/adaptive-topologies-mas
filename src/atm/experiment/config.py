@@ -109,6 +109,9 @@ _FLAT_TO_NAMESPACE: dict[str, tuple[str, str]] = {
     # mesh-specific (aliased key in legacy form)
     "mesh_max_rounds": ("mesh", "max_rounds"),
     "consensus_threshold": ("mesh", "consensus_threshold"),
+    "broadcast_bus_cap": ("mesh", "broadcast_bus_cap"),
+    "activation_policy": ("mesh", "activation_policy"),
+    "agent_order": ("mesh", "agent_order"),
     # debate-specific
     "debater_pro_id": ("debate", "debater_pro_id"),
     "debater_contra_id": ("debate", "debater_contra_id"),
@@ -178,21 +181,28 @@ class HierarchicalExtras(BaseModel):
 class MeshExtras(BaseModel):
     """Extra parameters for the Mesh topology.
 
-    Defaults mirror ``mesh.py`` constants (``_DEFAULT_MAX_ROUNDS = 12``,
-    ``_DEFAULT_CONSENSUS_THRESHOLD = 3``, ``_DEFAULT_BROADCAST_BUS_CAP = 200``).
+    Defaults mirror ``mesh.py`` constants:
+      - ``_DEFAULT_MAX_ROUNDS = 12``
+      - ``_DEFAULT_CONSENSUS_THRESHOLD = 3``
+      - ``_DEFAULT_BROADCAST_BUS_CAP = 200``
+      - ``_DEFAULT_ACTIVATION_POLICY = "round_robin"``
+      - ``_DEFAULT_AGENT_ORDER = ["planner","researcher","executor","critic"]``
 
     ``max_rounds`` corresponds to the legacy ``mesh_max_rounds`` flat key.
     The bw-compat validator in ``TopologyCfg`` remaps ``mesh_max_rounds``
     to ``mesh.max_rounds`` transparently.
+
+    Field names match the keys read by ``mesh.py`` builder exactly so that
+    YAML values set via ``topology.extra.mesh.<key>`` propagate correctly.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     max_rounds: int = 12
     consensus_threshold: int = 3
-    max_messages: int = 200
-    dispatch: str = "round_robin"
-    round_robin_order: list[str] = Field(
+    broadcast_bus_cap: int = 200
+    activation_policy: str = "round_robin"
+    agent_order: list[str] = Field(
         default_factory=lambda: ["planner", "researcher", "executor", "critic"]
     )
 
