@@ -1,49 +1,45 @@
 # E2 — HITL-simulated baseline (RQ3).
 #
-# Per arch/experiment_plan.md §3:
-#   - top-3 topologies (PER-task-type from E1, see "topology.name" sweep
-#     below; placeholders here, replace after E1 produces winners)
-#   - 5 human roles: Coordinator, Reviewer, Judge, Peer, Monitor
-#   - 4 task types
-#   - N = 15 tasks × 3 seeds (smart-cut #2)
-#   - HITL: llm_simulated gateway, fixed persona-seed
+# Per arch/experiment_plan.md §3 + smart-cuts §11.2:
+#   - top-3 topologies PER task_type from E1 (analysis/e1_top3.json)
+#   - 5 human roles: coordinator, reviewer, judge, peer, monitor
+#   - 4 task types × 15 tasks × 3 seeds
+#   - HITL: llm_simulated gateway on openai:gpt-4.1-mini (cross-family,
+#     independent of the Cerebras worker family)
 #
-# Smart-cut #1: top-3 topologies instead of full 5 → ~12 (topo, role) pairs
-# (after excluding non-sensical combos: Debate×Coordinator, Chain×Peer,
-# Hierarchical×Peer) → ~2160 cells (was ~4000 in plan).
-# Wall-time on p=12: ~10 h. Cost: ~$130 compute + ~$15 judge.
+# IMPORTANT: this YAML emits the FULL cross-product (5 topo × 4 task × 5 role
+# × 15 shuffle × 3 seed = 4500 cells). The actual E2 grid is launched via
+# ``scripts/run_e2.py``, which:
+#   1. Loads ``analysis/e1_top3.json`` and keeps only top-3 (topology, task) pairs
+#   2. Drops three structurally non-sensical (topology, role) pairs:
+#        - debate × coordinator (coordinator ≡ judge in debate)
+#        - chain × peer (no slot in a linear pipeline)
+#        - hierarchical × peer (peer breaks the hierarchy)
+#   3. Forwards the filtered ~2295 cells to ``run_grid``.
 #
-# IMPORTANT: replace the topology.name sweep below with the actual top-3
-# winners from E1 (see analysis/winners_e1.json after running E1).
+# Cost / wall-time estimates (post-filter):
+#   - ~2295 cells × ~$0.02/cell compute ≈ $46 Cerebras
+#   - ~2295 × 1–2 HITL calls × $0.001 ≈ $5 OpenAI gateway
+#   - Total ≈ $50, p=30 → ~3 h wall-time.
+
+include: e1_pilot.yaml
 
 name: e2_full
 seed: 42
 
-task:
-  name: humaneval
-  split: test
-  limit: 1
-  shuffle_seed: 0
+# ---- topology / agents / model — inherit from e1_pilot, override grid below.
 
-agents:
-  set: canonical_4
-  scratchpad:
-    policy: window_with_summary
-    window_size: 3
-    context_token_budget: 12000
+# HITL: enabled, cross-family LLM simulator pinned for reproducibility.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer            # placeholder; sweep overrides per cell
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed        # E2 = static role per cell (E4 sweeps role_router)
 
-topology:
-  name: star
-  max_iterations: 8
-  extra:
-    star:
-      exec_max_iter: 3
-      verify_max_iter: 2
-    debate:
-      max_rounds: 2
-    hierarchical:
-      max_rounds: 2
-
+# HITL gateway runs on openai:gpt-4.1-mini (cross-family vs. cerebras workers).
+# Wired via runner._build_role_router / role_router_llm_factory → build_llm.
 model:
   default: cerebras:gpt-oss-120b
   by_role:
@@ -54,6 +50,7 @@ model:
   judge:      openai:gpt-4.1-mini
   summarizer: cerebras:gpt-oss-120b
   router:     cerebras:gpt-oss-120b
+  human:      openai:gpt-4.1-mini
   prompt_cache_scope: per_run
   provider_opts:
     cerebras:
@@ -61,47 +58,22 @@ model:
     cerebras_critic:
       reasoning_effort: high
 
-evaluation:
-  judge_model: openai:gpt-4.1-mini
-  judge_self_consistency_n: 3
-
-# 2160 cells × ~$0.06 (HITL adds calls) → ~$130 + judge ~$15.
 budget:
   per_call_usd: 0.05
-  per_run_usd: 0.30
-  per_experiment_usd: 200.0
+  per_run_usd: 0.40              # HITL adds 1-2 calls/run → bump
+  per_experiment_usd: 80.0       # 60% head-room vs. $50 estimate
   warn_ratio: 0.85
 
-observability:
-  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
-  parquet_dir: "data/experiments"
-  callback_sync: false
-
-# HITL via LLM simulator. Persona seed pinned for reproducibility.
-human:
-  enabled: true
-  gateway: llm_simulated
-  role: reviewer       # placeholder; sweep overrides per cell
-  timeout_s: 900.0
-  timeout_policy: llm_fallback
-  role_router: fixed   # E2 = static role per cell (E4 sweeps role_router)
-
-# 3 topo (TBD from E1) × 5 roles × 4 task × 15 × 3 = 2700 (raw) — minus
-# excluded combos via post-hoc filter or split into multiple runs:
-#   - Debate × Coordinator (judge ≡ coordinator)
-#   - Chain × Peer (no slot)
-#   - Hierarchical × Peer (breaks hierarchy)
-# Apply via separate sweep blocks if needed; here we keep all 5 roles
-# and rely on plan-level analysis to drop bad combos.
 grid:
-  parallelism: 12
+  parallelism: 30                # match E1; Cerebras TPM holds
   fail_fast: false
   seeds: [42, 43, 44]
   sweep:
     topology.name:
-      # REPLACE WITH TOP-3 FROM E1 (placeholder values):
       - star
       - chain
+      - mesh
+      - debate
       - hierarchical
     human.role:
       - coordinator
@@ -118,5 +90,5 @@ grid:
 
 estimate:
   heuristic_tokens_per_call: 700
-  calls_per_iter: 4   # HITL adds ~1 call/iter
+  calls_per_iter: 4              # HITL adds ~1 call/iter
   use_historical: true
