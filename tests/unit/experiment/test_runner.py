@@ -1018,7 +1018,12 @@ def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
     ):
         agents = _build_agents(
             cfg,
-            llms={"planner": mock_llm, "executor": mock_llm, "critic": mock_llm, "researcher": mock_llm},
+            llms={
+                "planner": mock_llm,
+                "executor": mock_llm,
+                "critic": mock_llm,
+                "researcher": mock_llm,
+            },
         )
 
     # The custom debater/judge IDs must be present in the synthesised agent dict

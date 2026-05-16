@@ -90,10 +90,13 @@ def _make_cfg(
     if topology_name == "star":
         # Set phase caps to 1 so each agent runs exactly once per phase.
         # This ensures the scripted fixtures (1 step each) are not exhausted.
+        # Namespaced form (post namespace-topology-extra refactor) — the legacy
+        # flat `topology.extra.<key>` form now emits DeprecationWarning, which
+        # pytest's filterwarnings=error promotes to a hard test failure.
         overrides += [
-            "topology.extra.planning_max_iter=1",
-            "topology.extra.exec_max_iter=1",
-            "topology.extra.verify_max_iter=1",
+            "topology.extra.star.planning_max_iter=1",
+            "topology.extra.star.exec_max_iter=1",
+            "topology.extra.star.verify_max_iter=1",
         ]
 
     return load_config(str(smoke_yaml), overrides=overrides)

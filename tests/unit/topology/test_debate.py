@@ -473,9 +473,7 @@ class TestExtractWinnerArtifact:
 
     @staticmethod
     def _bad_result(call: ToolCall) -> ToolResult:
-        return ToolResult(
-            call_id=call.id, ok=False, output=None, latency_ms=1, error="overwrite"
-        )
+        return ToolResult(call_id=call.id, ok=False, output=None, latency_ms=1, error="overwrite")
 
     def test_prefers_solution_py_over_draft(self) -> None:
         """When debater wrote solution.py via file_write, that wins over DRAFT text."""
@@ -487,10 +485,7 @@ class TestExtractWinnerArtifact:
                 "tool_results": [self._ok_result(call)],
             }
         }
-        assert (
-            _extract_winner_artifact(agents, "debater_pro")
-            == "def add(a,b): return a+b"
-        )
+        assert _extract_winner_artifact(agents, "debater_pro") == "def add(a,b): return a+b"
 
     def test_skips_rejected_overwrite(self) -> None:
         """A rejected (ok=False) file_write is ignored; later valid one wins."""
@@ -508,12 +503,8 @@ class TestExtractWinnerArtifact:
 
     def test_falls_back_to_draft_when_no_file_write(self) -> None:
         """No tool_calls → returns DRAFT text (legacy / non-tool path)."""
-        agents = {
-            "debater_pro": {"outbox": [_make_draft_msg(content="just argument text")]}
-        }
-        assert (
-            _extract_winner_artifact(agents, "debater_pro") == "just argument text"
-        )
+        agents = {"debater_pro": {"outbox": [_make_draft_msg(content="just argument text")]}}
+        assert _extract_winner_artifact(agents, "debater_pro") == "just argument text"
 
     def test_returns_incomplete_when_nothing_present(self) -> None:
         """Empty outbox + no tool_calls → '<incomplete>'."""
@@ -530,16 +521,12 @@ class TestExtractWinnerArtifact:
         state: dict[str, Any] = {
             "shared": _make_shared(),
             "agents": {
-                "judge": {
-                    "outbox": [_make_decision_msg(approved=True, winner="pro")]
-                },
+                "judge": {"outbox": [_make_decision_msg(approved=True, winner="pro")]},
                 "debater_pro": {
                     "outbox": [_make_draft_msg(content="my pro argument")],
                     "tool_calls": [call],
                     "tool_results": [
-                        ToolResult(
-                            call_id=call.id, ok=True, output=None, latency_ms=1
-                        )
+                        ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
                     ],
                 },
             },

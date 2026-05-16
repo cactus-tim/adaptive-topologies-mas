@@ -182,9 +182,7 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
             msg = record.getMessage()
             if "Event loop is closed" in msg:
                 return False
-            if "Task exception was never retrieved" in msg and "aclose" in msg:
-                return False
-            return True
+            return not ("Task exception was never retrieved" in msg and "aclose" in msg)
 
     logging.getLogger("asyncio").addFilter(_HttpxAcloseFilter())
 
@@ -237,10 +235,8 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
                 )
         except TimeoutError:
             pass
-        try:
+        with contextlib.suppress(Exception):
             loop.run_until_complete(loop.shutdown_asyncgens())
-        except Exception:
-            pass
     finally:
         try:
             asyncio.set_event_loop(None)

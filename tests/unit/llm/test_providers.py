@@ -343,9 +343,7 @@ class TestBuildCerebras:
         )
         assert key_value == "real-key-from-env"
 
-    def test_explicit_api_key_in_opts_wins_over_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_explicit_api_key_in_opts_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Caller-provided api_key in opts beats both env and dummy fallback."""
         from langchain_cerebras import ChatCerebras
 

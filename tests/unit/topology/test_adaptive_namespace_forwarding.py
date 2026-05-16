@@ -79,15 +79,15 @@ def _build_and_capture_sub_cfg(
 
     # We need to intercept TopologyRegistry.get so we can capture the sub_cfg
     # when the registry-resolved class's build() is called.
-    original_get = atm.topology.adaptive.TopologyRegistry.get.__func__  # type: ignore[attr-defined]
 
     def fake_registry_get(cls: Any, name: str) -> Any:
-        real_cls = original_get(cls, name)
-
+        # NB: not delegating to the real registry here — we only want to capture
+        # the sub_cfg that adaptive passes to a sub-topology, not actually
+        # build a real subgraph (which would need real agents/wiring).
         class CapturingWrapper:
             """Wraps the real topology class to intercept build() calls."""
 
-            def build(self_inner: Any, agents_arg: Any, sub_cfg: TopologyConfig, **kw: Any) -> Any:
+            def build(self, agents_arg: Any, sub_cfg: TopologyConfig, **kw: Any) -> Any:
                 captured.append(sub_cfg)
                 # Return a minimal mock compiled graph so adaptive doesn't crash.
                 mock_graph = MagicMock()
