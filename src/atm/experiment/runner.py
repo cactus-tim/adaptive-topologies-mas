@@ -658,13 +658,43 @@ def _build_llm_wrappers(
                     replay_source=replay_path,
                 )
         else:
+            opts = _resolve_provider_opts(cfg.model.provider_opts, provider, role)
             wrappers[role] = build_llm(
                 model_id=model_id,
                 pricing=pricing,
                 budget=budget,
+                cfg=opts or None,
             )
 
     return wrappers
+
+
+def _resolve_provider_opts(
+    provider_opts: dict[str, Any], provider: str, role: str
+) -> dict[str, Any]:
+    """Merge provider-level + role-specific opts from ``cfg.model.provider_opts``.
+
+    Two flat keys are recognised per provider:
+      - ``<provider>``           — default opts applied to every role on the provider
+      - ``<provider>_<role>``    — overrides applied on top of the default
+
+    Example::
+
+        provider_opts:
+          cerebras: {reasoning_effort: low}
+          cerebras_executor: {reasoning_effort: medium}
+
+    Returns ``{}`` when no opts are configured. Non-dict values under either
+    key are silently ignored (defensive against typo'd yaml).
+    """
+    merged: dict[str, Any] = {}
+    base = provider_opts.get(provider)
+    if isinstance(base, dict):
+        merged.update(base)
+    override = provider_opts.get(f"{provider}_{role}")
+    if isinstance(override, dict):
+        merged.update(override)
+    return merged
 
 
 def _build_agents(
@@ -1063,7 +1093,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             tool_registry = build_default_registry(
                 workspace=tools_workspace,
                 corpus_dir=tools_corpus,
-                sandbox=_Sandbox(),
+                sandbox=_Sandbox(workspace=tools_workspace),
             )
         except Exception:
             logger.warning(
@@ -2026,7 +2056,7 @@ async def _execute_existing_run(
             tool_registry = build_default_registry(
                 workspace=tools_workspace,
                 corpus_dir=tools_corpus,
-                sandbox=_Sandbox(),
+                sandbox=_Sandbox(workspace=tools_workspace),
             )
         except Exception:
             tool_registry = None
