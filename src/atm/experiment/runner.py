@@ -1173,6 +1173,17 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             # Instantiate the class before calling build() so that self is bound.
             topology_cls = TopologyRegistry.get(cfg.topology.name)
             topology_instance = topology_cls()
+            # Build topology_router LLM only for adaptive — cheap pass-through
+            # for other topologies (they ignore unknown kwargs).
+            topology_router_llm: LLMWrapper | None = None
+            if cfg.topology.name == "adaptive":
+                router_model_id = cfg.model.router or cfg.model.default
+                topology_router_llm = build_llm(
+                    model_id=router_model_id,
+                    pricing=pricing,
+                    budget=budget,
+                )
+
             compiled_graph = topology_instance.build(
                 agents,
                 topology_cfg,
@@ -1180,6 +1191,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 human_cfg=cfg.human,
                 human_gateway_llm=human_gateway_llm,
                 role_router=role_router,
+                topology_router_llm=topology_router_llm,
             )
 
             # Adaptive meta-graph runs many super-steps per task tick (4 nodes
@@ -2130,6 +2142,17 @@ async def _execute_existing_run(
         async with checkpointer_scope(pg_dsn) as checkpointer:
             topology_cls = TopologyRegistry.get(cfg.topology.name)
             topology_instance = topology_cls()
+            # Build topology_router LLM only for adaptive — cheap pass-through
+            # for other topologies (they ignore unknown kwargs).
+            topology_router_llm: LLMWrapper | None = None
+            if cfg.topology.name == "adaptive":
+                router_model_id = cfg.model.router or cfg.model.default
+                topology_router_llm = build_llm(
+                    model_id=router_model_id,
+                    pricing=pricing,
+                    budget=budget,
+                )
+
             compiled_graph = topology_instance.build(
                 agents,
                 topology_cfg,
@@ -2137,6 +2160,7 @@ async def _execute_existing_run(
                 human_cfg=cfg.human,
                 human_gateway_llm=human_gateway_llm,
                 role_router=role_router,
+                topology_router_llm=topology_router_llm,
             )
 
             recursion_limit = max(100, (cfg.topology.max_iterations or 30) * 4 + 20)

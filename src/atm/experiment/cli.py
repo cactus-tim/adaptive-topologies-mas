@@ -983,4 +983,93 @@ def _print_status_table(row: dict[str, Any]) -> None:
     typer.echo(f"  total cost : ${row['total_cost']:.4f}")
 
 
+# ---------------------------------------------------------------------------
+# atm oracle build — generate leave-one-out oracle JSON for E3 router
+# ---------------------------------------------------------------------------
+
+
+@app.command("oracle")
+def oracle_build(
+    exp_id: Annotated[
+        str,
+        typer.Option("--exp-id", help="Experiment UUID whose runs feed the LOO oracle."),
+    ],
+    out_path: Annotated[
+        Path,
+        typer.Option(
+            "--out",
+            "-o",
+            help="Output path for the oracle JSON file.",
+        ),
+    ] = Path("data/oracle/e1_leave_one_out.json"),
+    pg_dsn: Annotated[
+        str | None,
+        typer.Option("--pg-dsn", help="Override PG_DSN (default: from env)."),
+    ] = None,
+) -> None:
+    """Build leave-one-out oracle table from completed runs of an experiment.
+
+    Reads ``runs`` rows for the given ``exp_id``, computes the best
+    topology per (task_id, phase) via leave-one-out aggregation, and writes
+    the OracleTopologyRouter-compatible JSON to ``--out``.
+
+    The output is consumed by ``adaptive.topology_router='oracle'`` —
+    place it at the default path (``data/oracle/e1_leave_one_out.json``)
+    or pass a custom path via ``topology.extra.adaptive.oracle_table_path``.
+
+    Exit codes:
+        0 — file written successfully
+        3 — no runs found / DSN unreachable / write failed
+    """
+    import os
+
+    from atm.analysis.oracle import build_leave_one_out_oracle
+
+    dsn = pg_dsn or os.environ.get("PG_DSN")
+    if not dsn:
+        typer.echo("PG_DSN not set (env or --pg-dsn).", err=True)
+        raise typer.Exit(3)
+
+    try:
+        eid = UUID(exp_id)
+    except ValueError as exc:
+        typer.echo(f"Invalid exp_id (must be UUID): {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    async def _run() -> dict[str, Any]:
+        engine = create_engine(dsn)
+        try:
+            sf = create_session_factory(engine)
+            table = await build_leave_one_out_oracle(str(eid), session_factory=sf)
+        finally:
+            await engine.dispose()
+        return table.to_router_dict()
+
+    try:
+        router_dict = asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Failed to build oracle: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    by_id_count = len(router_dict.get("by_task_id", {}))
+    by_type_count = len(router_dict.get("by_task_type", {}))
+    default = router_dict.get("_default", "?")
+
+    if by_id_count == 0 and by_type_count == 0:
+        typer.echo(
+            f"No runs found for exp_id={exp_id} — oracle table is empty. "
+            "Was the experiment completed?",
+            err=True,
+        )
+        raise typer.Exit(3)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(router_dict, indent=2, sort_keys=True))
+
+    typer.echo(f"Oracle table written to {out_path}")
+    typer.echo(f"  by_task_id : {by_id_count} tasks")
+    typer.echo(f"  by_task_type: {by_type_count} types")
+    typer.echo(f"  _default   : {default}")
+
+
 __all__ = ["Integer", "Pricing", "app"]
