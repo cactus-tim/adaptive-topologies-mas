@@ -1,0 +1,30 @@
+# E1-mini-fixes — focused re-run validating the three topology fixes
+# applied on top of e1-mini v3 (commit 5530f06):
+#   - mesh:         mesh_max_rounds=12 (was effectively 2 due to shared key)
+#   - hierarchical: _extract_hierarchical_artifact for code tasks
+#   - debate:       [Debate Role Override] prompt suffix for debater_pro/contra
+#
+# Scope: 3 fixed topologies × 3 working task_types × 3 shuffle × 1 seed = 27 cells.
+# Wall-time on p=12: ~10 min. Cost: ~$2-3 (smaller than full mini).
+#
+# dabench excluded — it is a separate data-availability issue (upstream CSV 404s)
+# being tackled via an HF mirror fallback in a separate commit.
+
+include: e1_pilot.yaml
+
+name: e1_mini_fixes
+
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    topology.name:
+      - mesh
+      - hierarchical
+      - debate
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+    task.shuffle_seed: [0, 1, 2]
