@@ -702,6 +702,5 @@ class TestMeshNamespacedExtrasBroadcastCapAndOrder:
         extras = get_topology_extras(cfg, "mesh")
         resolved = extras.get("agent_order", _DEFAULT_AGENT_ORDER)
         assert resolved == custom_order, (
-            f"Expected agent_order={custom_order!r} from namespaced extra, "
-            f"got {resolved!r}"
+            f"Expected agent_order={custom_order!r} from namespaced extra, got {resolved!r}"
         )

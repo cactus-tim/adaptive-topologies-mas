@@ -792,15 +792,11 @@ def _build_agents(
             for worker_id in team.get("workers") or []:
                 extra_workers.append((str(worker_id), "executor"))
     elif topo_name == "debate":
-        extra_workers.append(
-            (str(debate_extra.get("debater_pro_id") or "debater_pro"), "executor")
-        )
+        extra_workers.append((str(debate_extra.get("debater_pro_id") or "debater_pro"), "executor"))
         extra_workers.append(
             (str(debate_extra.get("debater_contra_id") or "debater_contra"), "executor")
         )
-        extra_workers.append(
-            (str(debate_extra.get("judge_id") or "judge"), "critic")
-        )
+        extra_workers.append((str(debate_extra.get("judge_id") or "judge"), "critic"))
 
     for worker_id, base_role in extra_workers:
         if worker_id in agents:
@@ -886,9 +882,7 @@ def _build_agents(
         # tells the judge how to evaluate the new ###ANSWER### marker
         # format for non-code tasks. Mirrors the placement strategy used
         # for debaters above.
-        if topo_name == "debate" and worker_id == str(
-            debate_extra.get("judge_id") or "judge"
-        ):
+        if topo_name == "debate" and worker_id == str(debate_extra.get("judge_id") or "judge"):
             judge_override = (
                 "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"
                 "You judge a debate between two debaters (pro / contra). "
@@ -910,7 +904,7 @@ def _build_agents(
                 "  • APPROVE whenever at least ONE side has a plausibly "
                 "correct answer (a working `solution.py` for code, or a "
                 "well-formed `###ANSWER###` block for non-code). Set "
-                "`winner` to that side: \"pro\" or \"contra\".\n"
+                '`winner` to that side: "pro" or "contra".\n'
                 "  • REJECT only when BOTH sides are clearly wrong, both "
                 "drafts are missing the required artifact (no file for "
                 "code tasks, no `###ANSWER###` block for non-code), or the "
@@ -928,11 +922,7 @@ def _build_agents(
 
         # Per-worker LLM resolution: prefer cfg.model.by_role[worker_id]
         # if explicitly mapped, then by_role[base_role], else default.
-        llm = (
-            llms.get(worker_id)
-            or llms.get(base_role)
-            or llms.get("planner")
-        )
+        llm = llms.get(worker_id) or llms.get(base_role) or llms.get("planner")
         if llm is None:
             logger.warning(
                 "no LLM wrapper for topology extra worker",
