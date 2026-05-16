@@ -31,9 +31,13 @@ topology:
   name: star
   max_iterations: 8
   extra:
-    exec_max_iter: 3
-    verify_max_iter: 2
-    max_rounds: 2
+    star:
+      exec_max_iter: 3
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
 
 model:
   default: cerebras:gpt-oss-120b

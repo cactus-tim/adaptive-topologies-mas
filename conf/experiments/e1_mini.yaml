@@ -36,9 +36,13 @@ topology:
   name: star
   max_iterations: 8
   extra:
-    exec_max_iter: 3      # star
-    verify_max_iter: 2    # star
-    max_rounds: 2         # debate / hierarchical
+    star:
+      exec_max_iter: 3
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
 
 # ---- model lineup (Variant B'.1) -----------------------------------------
 model:

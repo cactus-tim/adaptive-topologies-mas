@@ -89,7 +89,7 @@ from atm.phases.guards import (
 )
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
 from atm.phases.topology_router import RuleBasedTopologyRouter
-from atm.topology.base import TopologyConfig, TopologyRegistry
+from atm.topology.base import TopologyConfig, TopologyRegistry, get_topology_extras
 
 _log = logging.getLogger(__name__)
 
@@ -384,23 +384,26 @@ class AdaptiveTopology:
                          using ``human_cfg.role`` directly.
                          When None → back-compat behaviour: role = human_cfg.role.
         """
-        extra = cfg.extra or {}
+        extras = get_topology_extras(cfg, "adaptive")
+        # _raw_extra retains the full cfg.extra dict for _get_subgraph forwarding
+        # (Step 3.1 will replace _get_subgraph with namespace-aware forwarding).
+        _raw_extra: dict[str, Any] = cfg.extra or {}
         checkpointer = kwargs.get("checkpointer")
 
         # ----------------------------------------------------------------
         # Routers configuration
         # ----------------------------------------------------------------
         limits = PhaseLimits(
-            planning_max_iter=int(extra.get("planning_max_iter", 3)),
-            exec_max_iter=int(extra.get("exec_max_iter", 10)),
-            verify_max_iter=int(extra.get("verify_max_iter", 4)),
+            planning_max_iter=int(extras.get("planning_max_iter", 3)),
+            exec_max_iter=int(extras.get("exec_max_iter", 10)),
+            verify_max_iter=int(extras.get("verify_max_iter", 4)),
         )
         phase_router = RuleBasedPhaseRouter(limits=limits, guards={})
 
         rule_topo_router = RuleBasedTopologyRouter()
-        use_guards: bool = bool(extra.get("switch_guards", True))
+        use_guards: bool = bool(extras.get("switch_guards", True))
         if use_guards:
-            guards_cfg = extra.get("switch_guards_config") or {}
+            guards_cfg = extras.get("switch_guards_config") or {}
             switch_guards = SwitchGuards(**dict(guards_cfg.items()))
             topo_router: Any = GuardedRouter(inner=rule_topo_router, guards=switch_guards)
         else:
@@ -409,7 +412,7 @@ class AdaptiveTopology:
         # ----------------------------------------------------------------
         # Subgraph cache (lazy compile on first use per topology name)
         # ----------------------------------------------------------------
-        subgraph_max_iter: int = int(extra.get("subgraph_max_iterations", 10))
+        subgraph_max_iter: int = int(extras.get("subgraph_max_iterations", 10))
         _subgraph_cache: dict[str, Any] = {}
 
         # Keys to strip from extra when building subgraph configs
@@ -449,7 +452,7 @@ class AdaptiveTopology:
             sub_cfg = TopologyConfig(
                 name=registry_name,
                 max_iterations=subgraph_max_iter,
-                extra={k: v for k, v in extra.items() if k not in _meta_keys},
+                extra={k: v for k, v in _raw_extra.items() if k not in _meta_keys},
             )
             compiled = topo_instance.build(agents, sub_cfg)
             _subgraph_cache[topology_name] = compiled
@@ -458,7 +461,9 @@ class AdaptiveTopology:
         # ----------------------------------------------------------------
         # run_id
         # ----------------------------------------------------------------
-        run_id_str: str = str(extra.get("run_id", str(uuid.uuid4())))
+        # NOTE: run_id is excluded from model_dump(exclude_none=True) in the runner
+        # when AdaptiveExtras.run_id is None — preserving the uuid4() fallback here.
+        run_id_str: str = str(extras.get("run_id", str(uuid.uuid4())))
 
         # ----------------------------------------------------------------
         # Closure slots for routing decisions (per-tick).

@@ -62,7 +62,7 @@ from langgraph.graph import END, START, StateGraph
 
 from atm.core.state import GraphState
 from atm.core.types import MessageKind
-from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop
+from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop, get_topology_extras
 from atm.topology.star import _extract_final_answer
 
 # ---------------------------------------------------------------------------
@@ -169,23 +169,20 @@ class MeshTopology:
             CompiledStateGraph ready for ainvoke.
         """
         checkpointer = kwargs.get("checkpointer")
-        extra = cfg.extra or {}
+        extras = get_topology_extras(cfg, "mesh")
 
-        # Mesh-specific key: ``mesh_max_rounds``. Deliberately DOES NOT fall
-        # back to the shared ``max_rounds`` key — that one is set to a tiny
-        # value (e.g. 2) in pilot configs because debate/hierarchical interpret
-        # it as "debate rounds" / "team rounds" where 2 is enough. Mesh's
-        # round-robin dispatcher (planner→researcher→executor→critic)
-        # increments per single agent activation, so max_rounds<8 starves
-        # the executor entirely and no solution.py is ever written. Default
-        # 12 (≥3 full round-robin passes; cheap headroom).
-        max_rounds: int = int(extra.get("mesh_max_rounds", _DEFAULT_MAX_ROUNDS))
+        # Under the namespaced schema the key is ``max_rounds`` (collision-safe:
+        # each topology reads from its own bucket). The bw-compat validator in
+        # experiment.config remaps the legacy flat ``mesh_max_rounds`` key to
+        # ``mesh.max_rounds`` so old configs continue working without changes.
+        # Default 12 (≥3 full round-robin passes over 4 agents; cheap headroom).
+        max_rounds: int = int(extras.get("max_rounds", _DEFAULT_MAX_ROUNDS))
         consensus_threshold: int = int(
-            extra.get("consensus_threshold", _DEFAULT_CONSENSUS_THRESHOLD)
+            extras.get("consensus_threshold", _DEFAULT_CONSENSUS_THRESHOLD)
         )
-        activation_policy: str = str(extra.get("activation_policy", _DEFAULT_ACTIVATION_POLICY))
-        agent_order: list[str] = list(extra.get("agent_order", _DEFAULT_AGENT_ORDER))
-        broadcast_bus_cap: int = int(extra.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP))
+        activation_policy: str = str(extras.get("activation_policy", _DEFAULT_ACTIVATION_POLICY))
+        agent_order: list[str] = list(extras.get("agent_order", _DEFAULT_AGENT_ORDER))
+        broadcast_bus_cap: int = int(extras.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP))
 
         # ----------------------------------------------------------------
         # HITL configuration — human_peer participates in round-robin

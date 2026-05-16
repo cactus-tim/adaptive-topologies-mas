@@ -1,6 +1,6 @@
 """Unit tests for GridCfg, EstimateCfg, and _resolve_dotpath (M12 Phase 1).
 
-Tests (10 cases):
+Tests (12 cases):
   1.  GridCfg defaults — parallelism=4, fail_fast=False, seeds=[42]
   2.  GridCfg valid sweep accepts str/int/float/bool scalars
   3.  GridCfg parallelism=0 raises ValidationError (ge=1)
@@ -10,7 +10,10 @@ Tests (10 cases):
   7.  ExperimentConfig.grid is None by default (optional)
   8.  ExperimentConfig.estimate has EstimateCfg defaults when not specified in YAML
   9.  GridCfg rejects unknown sweep key (non-existent dotpath) at construction time
-  10. GridCfg rejects topology.extra.* keys (untyped leaves) at construction time
+  10. GridCfg rejects unknown topology extra keys (top-level unknown topology name)
+  11. GridCfg accepts namespaced topology extra dotpath (topology.extra.mesh.max_rounds)
+  12. GridCfg rejects namespaced dict leaf (e.g. topology.extra.adaptive.switch_guards_config)
+  13. _resolve_dotpath handles Python 3.10+ X | None annotations
 """
 
 from __future__ import annotations
@@ -143,14 +146,36 @@ def test_grid_cfg_rejects_unknown_sweep_key() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 10. GridCfg rejects topology.extra.* keys (untyped leaves)
+# 10. GridCfg rejects unknown topology extra keys (unknown topology name)
 # ---------------------------------------------------------------------------
 
 
-def test_grid_cfg_rejects_topology_extra_keys() -> None:
-    """topology.extra.* keys should be rejected as untyped leaves."""
+def test_grid_cfg_rejects_unknown_topology_extra_keys() -> None:
+    """topology.extra.custom_param — 'custom_param' is not a topology name → rejected."""
     with pytest.raises((ValueError, ValidationError)):
         GridCfg(sweep={"topology.extra.custom_param": ["a", "b"]})
+
+
+# ---------------------------------------------------------------------------
+# 11. GridCfg accepts namespaced topology extra dotpath
+# ---------------------------------------------------------------------------
+
+
+def test_grid_cfg_accepts_namespaced_topology_extra_dotpath() -> None:
+    """topology.extra.mesh.max_rounds is a valid typed scalar → accepted by GridCfg."""
+    g = GridCfg(sweep={"topology.extra.mesh.max_rounds": [4, 8, 12]})
+    assert g.sweep["topology.extra.mesh.max_rounds"] == [4, 8, 12]
+
+
+# ---------------------------------------------------------------------------
+# 12. GridCfg rejects namespaced dict leaf
+# ---------------------------------------------------------------------------
+
+
+def test_grid_cfg_rejects_namespaced_dict_leaf() -> None:
+    """topology.extra.adaptive.switch_guards_config resolves to dict | None — rejected."""
+    with pytest.raises((ValueError, ValidationError)):
+        GridCfg(sweep={"topology.extra.adaptive.switch_guards_config": [{"a": 1}]})  # type: ignore[list-item]
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """Unit tests for atm.experiment.config — Pydantic schemas + OmegaConf loader.
 
-Tests (≥8):
+Tests (≥8 original + 14 new TopologyExtras tests):
   1.  load_config with valid_minimal.yaml returns ExperimentConfig
   2.  ExperimentConfig exported from __init__
   3.  load_config exported from __init__
@@ -12,7 +12,25 @@ Tests (≥8):
   9.  invalid topology name raises ValidationError
   10. ObservabilityCfg pg_dsn env interpolation (${oc.env:...} with default)
   11. ScratchpadCfg defaults are correct
-  12. TopologyCfg extra dict carries through
+  12. TopologyCfg extra passthrough — flat bw-compat via attribute access
+  13. Full round-trip field checks on valid_minimal.yaml
+  14. AgentSetCfg and ObservabilityCfg schema validation
+  15. ModelCfg.fake_fixtures — BUG-2 regression
+  --- New TopologyExtras tests ---
+  T1. Namespaced form accepted (mesh sub-bucket)
+  T2. Namespaced form accepted (debate sub-bucket)
+  T3. Flat bw-compat emits DeprecationWarning
+  T4. max_rounds scatters to debate AND hierarchical (not mesh)
+  T5. max_rounds flat — mesh stays at default 12
+  T6. max_rounds flat — adaptive has no max_rounds field (ignored at schema level)
+  T7. mesh_max_rounds flat → mesh.max_rounds remap
+  T8. Unknown topology name at extra top-level → ValidationError
+  T9. Unknown field inside a topology sub-bucket → ValidationError
+  T10. AdaptiveExtras defaults are correct (planning=3, exec=10, verify=4)
+  T11. StarExtras defaults are correct (planning=2, exec=5, verify=3)
+  T12. MeshExtras defaults — max_rounds=12 (starvation-safe)
+  T13. DebateExtras and HierarchicalExtras defaults — max_rounds=4
+  T14. schema_defaults_match_topology_builder_constants (parity guard)
 """
 
 from __future__ import annotations
@@ -25,13 +43,20 @@ from pydantic import ValidationError
 
 from atm.experiment import ExperimentConfig, load_config
 from atm.experiment.config import (
+    AdaptiveExtras,
     AgentSetCfg,
     BudgetCfg,
+    ChainExtras,
+    DebateExtras,
+    HierarchicalExtras,
+    MeshExtras,
     ModelCfg,
     ObservabilityCfg,
     ScratchpadCfg,
+    StarExtras,
     TaskCfg,
     TopologyCfg,
+    TopologyExtras,
 )
 
 FIXTURE = Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "valid_minimal.yaml"
@@ -230,11 +255,12 @@ def test_scratchpad_cfg_defaults() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 12. TopologyCfg.extra passthrough
+# 12. TopologyCfg.extra passthrough — flat bw-compat via attribute access
 # ---------------------------------------------------------------------------
 
 
 def test_load_config_topology_extra_passthrough(tmp_path: Path) -> None:
+    """Flat extras trigger DeprecationWarning and are accessible via attribute path."""
     yaml_content = """
 name: "extra_test"
 model:
@@ -255,10 +281,12 @@ observability:
 """
     cfg_file = tmp_path / "extra.yaml"
     cfg_file.write_text(yaml_content)
-    cfg = load_config(str(cfg_file))
-    assert cfg.topology.extra["planning_max_iter"] == 2
-    assert cfg.topology.extra["exec_max_iter"] == 5
-    assert cfg.topology.extra["verify_max_iter"] == 3
+    with pytest.warns(DeprecationWarning):
+        cfg = load_config(str(cfg_file))
+    # Access via namespaced attribute path (flat keys remapped to star namespace)
+    assert cfg.topology.extra.star.planning_max_iter == 2
+    assert cfg.topology.extra.star.exec_max_iter == 5
+    assert cfg.topology.extra.star.verify_max_iter == 3
 
 
 # ---------------------------------------------------------------------------
@@ -341,3 +369,219 @@ observability:
         "executor": "tests/fixtures/llm/m6_chain_executor.yaml",
         "critic": "tests/fixtures/llm/m6_chain_critic.yaml",
     }
+
+
+# ---------------------------------------------------------------------------
+# TopologyExtras tests — T1 through T14
+# ---------------------------------------------------------------------------
+
+
+# --- T1. Namespaced form accepted (mesh sub-bucket) ---
+
+
+def test_topology_extras_namespaced_mesh_accepted() -> None:
+    """Namespaced extra {mesh: {max_rounds: 12}} parses cleanly with no warning."""
+    cfg = TopologyCfg.model_validate({"name": "mesh", "extra": {"mesh": {"max_rounds": 12}}})
+    assert isinstance(cfg.extra, TopologyExtras)
+    assert cfg.extra.mesh.max_rounds == 12
+
+
+# --- T2. Namespaced form accepted (debate sub-bucket) ---
+
+
+def test_topology_extras_namespaced_debate_accepted() -> None:
+    """Namespaced extra {debate: {max_rounds: 6}} parses cleanly with no warning."""
+    cfg = TopologyCfg.model_validate({"name": "debate", "extra": {"debate": {"max_rounds": 6}}})
+    assert cfg.extra.debate.max_rounds == 6
+
+
+# --- T3. Flat bw-compat emits DeprecationWarning ---
+
+
+def test_topology_extras_flat_emits_deprecation_warning() -> None:
+    """Flat extra dict triggers DeprecationWarning."""
+    with pytest.warns(DeprecationWarning, match="flat topology.extra keys are deprecated"):
+        TopologyCfg.model_validate({"name": "star", "extra": {"planning_max_iter": 2}})
+
+
+# --- T4. max_rounds scatters to debate AND hierarchical ---
+
+
+def test_topology_extras_max_rounds_scatters_to_debate_and_hierarchical() -> None:
+    """Flat max_rounds=2 remaps to debate.max_rounds=2 AND hierarchical.max_rounds=2."""
+    with pytest.warns(DeprecationWarning):
+        cfg = TopologyCfg.model_validate({"name": "debate", "extra": {"max_rounds": 2}})
+    assert cfg.extra.debate.max_rounds == 2
+    assert cfg.extra.hierarchical.max_rounds == 2
+
+
+# --- T5. max_rounds flat — mesh stays at default 12 ---
+
+
+def test_topology_extras_max_rounds_flat_does_not_scatter_to_mesh() -> None:
+    """Flat max_rounds=2 does NOT scatter to mesh (mesh stays at default 12)."""
+    with pytest.warns(DeprecationWarning):
+        cfg = TopologyCfg.model_validate({"name": "debate", "extra": {"max_rounds": 2}})
+    assert cfg.extra.mesh.max_rounds == 12  # starvation-safe default preserved
+
+
+# --- T6. max_rounds flat — adaptive has no max_rounds field ---
+
+
+def test_topology_extras_max_rounds_flat_does_not_scatter_to_adaptive() -> None:
+    """Flat max_rounds=2 does NOT scatter to adaptive (adaptive has no max_rounds field)."""
+    with pytest.warns(DeprecationWarning):
+        cfg = TopologyCfg.model_validate({"name": "adaptive", "extra": {"max_rounds": 2}})
+    # AdaptiveExtras has no max_rounds field; verify no error and defaults intact
+    assert not hasattr(cfg.extra.adaptive, "max_rounds")
+    assert cfg.extra.adaptive.exec_max_iter == 10  # adaptive default unchanged
+
+
+# --- T7. mesh_max_rounds flat → mesh.max_rounds remap ---
+
+
+def test_topology_extras_mesh_max_rounds_remapped_to_mesh_namespace() -> None:
+    """Flat mesh_max_rounds=8 is remapped to mesh.max_rounds=8."""
+    with pytest.warns(DeprecationWarning):
+        cfg = TopologyCfg.model_validate({"name": "mesh", "extra": {"mesh_max_rounds": 8}})
+    assert cfg.extra.mesh.max_rounds == 8
+
+
+# --- T8. Unknown topology name at extra top-level → ValidationError ---
+
+
+def test_topology_extras_unknown_topology_name_raises() -> None:
+    """Extra with an unknown topology name (e.g. 'foo') raises ValidationError.
+
+    'foo' is not a recognised topology name, so the bw-compat validator treats
+    it as a flat legacy dict, emits a DeprecationWarning, and then tries to
+    build TopologyExtras with 'foo' at the top level — which extra="forbid"
+    rejects with a ValidationError.
+    """
+    with pytest.warns(DeprecationWarning), pytest.raises(ValidationError):
+        TopologyCfg.model_validate({"name": "chain", "extra": {"foo": {"some_param": 1}}})
+
+
+# --- T9. Unknown field inside a topology sub-bucket → ValidationError ---
+
+
+def test_topology_extras_unknown_field_in_sub_bucket_raises() -> None:
+    """Extra with unknown field inside a topology bucket raises ValidationError."""
+    with pytest.raises(ValidationError):
+        TopologyCfg.model_validate(
+            {"name": "mesh", "extra": {"mesh": {"unknown_param": 99}}}
+        )
+
+
+# --- T10. AdaptiveExtras defaults ---
+
+
+def test_adaptive_extras_defaults() -> None:
+    """AdaptiveExtras has correct phase-limit defaults: planning=3, exec=10, verify=4."""
+    a = AdaptiveExtras()
+    assert a.planning_max_iter == 3
+    assert a.exec_max_iter == 10
+    assert a.verify_max_iter == 4
+    assert a.subgraph_max_iterations == 10
+    assert a.switch_guards is True
+    assert a.run_id is None
+
+
+# --- T11. StarExtras defaults ---
+
+
+def test_star_extras_defaults() -> None:
+    """StarExtras has correct defaults: planning=2, exec=5, verify=3."""
+    s = StarExtras()
+    assert s.planning_max_iter == 2
+    assert s.exec_max_iter == 5
+    assert s.verify_max_iter == 3
+
+
+# --- T12. MeshExtras defaults — max_rounds=12 (starvation-safe) ---
+
+
+def test_mesh_extras_defaults() -> None:
+    """MeshExtras has correct starvation-safe defaults."""
+    m = MeshExtras()
+    assert m.max_rounds == 12
+    assert m.consensus_threshold == 3
+    assert m.max_messages == 200
+
+
+# --- T13. DebateExtras and HierarchicalExtras defaults ---
+
+
+def test_debate_extras_defaults() -> None:
+    """DebateExtras defaults: max_rounds=4, role ids are None."""
+    d = DebateExtras()
+    assert d.max_rounds == 4
+    assert d.debater_pro_id is None
+    assert d.debater_contra_id is None
+    assert d.judge_id is None
+
+
+def test_hierarchical_extras_defaults() -> None:
+    """HierarchicalExtras defaults: max_rounds=4, finalize_signal correct."""
+    h = HierarchicalExtras()
+    assert h.max_rounds == 4
+    assert h.finalize_signal == "top_coord_finalize"
+    assert h.sub_teams is None
+    assert h.final_answer_strategy is None
+
+
+# --- T14. Schema-vs-source parity guard ---
+
+
+def test_schema_defaults_match_topology_builder_constants() -> None:
+    """Schema defaults must match the _DEFAULT_* constants in each topology builder.
+
+    This parity guard catches silent drift between config.py schema defaults and
+    the topology builder fallback values. If a topology builder constant changes,
+    this test fails immediately, preventing silent incorrect defaults in sweeps.
+    """
+    from atm.topology.debate import _DEFAULT_MAX_ROUNDS as DEBATE_DEFAULT_MAX_ROUNDS
+    from atm.topology.hierarchical import (
+        _DEFAULT_FINALIZE_SIGNAL,
+    )
+    from atm.topology.hierarchical import (
+        _DEFAULT_MAX_ROUNDS as HIER_DEFAULT_MAX_ROUNDS,
+    )
+    from atm.topology.mesh import (
+        _DEFAULT_BROADCAST_BUS_CAP,
+        _DEFAULT_CONSENSUS_THRESHOLD,
+    )
+    from atm.topology.mesh import (
+        _DEFAULT_MAX_ROUNDS as MESH_DEFAULT_MAX_ROUNDS,
+    )
+    from atm.topology.star import (
+        _DEFAULT_EXEC_MAX_ITER,
+        _DEFAULT_PLANNING_MAX_ITER,
+        _DEFAULT_VERIFY_MAX_ITER,
+    )
+
+    # StarExtras parity
+    assert StarExtras().planning_max_iter == _DEFAULT_PLANNING_MAX_ITER
+    assert StarExtras().exec_max_iter == _DEFAULT_EXEC_MAX_ITER
+    assert StarExtras().verify_max_iter == _DEFAULT_VERIFY_MAX_ITER
+
+    # DebateExtras parity
+    assert DebateExtras().max_rounds == DEBATE_DEFAULT_MAX_ROUNDS
+
+    # HierarchicalExtras parity
+    assert HierarchicalExtras().max_rounds == HIER_DEFAULT_MAX_ROUNDS
+    assert HierarchicalExtras().finalize_signal == _DEFAULT_FINALIZE_SIGNAL
+
+    # MeshExtras parity
+    assert MeshExtras().max_rounds == MESH_DEFAULT_MAX_ROUNDS
+    assert MeshExtras().consensus_threshold == _DEFAULT_CONSENSUS_THRESHOLD
+    assert MeshExtras().max_messages == _DEFAULT_BROADCAST_BUS_CAP
+
+    # AdaptiveExtras — no named constants; assert raw integer parity with
+    # inline literals in adaptive.py:394-396
+    assert AdaptiveExtras().planning_max_iter == 3
+    assert AdaptiveExtras().exec_max_iter == 10
+    assert AdaptiveExtras().verify_max_iter == 4
+
+    # ChainExtras — no fields (chain reads no extras); verify instance is created
+    assert isinstance(ChainExtras(), ChainExtras)
