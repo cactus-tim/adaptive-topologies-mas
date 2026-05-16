@@ -1,0 +1,32 @@
+{
+  "_default": "linear",
+  "by_task_id": {
+    "commongen": {
+      "execution": "hierarchical",
+      "planning": "hierarchical",
+      "verification": "hierarchical"
+    },
+    "dabench": {
+      "execution": "hierarchical",
+      "planning": "hierarchical",
+      "verification": "hierarchical"
+    },
+    "gsm8k": {
+      "execution": "hierarchical",
+      "planning": "hierarchical",
+      "verification": "hierarchical"
+    },
+    "humaneval": {
+      "execution": "debate",
+      "planning": "debate",
+      "verification": "debate"
+    }
+  },
+  "by_task_type": {
+    "unknown": {
+      "execution": "hierarchical",
+      "planning": "hierarchical",
+      "verification": "hierarchical"
+    }
+  }
+}
