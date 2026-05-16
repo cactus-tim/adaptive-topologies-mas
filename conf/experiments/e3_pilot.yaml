@@ -1,0 +1,50 @@
+# E3 Pilot — battle smoke for Adaptive + HITL (RQ2 sanity).
+#
+# Catches E3-specific bugs before full 720-cell e3_full:
+#   1. Adaptive meta-graph wiring (phase_router/topology_router/dispatch/gate)
+#   2. Subgraph lazy compile (chain/star/mesh/debate/hierarchical)
+#   3. SwitchGuards thrashing protection
+#   4. Path C finalize after adaptive END (gsm8k/commongen)
+#   5. _build_agents for adaptive (hier sub-coords + debater pro/contra)
+#
+# Smart-cuts vs e3_full:
+#   - 3 task types (dabench skipped, CSV 404)
+#   - 1 router mode (rule — only one consumed; llm/oracle = forward-compat)
+#   - 30 cells total ~$3, ~15-20 min on p=6
+#
+# Known: topology_router=llm/oracle not consumed (see e3_router_smoke).
+
+include: e3_full.yaml
+
+name: e3_pilot
+
+# Lower HITL timeout for smoke.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 5.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 6
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+    task.shuffle_seed: [0, 1, 2, 3, 4]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

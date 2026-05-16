@@ -1,0 +1,47 @@
+# E3 Router Smoke — verifies whether topology_router={rule,llm,oracle}
+# actually changes behaviour, or is silently ignored (known forward-compat
+# limitation: adaptive.py:67 says "parsed but NOT consumed by the current
+# builder").
+#
+# Test design: same task (humaneval shuffle 0), same seed, vary only
+# topology.extra.adaptive.topology_router across {rule, llm, oracle}.
+# If results are byte-identical across the three runs => router param
+# is dead code => e3_full sweep across router modes produces duplicate data.
+#
+# Also exercises switch_guards on/off to catch SwitchGuards/GuardedRouter
+# composition bugs.
+#
+# Size: 3 router_modes x 2 guard_modes x 1 task x 1 shuffle x 1 seed = 6 cells.
+# ~3 min on p=4, ~$0.30.
+#
+# Oracle mode WILL fail-soft if data/oracle/e1_leave_one_out.json missing
+# (which it is — generated post-E1). That's still useful: smoke surfaces
+# the missing-oracle error message.
+
+include: e3_full.yaml
+
+name: e3_router_smoke
+
+human:
+  enabled: false  # router smoke не про HITL — изолируем
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 1.5
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    task.name: [humaneval]
+    task.shuffle_seed: [0]
+    topology.extra.adaptive.topology_router: [rule, llm, oracle]
+    topology.extra.adaptive.switch_guards: [true, false]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

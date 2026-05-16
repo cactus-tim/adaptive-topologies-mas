@@ -1,0 +1,51 @@
+# E3 Pilot Sanity — ультра-минимальный wiring-смоук Adaptive + HITL.
+#
+# Назначение: за ~5 мин проверить что Adaptive-мета-граф собирается, доходит
+# до END, диспатчит хотя бы одну sub-topology, передаёт через human_advisor
+# и emit'ит final_answer на 2 task types.
+#
+# Что ловим:
+#   - крэш на сборке Adaptive с human_cfg (human_advisor node после topology_router)
+#   - subgraph dispatch (хотя бы одна из chain/star/mesh/debate/hierarchical)
+#   - SwitchGuards init с default config
+#   - phase_router (rule) decision pipeline
+#   - finalize Path C на gsm8k (после adaptive завершения)
+#   - HITL fallback_gateway (наш свежий fix) — adaptive _human_advisor использует
+#     ту же связку
+#
+# Размер: 1 топо × 2 задачи × 3 seeds × 1 shuffle = 6 cells. ~$0.30.
+# parallelism=4 (низкий, чтобы не конкурировать с другими прогонами).
+
+include: e3_full.yaml
+
+name: e3_pilot_sanity
+
+# Снижаем timeout HITL: smoke не должен висеть.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval         # CODE branch
+      - gsm8k             # NON-CODE branch + Path C finalize
+    task.shuffle_seed: [0]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
