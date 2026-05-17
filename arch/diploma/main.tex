@@ -21,8 +21,14 @@
 \usepackage[utf8]{inputenc}
 \usepackage[english,russian]{babel}
 
-%%% --- Шрифт Times New Roman ---------------------------------------- %%%
-\usepackage{mathptmx}
+%%% --- Шрифт с полной поддержкой кириллицы ------------------------- %%%
+% PT Serif из пакета paratype --- бесплатный шрифт с засечками,
+% полная T2A кириллица, корректное жирное и наклонное начертание.
+% Визуально близок к Times New Roman, что соответствует
+% методичке ВКР НИУ ВШЭ.
+\usepackage{paratype}
+\renewcommand{\rmdefault}{PTSerif-TLF}
+\usepackage{microtype}
 
 %%% --- Поля, междустрочный интервал, отступ -------------------------- %%%
 % Методичка: левое поле >= 2см. Стандарт ВКР: левое 2.5 cm, правое 1.5 cm.
@@ -106,7 +112,7 @@
 
 %%% --- Глобальные команды ----------------------------------------- %%%
 \newcommand{\code}[1]{\texttt{#1}}
-\newcommand{\TODO}[1]{\textcolor{red}{\textbf{[TODO #1]}}}
+\newcommand{\TODO}[1]{{\color{red}\textbf{[TODO]}~#1}}
 \newcommand{\PLACEHOLDER}[1]{\textcolor{orange}{[#1]}}
 
 % =====================================================================
@@ -124,8 +130,7 @@
 \newpage
 \input{sections/00_annotation.tex}
 
-%%% ===== Ключевые слова ===== %%%
-\newpage
+%%% ===== Ключевые слова (без \newpage --- сразу после аннотации) ===== %%%
 \input{sections/00_keywords.tex}
 
 %%% ===== Введение ===== %%%
@@ -148,8 +153,7 @@
 \newpage
 \input{sections/05_analysis.tex}
 
-%%% ===== Авторский вклад ===== %%%
-\newpage
+%%% ===== Авторский вклад (без \newpage --- идет следом за Главой 5) ===== %%%
 \input{sections/06_contribution.tex}
 
 %%% ===== Заключение ===== %%%
