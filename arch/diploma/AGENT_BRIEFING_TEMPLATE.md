@@ -167,7 +167,7 @@ expectations and any methodological caveats discovered.
 | E4 | E3 champion config + E2 best-role-per-task таблица |
 | E5 | E4 champion + survey schema + Latin square design |
 | confirmation_e3 | original E3 results (aggregated rule vs llm: mean_q, mean_cost) — для сравнения. Worker: `cerebras:qwen-3-235b-a22b-instruct-2507` (cross-family). Judge не менялся. Expected sweep after dedupe: **360** (2 routers × 4 tasks × 15 shuffle × 3 seeds). Only rule + llm (oracle skipped — see handoff §5). |
-| confirmation_e4 | original E4 results aggregated by role_router + E3 confirmation results for chained narrative. Same qwen worker. |
+| confirmation_e4 | original E4 results (`analysis/e4_results.json`, exp_id `272bb2cf-e1c2-4e0d-96c8-432f4e5f9a29`): role_router=rule champion (mean_q 0.6799, delta +0.0268 vs fixed); llm НЕ confirmed (-0.0099). Confirmation expected sweep: **540** (3 role_routers × 4 tasks × 15 shuffle × 3 seeds). Worker qwen, judge constant. Per-task winners на gpt-oss: humaneval→rule, gsm8k→fixed (saturated), commongen→llm, dabench→llm (noise). |
 
 ### Особый фокус для confirmation experiments
 
