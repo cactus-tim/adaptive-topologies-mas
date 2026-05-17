@@ -1,0 +1,54 @@
+# Confirmation E4 Sanity — wiring smoke for Box B operator.
+#
+# Before launching 540-run confirmation_e4.yaml, run this 3-cell smoke to validate:
+#   - qwen-3-235b worker + openai gpt-4.1-mini judge co-exist without crash
+#   - role_router sweep produces 3 distinct cells (fixed/rule/llm not collapsed)
+#   - adaptive role-router actually changes role per phase (parquet check optional)
+#   - HITL llm_simulated gateway works on qwen
+#
+# Size: 3 role_routers × 1 task × 1 shuffle × 1 seed = 3 cells. ~$0.30, ~3 min.
+# If smoke FAILS — do NOT launch confirmation_e4.yaml; debug first.
+
+include: e4_full.yaml
+
+name: confirmation_e4_sanity
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.65
+  per_experiment_usd: 1.5
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 3
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    human.role_router:
+      - fixed
+      - rule
+      - llm
+    task.name: [humaneval]
+    task.shuffle_seed: [0]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
