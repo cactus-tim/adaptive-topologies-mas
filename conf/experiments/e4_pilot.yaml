@@ -9,13 +9,35 @@
 # Smart-cuts vs e4_full:
 #   - 3 task types (dabench skipped on smoke — included in full)
 #   - 5 shuffle × 1 seed × 3 role_routers = 45 cells
-#   - placeholder topology_router=rule (replace after E3 champion known)
+#   - topology_router=llm (E3 champion: Pareto-optimal, ~3× cheaper than rule)
 #
 # Size: 3 × 3 × 5 = 45 cells. ~$4, ~25-35 min on p=8.
 
 include: e3_full.yaml
 
 name: e4_pilot
+
+# Override e3_full's topology_router=rule with E3 champion (llm).
+topology:
+  name: adaptive
+  max_iterations: 6
+  extra:
+    adaptive:
+      topology_router: llm
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      subgraph_max_iterations: 4
+      planning_max_iter: 3
+      exec_max_iter: 3
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
 
 human:
   enabled: true

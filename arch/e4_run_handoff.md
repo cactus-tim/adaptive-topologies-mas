@@ -1,33 +1,29 @@
 # E4 Run Handoff — Claude Code on 16/32 box
 
 Полная инструкция для запуска **E4 (adaptive topology + adaptive role-router, RQ4)**.
-Запускать только **ПОСЛЕ** E2 и E3 (TPM коллизии на общем Cerebras
-ключе, плюс нужен champion topology_router из E3).
+Запускать после E2/E3 (TPM коллизии).
 
-**Дата подготовки:** 2026-05-16
-**Контекст:** E1 завершён (oracle файл в репе), E2/E3 запущены. E4 —
-финальный adaptive-both эксперимент: runtime topology switching (из E3) +
-runtime role switching (новое для E4).
+**Дата подготовки:** 2026-05-16 (обновлено 2026-05-17 после E3 results)
+**Контекст:** E1 + E2 + E3 завершены. E4 — финальный adaptive-both
+эксперимент: runtime topology switching (champion из E3) + runtime role
+switching (новое для E4).
 
 ---
 
 ## 0. Prerequisites
 
 - **Hardware:** 16 vCPU / 32 GB RAM
-- **E2/E3 завершились** (или близки к завершению — TPM освободился)
-- **E3 champion известен** — какой `topology_router` дал лучший mean_q.
-  Узнать можно из:
-  ```bash
-  docker exec atm-postgres psql -U atm -d atm -c "
-  SELECT REPLACE(name, 'e3_full_router_', '') as router_mode,
-         ROUND(AVG(quality_score)::numeric, 3) as mean_q,
-         COUNT(*) as n
-  FROM runs r
-  WHERE (SELECT name FROM experiments WHERE id=r.exp_id) LIKE 'e3_full_router_%'
-    AND r.quality_score IS NOT NULL
-  GROUP BY name ORDER BY mean_q DESC;"
-  ```
-  Запиши **winner** (rule | llm | oracle) — нужен для `e4_full.yaml`.
+- **E2/E3 завершились** (TPM освободился)
+- **E3 champion определён: `topology_router=llm`** — Pareto winner по
+  cost-aware narrative:
+
+  | Mode | mean_q | mean_cost | q/$ |
+  |---|---|---|---|
+  | rule | 0.645 | $0.0235 | 27.4 |
+  | **llm** | **0.624** | **$0.0102** | **61.2** |
+
+  Δq=-0.021 (within noise), cost 2.3× cheaper. **llm зашит в e4_full.yaml
+  и pilots** — ничего вручную править не надо.
 
 - **Cerebras key:** тот же что для E3 (после E3 finish — квота свободна)
 - **OpenAI key:** тот же
@@ -43,19 +39,18 @@ git pull --ff-only origin main
 uv sync   # на случай если зависимости поменялись
 ```
 
-### 1.1. Обновить e4_full.yaml champion
+### 1.1. `topology_router=llm` уже зафиксирован
 
-E4 fixes `topology_router` на champion из E3 и **свипает** только
-`human.role_router`. Перед запуском E4 full нужно подставить:
+`e4_full.yaml` и все 3 pilot configs (`e4_pilot_sanity.yaml`,
+`e4_role_smoke.yaml`, `e4_pilot.yaml`) задают `topology_router: llm` —
+champion из E3, оптимальный по quality/cost.
 
+Если хочешь sanity-check других режимов — passable через override:
 ```bash
-# Замени <CHAMPION> на rule / llm / oracle по результатам E3
-CHAMPION=rule   # ← заменить!
-
-# В e4_full.yaml уже есть `topology_router: rule` в extras —
-# либо отредактируй вручную, либо передавай overrides на CLI:
-#   +topology.extra.adaptive.topology_router=$CHAMPION
++topology.extra.adaptive.topology_router=rule    # ИЛИ
++topology.extra.adaptive.topology_router=oracle  # oracle file в репе
 ```
+Но default flow — без overrides.
 
 ### 1.2. role_router_model — default inherited from cfg.model.default
 
@@ -234,18 +229,16 @@ Acceptance per task:
 ### Wave 4: e4 full (~3-4 ч, 540 cells, $45)
 
 `e4_full.yaml` свипает по 3 role_router модам **в одном запуске** (в отличие
-от E3 где надо было 3 launch). Зависит от champion topology_router из E3.
+от E3 где надо было 3 launch). topology_router зафиксирован на E3 champion
+(`llm`) уже в YAML.
 
 #### Запуск (single launch — единый exp_id)
 
 ```bash
-# Подставь CHAMPION = rule | llm | oracle (см. Wave 0 запрос к PG)
-CHAMPION=rule
-
+# topology_router=llm уже зашит в e4_full.yaml — overrides не нужны
 uv run atm grid run \
     -c conf/experiments/e4_full.yaml \
     --no-estimate -p 24 \
-    +topology.extra.adaptive.topology_router=$CHAMPION \
     > logs/e4_full.log 2>&1 &
 E4_PID=$!
 
@@ -273,7 +266,6 @@ for MODE in fixed rule llm; do
     nohup uv run atm grid run \
         -c conf/experiments/e4_full.yaml --no-estimate -p 8 \
         +name=e4_full_role_${MODE} \
-        +topology.extra.adaptive.topology_router=$CHAMPION \
         +human.role_router=$MODE \
         > logs/e4_full_role_${MODE}.log 2>&1 &
 done
@@ -365,9 +357,7 @@ git pull --ff-only
 uv sync
 set -a; source .env; set +a
 
-# Champion из E3 (заменить по результатам)
-CHAMPION=rule
-
+# topology_router=llm уже зашит в e4_full.yaml + pilots
 # Sanity
 uv run pytest tests/unit/ -q
 
@@ -380,7 +370,6 @@ uv run atm grid run -c conf/experiments/e4_pilot.yaml        --no-estimate -p 8 
 uv run atm grid run \
     -c conf/experiments/e4_full.yaml \
     --no-estimate -p 24 \
-    +topology.extra.adaptive.topology_router=$CHAMPION \
     > logs/e4_full.log 2>&1
 grep GridResult logs/e4_full.log
 ```
