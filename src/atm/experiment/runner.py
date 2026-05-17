@@ -808,7 +808,13 @@ def _build_agents(
         debate_extra = flat.get("debate", flat)
     extra_workers: list[tuple[str, str]] = []  # [(agent_id, base_role), ...]
 
-    if topo_name == "hierarchical":
+    # Adaptive runtime can route to ANY sub-topology mid-run; pre-synthesise
+    # the union of workers required by hierarchical AND debate so the router
+    # never falls back to no-op nodes (which produce empty output → q=0).
+    needs_hier = topo_name in ("hierarchical", "adaptive")
+    needs_debate = topo_name in ("debate", "adaptive")
+
+    if needs_hier:
         # Mirror HierarchicalTopology.build defaults: if sub_teams is missing
         # or has <2 teams, the topology synthesises team_a/team_b with two
         # executor workers each. _build_agents has to use the SAME default
@@ -822,7 +828,7 @@ def _build_agents(
         for team in sub_teams:
             for worker_id in team.get("workers") or []:
                 extra_workers.append((str(worker_id), "executor"))
-    elif topo_name == "debate":
+    if needs_debate:
         extra_workers.append((str(debate_extra.get("debater_pro_id") or "debater_pro"), "executor"))
         extra_workers.append(
             (str(debate_extra.get("debater_contra_id") or "debater_contra"), "executor")
@@ -860,7 +866,7 @@ def _build_agents(
         # for code tasks, (b) imposes a structured DRAFT format for non-code
         # tasks so downstream extraction can find the actual answer, not the
         # debate argument around it.
-        if topo_name == "debate" and worker_id in (
+        if topo_name in ("debate", "adaptive") and worker_id in (
             str(debate_extra.get("debater_pro_id") or "debater_pro"),
             str(debate_extra.get("debater_contra_id") or "debater_contra"),
         ):
@@ -913,7 +919,7 @@ def _build_agents(
         # tells the judge how to evaluate the new ###ANSWER### marker
         # format for non-code tasks. Mirrors the placement strategy used
         # for debaters above.
-        if topo_name == "debate" and worker_id == str(debate_extra.get("judge_id") or "judge"):
+        if topo_name in ("debate", "adaptive") and worker_id == str(debate_extra.get("judge_id") or "judge"):
             judge_override = (
                 "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"
                 "You judge a debate between two debaters (pro / contra). "
