@@ -21,7 +21,10 @@ include: e3_full.yaml
 
 name: e4_pilot_sanity
 
-# Cross-family role_router LLM (avoid Cerebras quota collision with workers).
+# role_router_model inherits cfg.model.default (cerebras:gpt-oss-120b) —
+# same family as workers, consistent with E3's topology_router. This avoids
+# confounding LLM-provider with router-strategy in adaptive vs static
+# comparison.
 human:
   enabled: true
   gateway: llm_simulated
@@ -29,7 +32,6 @@ human:
   timeout_s: 300.0
   timeout_policy: llm_fallback
   role_router: rule               # placeholder; overridden by sweep
-  role_router_model: openai:gpt-4.1-mini
 
 budget:
   per_call_usd: 0.05

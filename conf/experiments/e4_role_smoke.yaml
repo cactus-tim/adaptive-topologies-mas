@@ -23,7 +23,8 @@ human:
   timeout_s: 300.0
   timeout_policy: llm_fallback
   role_router: rule
-  role_router_model: openai:gpt-4.1-mini
+  # role_router_model inherits cfg.model.default (cerebras:gpt-oss-120b)
+  # — same family as workers, consistent with E3 topology_router.
 
 budget:
   per_call_usd: 0.05

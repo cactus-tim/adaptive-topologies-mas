@@ -57,24 +57,24 @@ CHAMPION=rule   # ← заменить!
 #   +topology.extra.adaptive.topology_router=$CHAMPION
 ```
 
-### 1.2. КРИТИЧНО: cross-family role_router_model
+### 1.2. role_router_model — default inherited from cfg.model.default
 
-`e4_full.yaml` сейчас НЕ задаёт `human.role_router_model` явно →
-наследует `cfg.model.default = cerebras:gpt-oss-120b`. Это даст:
-- TPM коллизию с workers (которые тоже на Cerebras)
-- Не cross-family (один провайдер для всего HITL pipeline)
+`e4_full.yaml` НЕ задаёт `human.role_router_model` явно → наследует
+`cfg.model.default = cerebras:gpt-oss-120b`. **Это правильно** — та же
+модель что E3's `topology_router`, что устраняет confounding между
+LLM-provider и router-strategy при сравнении adaptive vs static.
 
-**Лечить ОДНИМ из:**
-- (a) Отредактировать `e4_full.yaml` — добавить под `human:`:
-  ```yaml
-    role_router_model: openai:gpt-4.1-mini
-  ```
-- (b) Передать override на CLI каждый раз:
-  ```bash
-  +human.role_router_model=openai:gpt-4.1-mini
-  ```
+Раньше тут стоял CRITICAL warning «надо cross-family openai:gpt-4.1-mini»
+по аналогии с judge / HITL gateway. **Отменён** — role_router это не
+симулятор человека и не judge, он чисто системный outer-loop decision
+(phase → role), self-evaluation bias к нему не применим.
 
-Pilot конфиги (`e4_pilot*.yaml`) уже задают это явно — НЕ требуют правки.
+Pilot configs (`e4_pilot*.yaml`) тоже теперь не задают role_router_model —
+наследуют тот же default, byte-identical с `e4_full.yaml`.
+
+Единственный legitimate case для override — TPM коллизии при общем
+Cerebras ключе с E2/E3 runs. Если так — лучше дождаться окончания
+E2/E3 чем менять provider в середине эксперимента.
 
 ---
 
@@ -246,7 +246,6 @@ uv run atm grid run \
     -c conf/experiments/e4_full.yaml \
     --no-estimate -p 24 \
     +topology.extra.adaptive.topology_router=$CHAMPION \
-    +human.role_router_model=openai:gpt-4.1-mini \
     > logs/e4_full.log 2>&1 &
 E4_PID=$!
 
@@ -276,7 +275,6 @@ for MODE in fixed rule llm; do
         +name=e4_full_role_${MODE} \
         +topology.extra.adaptive.topology_router=$CHAMPION \
         +human.role_router=$MODE \
-        +human.role_router_model=openai:gpt-4.1-mini \
         > logs/e4_full_role_${MODE}.log 2>&1 &
 done
 wait
@@ -293,7 +291,7 @@ Wall: ~2 ч (3× speedup), но 3 exp_id (нужно объединять при
 | `LLMRoleRouter: LLM call failed` | gateway fallback на rule — норм, посмотри warning |
 | Все cells одинаковая role в parquet | `role_router` kwarg не доходит до topology — проверь commit 24d5529 в HEAD |
 | 429 TPM | если параллельно с E2/E3 — стоп. Если один — снизь `-p` до 16 |
-| `role_router_model` not provided | `human.role_router_model` отсутствует → default cfg.model.default (Cerebras). Передай override (см. §1.2) |
+| `role_router_model` not provided | OK — наследует `cfg.model.default` (Cerebras), что и нужно для consistency с E3 |
 | Cell зависает > 15 мин | adaptive+adaptive может цикломатить; cell сам умрёт по wall_time_s |
 | Adaptive choose `mesh` каждый раз → mesh starvation | проверь что mesh.max_rounds ≥ 8 в YAML (от смокa E1, должно быть OK) |
 
@@ -352,7 +350,8 @@ git push origin main
 
 ## 6. Что НЕ делать
 - **НЕ запускай E4 параллельно с E2/E3** на одном Cerebras ключе — TPM.
-- **НЕ забудь cross-family role_router_model** override — иначе HITL Cerebras vs workers Cerebras = коллизия.
+- **НЕ переопределяй `role_router_model`** на openai — теряется consistency с E3's
+  topology_router (тоже Cerebras), нарушает чистоту сравнения adaptive vs static.
 - **НЕ используй `oracle` режим** без файла `data/oracle/e1_leave_one_out.json` (он в репе, но если случайно удалится — graceful fallback на rule).
 - **НЕ перезапускай E1/E3** для генерации новых oracle — используй уже committed.
 
@@ -382,7 +381,6 @@ uv run atm grid run \
     -c conf/experiments/e4_full.yaml \
     --no-estimate -p 24 \
     +topology.extra.adaptive.topology_router=$CHAMPION \
-    +human.role_router_model=openai:gpt-4.1-mini \
     > logs/e4_full.log 2>&1
 grep GridResult logs/e4_full.log
 ```
