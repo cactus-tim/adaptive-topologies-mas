@@ -38,8 +38,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from atm.human.cli_gateway import CLIGateway
+    from atm.human.gateway import HumanGateway
+    from atm.human.streamlit_gateway import StreamlitHumanGateway
 
 import sqlalchemy as sa
 import structlog
@@ -122,6 +127,119 @@ def _build_role_router(
         return LLMRoleRouter(llm=llm, fallback=rule_router)
 
     raise ValueError(f"unknown role_router: {strategy!r}")
+
+
+# ---------------------------------------------------------------------------
+# _build_human_gateway — centralised factory for primary gateway + fallback LLM
+# ---------------------------------------------------------------------------
+
+
+def _build_human_gateway(
+    human_cfg: HumanCfg | None,
+    *,
+    pricing: "Pricing",
+    budget: "BudgetTracker",
+    default_model_id: str,
+    fake_fixtures: dict[str, str],
+) -> tuple[HumanGateway | None, LLMWrapper | None]:
+    """Build the primary HumanGateway and its fallback LLMWrapper.
+
+    Three return cases:
+
+    1. ``human_cfg`` is ``None`` or ``enabled=False``
+       → ``(None, None)`` — HITL completely disabled; topology ignores both.
+
+    2. ``gateway="llm_simulated"`` (or ``"cli"``)
+       → ``(None, llm_wrapper)`` for llm_simulated; ``(CLIGateway(), llm_wrapper)``
+         for cli.  The ``llm_wrapper`` is built from ``human_cfg.model`` (or
+         ``default_model_id`` when ``model`` is None), exactly as the pre-M14
+         inline code did.  Back-compat for all pre-M14 topologies.
+
+    3. ``gateway="streamlit"``
+       → Builds a ``HumanRequestQueue`` backed by ``human_cfg.queue_dsn``, wraps
+         it in a ``StreamlitHumanGateway``, and returns
+         ``(streamlit_gateway, llm_wrapper)``.  The fallback LLM is built from
+         ``human_cfg.fallback_llm_model`` when set, otherwise from
+         ``human_cfg.model`` → ``default_model_id`` (identical logic to
+         llm_simulated path so topology fallback behaviour is consistent).
+
+    Parameters
+    ----------
+    human_cfg:
+        ``HumanCfg`` from experiment config, or ``None``.
+    pricing:
+        Loaded ``Pricing`` instance passed to ``build_llm``.
+    budget:
+        ``BudgetTracker`` instance passed to ``build_llm``.
+    default_model_id:
+        Fallback model id when ``human_cfg.model`` is ``None``
+        (usually ``cfg.model.default``).
+    fake_fixtures:
+        ``cfg.model.fake_fixtures`` mapping — used to resolve fixture paths for
+        ``fake:scripted`` models.
+    """
+    if human_cfg is None or not human_cfg.enabled:
+        return (None, None)
+
+    # -----------------------------------------------------------------------
+    # Build the fallback LLMWrapper (shared logic for all enabled gateways).
+    # -----------------------------------------------------------------------
+    def _build_fallback_llm(model_id_override: str | None = None) -> LLMWrapper:
+        model_id: str = model_id_override or human_cfg.model or default_model_id  # type: ignore[union-attr]
+        fixture_str: str | None = (
+            fake_fixtures.get("human") if model_id.startswith("fake:scripted") else None
+        )
+        return build_llm(
+            model_id=model_id,
+            pricing=pricing,
+            budget=budget,
+            fixture_path=Path(fixture_str) if fixture_str else None,
+        )
+
+    gateway_type = human_cfg.gateway
+
+    # -----------------------------------------------------------------------
+    # Case 1: LLM-simulated — no primary gateway, just the fallback LLM
+    # -----------------------------------------------------------------------
+    if gateway_type == "llm_simulated":
+        return (None, _build_fallback_llm())
+
+    # -----------------------------------------------------------------------
+    # Case 2: CLI — interactive stdin/stdout gateway
+    # -----------------------------------------------------------------------
+    if gateway_type == "cli":
+        # Lazy import avoids circular import: streamlit_gateway → config → runner
+        from atm.human.cli_gateway import CLIGateway  # noqa: PLC0415
+
+        return (CLIGateway(), _build_fallback_llm())
+
+    # -----------------------------------------------------------------------
+    # Case 3: Streamlit — PG-backed queue gateway for user-study sessions
+    # -----------------------------------------------------------------------
+    if gateway_type == "streamlit":
+        # Lazy imports avoid circular: streamlit_gateway → config → runner
+        from atm.human._queue import HumanRequestQueue  # noqa: PLC0415
+        from atm.human.streamlit_gateway import StreamlitHumanGateway  # noqa: PLC0415
+
+        if not human_cfg.queue_dsn:
+            raise ValueError(
+                "HumanCfg.queue_dsn must be set when gateway='streamlit'"
+            )
+        queue_engine = create_engine(human_cfg.queue_dsn)
+        queue_session_factory = create_session_factory(queue_engine)
+        queue = HumanRequestQueue(session_factory=queue_session_factory)
+        primary: HumanGateway = StreamlitHumanGateway(
+            queue,
+            human_cfg=human_cfg,
+            study_session_id=human_cfg.study_session_id,
+            participant_id=human_cfg.participant_id,
+        )
+        # For the fallback LLM: prefer explicit fallback_llm_model, then
+        # the same model used for llm_simulated (human_cfg.model / default).
+        fallback_llm = _build_fallback_llm(human_cfg.fallback_llm_model)
+        return (primary, fallback_llm)
+
+    raise ValueError(f"unknown human gateway type: {gateway_type!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -808,7 +926,13 @@ def _build_agents(
         debate_extra = flat.get("debate", flat)
     extra_workers: list[tuple[str, str]] = []  # [(agent_id, base_role), ...]
 
-    if topo_name == "hierarchical":
+    # Adaptive runtime can route to ANY sub-topology mid-run; pre-synthesise
+    # the union of workers required by hierarchical AND debate so the router
+    # never falls back to no-op nodes (which produce empty output → q=0).
+    needs_hier = topo_name in ("hierarchical", "adaptive")
+    needs_debate = topo_name in ("debate", "adaptive")
+
+    if needs_hier:
         # Mirror HierarchicalTopology.build defaults: if sub_teams is missing
         # or has <2 teams, the topology synthesises team_a/team_b with two
         # executor workers each. _build_agents has to use the SAME default
@@ -822,7 +946,7 @@ def _build_agents(
         for team in sub_teams:
             for worker_id in team.get("workers") or []:
                 extra_workers.append((str(worker_id), "executor"))
-    elif topo_name == "debate":
+    if needs_debate:
         extra_workers.append((str(debate_extra.get("debater_pro_id") or "debater_pro"), "executor"))
         extra_workers.append(
             (str(debate_extra.get("debater_contra_id") or "debater_contra"), "executor")
@@ -860,7 +984,7 @@ def _build_agents(
         # for code tasks, (b) imposes a structured DRAFT format for non-code
         # tasks so downstream extraction can find the actual answer, not the
         # debate argument around it.
-        if topo_name == "debate" and worker_id in (
+        if topo_name in ("debate", "adaptive") and worker_id in (
             str(debate_extra.get("debater_pro_id") or "debater_pro"),
             str(debate_extra.get("debater_contra_id") or "debater_contra"),
         ):
@@ -913,7 +1037,7 @@ def _build_agents(
         # tells the judge how to evaluate the new ###ANSWER### marker
         # format for non-code tasks. Mirrors the placement strategy used
         # for debaters above.
-        if topo_name == "debate" and worker_id == str(debate_extra.get("judge_id") or "judge"):
+        if topo_name in ("debate", "adaptive") and worker_id == str(debate_extra.get("judge_id") or "judge"):
             judge_override = (
                 "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"
                 "You judge a debate between two debaters (pro / contra). "
@@ -1134,27 +1258,23 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         # Step 9: run graph
         final_state: dict[str, Any]
 
-        # HITL wiring (M9/M9.1/M9.2) — built only when cfg.human.enabled.
+        # HITL wiring (M9/M9.1/M9.2/M14) — built only when cfg.human.enabled.
+        # _build_human_gateway centralises all three gateway variants:
+        #   llm_simulated → (None, llm_wrapper)
+        #   cli           → (CLIGateway, llm_wrapper)
+        #   streamlit     → (StreamlitHumanGateway, llm_wrapper)
         # Topology builders that pre-date M9.1 ignore unknown kwargs; the spread
         # is deferred via conditional dict so legacy build(agents, topology_cfg,
         # checkpointer=...) keeps working byte-identical when HITL is off.
-        human_gateway_llm: LLMWrapper | None = None
-        if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
-            human_model_id = cfg.human.model or cfg.model.default
-            # For fake:scripted, look up the fixture under fake_fixtures["human"]
-            # so the simulator returns canned JSON instead of falling back to echo
-            # mode (which would emit the prompt verbatim and crash the gateway).
-            human_fixture_str = (
-                cfg.model.fake_fixtures.get("human")
-                if human_model_id.startswith("fake:scripted")
-                else None
-            )
-            human_gateway_llm = build_llm(
-                model_id=human_model_id,
-                pricing=pricing,
-                budget=budget,
-                fixture_path=Path(human_fixture_str) if human_fixture_str else None,
-            )
+        human_gateway: HumanGateway | None
+        human_gateway_llm: LLMWrapper | None
+        human_gateway, human_gateway_llm = _build_human_gateway(
+            cfg.human,
+            pricing=pricing,
+            budget=budget,
+            default_model_id=cfg.model.default,
+            fake_fixtures=cfg.model.fake_fixtures,
+        )
 
         def _role_router_llm_factory() -> LLMWrapper:
             role_model_id = (
@@ -1189,6 +1309,7 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 topology_cfg,
                 checkpointer=checkpointer,
                 human_cfg=cfg.human,
+                human_gateway=human_gateway,
                 human_gateway_llm=human_gateway_llm,
                 role_router=role_router,
                 topology_router_llm=topology_router_llm,
@@ -2111,21 +2232,16 @@ async def _execute_existing_run(
             extra=cfg.topology.extra.model_dump(exclude_none=True),
         )
 
-        # HITL wiring (replicated from run_one verbatim).
-        human_gateway_llm: LLMWrapper | None = None
-        if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
-            human_model_id = cfg.human.model or cfg.model.default
-            human_fixture_str = (
-                cfg.model.fake_fixtures.get("human")
-                if human_model_id.startswith("fake:scripted")
-                else None
-            )
-            human_gateway_llm = build_llm(
-                model_id=human_model_id,
-                pricing=pricing,
-                budget=budget,
-                fixture_path=Path(human_fixture_str) if human_fixture_str else None,
-            )
+        # HITL wiring (replicated from run_one; uses _build_human_gateway factory).
+        human_gateway: HumanGateway | None
+        human_gateway_llm: LLMWrapper | None
+        human_gateway, human_gateway_llm = _build_human_gateway(
+            cfg.human,
+            pricing=pricing,
+            budget=budget,
+            default_model_id=cfg.model.default,
+            fake_fixtures=cfg.model.fake_fixtures,
+        )
 
         def _role_router_llm_factory() -> LLMWrapper:
             role_model_id = (
@@ -2158,6 +2274,7 @@ async def _execute_existing_run(
                 topology_cfg,
                 checkpointer=checkpointer,
                 human_cfg=cfg.human,
+                human_gateway=human_gateway,
                 human_gateway_llm=human_gateway_llm,
                 role_router=role_router,
                 topology_router_llm=topology_router_llm,

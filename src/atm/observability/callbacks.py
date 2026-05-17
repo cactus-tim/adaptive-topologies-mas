@@ -543,6 +543,34 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             context_json: dict[str, Any] = data.get("context_json", {})
             requested_at: datetime = data.get("requested_at", answered_at)
 
+            # --- Extract TLX fields from response_json (M14 §3.2) ---
+            # tlx_scores: raw dict stored directly from HumanResponse.tlx_scores
+            tlx_scores_raw: dict[str, Any] | None = response_json.get("tlx_scores")
+            tlx_scores: dict[str, Any] | None = (
+                tlx_scores_raw if isinstance(tlx_scores_raw, dict) else None
+            )
+
+            # raw_tlx_score: computed via NasaTLX; guarded against invalid input
+            raw_tlx_score: float | None = None
+            if tlx_scores is not None:
+                try:
+                    from atm.evaluation.tlx import NasaTLX  # local import avoids cycles
+
+                    raw_tlx_score = NasaTLX(**tlx_scores).raw_score
+                except Exception:
+                    raw_tlx_score = None
+
+            # study_session_id: extracted from payload dict; cast to UUID; None on failure
+            study_session_id: uuid.UUID | None = None
+            payload: dict[str, Any] = response_json.get("payload") or {}
+            if isinstance(payload, dict):
+                raw_ssid = payload.get("study_session_id")
+                if raw_ssid is not None:
+                    try:
+                        study_session_id = uuid.UUID(str(raw_ssid))
+                    except (ValueError, AttributeError):
+                        study_session_id = None
+
             async with session_scope(self._session_factory) as session:
                 # SELECT ... FOR UPDATE serializes against a concurrent _handle_human_request
                 # INSERT for the same (run_id, request_id) so the race is collapsed inside
@@ -573,6 +601,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                             requested_at=requested_at,
                             answered_at=answered_at,
                             response_json=response_json,
+                            tlx_scores=tlx_scores,
+                            raw_tlx_score=raw_tlx_score,
+                            study_session_id=study_session_id,
                         )
                         .on_conflict_do_nothing(constraint=CONSTRAINT_NAME)
                     )
@@ -584,6 +615,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                         .values(
                             answered_at=answered_at,
                             response_json=response_json,
+                            tlx_scores=tlx_scores,
+                            raw_tlx_score=raw_tlx_score,
+                            study_session_id=study_session_id,
                         )
                     )
                 # else: response already filled — idempotent no-op
