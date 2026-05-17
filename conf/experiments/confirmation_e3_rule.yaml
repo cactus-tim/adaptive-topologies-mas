@@ -1,0 +1,49 @@
+# Confirmation E3 — RULE router only (180 cells, half of confirmation_e3).
+# Mirror of confirmation_e3.yaml but flat-include from e3_full.yaml directly
+# (loader supports single-level include only) and filtered to rule router.
+# Run BEFORE confirmation_e3_llm.yaml to avoid shared-key TPM contention.
+
+include: e3_full.yaml
+
+name: confirmation_e3_rule
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT across all experiments
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  # qwen-3-235b on Cerebras rejects `reasoning_effort` — nullify parent's overrides.
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.60
+  per_experiment_usd: 50.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 30
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    topology.extra.adaptive.topology_router:
+      - rule
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: true

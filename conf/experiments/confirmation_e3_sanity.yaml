@@ -29,11 +29,10 @@ model:
   summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
   router:     cerebras:qwen-3-235b-a22b-instruct-2507
   prompt_cache_scope: per_run
+  # qwen-3-235b on Cerebras rejects `reasoning_effort` — nullify parent's overrides.
   provider_opts:
-    cerebras:
-      reasoning_effort: low
-    cerebras_critic:
-      reasoning_effort: high
+    cerebras: null
+    cerebras_critic: null
 
 budget:
   per_call_usd: 0.08
