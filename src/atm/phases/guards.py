@@ -100,16 +100,28 @@ def _violates_min_dwell(state: SharedState, guards: SwitchGuards) -> bool:
 def _violates_cooldown(state: SharedState, proposed_topology: str, guards: SwitchGuards) -> bool:
     """Return True if proposed topology was recently abandoned (cooldown not elapsed).
 
-    Checks topology_history for the proposed topology within the last cooldown_iters
-    entries (excluding the current topology at index -1 if present).
+    topology_history is the list of *abandoned* topologies maintained by
+    apply_transition_gate (it appends the outgoing topology on every switch).
+    The currently-active topology is NOT in topology_history.
+
+    Cooldown semantics: after leaving topology T, callers cannot return to T
+    for guards.cooldown_iters subsequent switches.  Concretely: the proposed
+    topology is blocked iff it appears anywhere in the last cooldown_iters
+    entries of topology_history.
+
+    Earlier revisions sliced ``history[:-1]`` here under the assumption that
+    the current topology was appended to history.  That assumption is wrong
+    (apply_transition_gate appends the *outgoing* topology), so the slice
+    silently dropped the most-recently-abandoned topology — making cooldown
+    a no-op for the typical "undo last switch" thrashing pattern.
     """
-    history: list[str] = state.get("topology_history", [])
-    # Check recent history (excluding the very last entry = current topology)
+    history: list[str] = list(state.get("topology_history", []) or [])
+    if not history:
+        return False
     cooldown_window = guards.cooldown_iters
-    # The tail of history to inspect: all but the last entry (current topo)
-    tail = history[:-1] if history else []
-    # Only look at the last cooldown_window entries of that tail
-    recent = tail[-cooldown_window:] if len(tail) > cooldown_window else tail
+    if cooldown_window <= 0:
+        return False
+    recent = history[-cooldown_window:]
     return proposed_topology in recent
 
 

@@ -1,0 +1,96 @@
+# E3 post-fix smoke — minimal grid to verify adaptive is not catastrophically
+# regressed after the router-correctness fixes.
+#
+# What changed under the hood:
+#   1. iter_total no longer double-counts adaptive's dispatch tick — sub-graphs
+#      are the only writers.  This means cfg.max_iterations now has the SAME
+#      semantics for adaptive as for chain/star (= total sub-graph work ticks).
+#      Prior to this fix the same numerical max_iterations gave adaptive
+#      roughly half the work budget of a static baseline.
+#   2. cooldown_iters now actually blocks the just-left topology
+#   3. phase_switch_count is tracked properly → max_per_phase respects per-phase
+#   4. subgraph-internal phase advance is detected → signals & inboxes cleared
+#   5. advisory HITL hint is consumed by RuleBased and LLMTopologyRouter
+#
+# Grid size: 2 task types × 3 shuffles × 2 seeds × 4 topologies = 48 cells.
+# Should run on p=4 in ~15-20 min; cost ~$2.5 on gpt-oss-120b.
+
+name: e3_postfix_smoke
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+# Static topology defaults — the sweep below overrides ``topology.name`` and
+# rewrites ``extra`` accordingly via the grid.
+topology:
+  name: chain
+  max_iterations: 12
+  extra: {}
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 1
+
+# Tight budget for smoke.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 5.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL disabled for smoke — isolate routing effects from human simulation noise.
+human:
+  enabled: false
+
+# Sweep:
+#   topology.name × shuffle × seed
+#
+# Key correctness: cfg.max_iterations is now consistent across topologies
+# after the iter_total double-count fix.  Previously adaptive received ~half
+# the work budget for the same numerical max_iterations.
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    task.name: [humaneval, gsm8k]
+    task.shuffle_seed: [0, 1, 2]
+    topology.name: [chain, star, mesh, adaptive]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

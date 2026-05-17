@@ -51,6 +51,32 @@ _VALID_TOPOLOGIES: frozenset[str] = frozenset(
 _DEFAULT_TOPOLOGY: str = "linear"
 
 
+def _extract_topology_from_hint(hint: str) -> str | None:
+    """Return a topology name mentioned in *hint*, or None if no valid name found.
+
+    Used by RuleBasedTopologyRouter to consume signals['human_advisor_hint']
+    in advisory HITL mode.  The hint is a free-form string left by the human
+    reviewer.  We do a case-insensitive whole-word scan for any name in
+    _VALID_TOPOLOGIES; if exactly one valid name appears, that wins.
+    Multiple/ambiguous mentions return None (let normal rules apply).
+
+    Special tokens such as "override_applied:mesh" or
+    "override_blocked_by_guards:debate" — written by adaptive's
+    human_advisor_node itself — are intentionally NOT consumed here because
+    the override path already mutated the topology decision via
+    _topo_dec_slot.  We skip strings that begin with "override_".
+    """
+    if not hint:
+        return None
+    if hint.lower().startswith("override_"):
+        return None
+    tokens = {tok.strip(",.:;!?\"'()[]{}").lower() for tok in hint.split()}
+    matches = tokens & _VALID_TOPOLOGIES
+    if len(matches) == 1:
+        return next(iter(matches))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # TopologyRouter — Protocol
 # ---------------------------------------------------------------------------
@@ -138,6 +164,32 @@ class RuleBasedTopologyRouter:
                 decided_by="rule",
             )
 
+        # Rule 0 (advisory HITL): a human reviewer can leave a hint in
+        # signals['human_advisor_hint'].  When the hint mentions a valid
+        # topology name (one of _VALID_TOPOLOGIES), the rule router treats
+        # it as a soft suggestion and proposes that topology.  SwitchGuards
+        # still apply downstream — guards may veto, in which case the
+        # router_cost is preserved but the topology stays.  An override
+        # written by the adaptive's human_advisor_node (decided_by=
+        # 'human_override') goes through a different path (_topo_dec_slot)
+        # and bypasses this rule.  Hints from advisory mode that don't name
+        # a valid topology fall through to the rule logic below.
+        hint = signals.get("human_advisor_hint")
+        if isinstance(hint, str) and hint.strip():
+            proposed = _extract_topology_from_hint(hint)
+            if proposed is not None:
+                return TopologyDecision(
+                    topology=proposed,
+                    reason=(
+                        f"human_advisor_hint={hint!r} mentions valid topology"
+                        f" {proposed!r} — applying advisory suggestion"
+                    ),
+                    decided_by="rule",
+                    considered_alternatives=(current_topology,)
+                    if proposed != current_topology
+                    else (),
+                )
+
         if current_phase == Phase.EXECUTION:
             # Rule 1: stuck + early in topology → brainstorm with mesh
             stuck: bool = bool(signals.get("stuck", False))
@@ -219,6 +271,7 @@ class LLMTopologyRouter:
         "Active topology: {active_topology}. "
         "Iterations in current topology: {iter_within_topology}. "
         "Active signal keys: {signals_keys}. "
+        "Human advisor hint (may be empty): {human_advisor_hint}. "
         "Choose the best topology from: {valid_topologies}. "
         'Respond with JSON: {{"topology": "<name>", "reason": "<reason>"}}.'
     )
@@ -247,12 +300,15 @@ class LLMTopologyRouter:
         topology_started: int = state.get("topology_started_at_iter", 0)
         iter_within_topology: int = iter_total - topology_started
 
+        hint_value = signals.get("human_advisor_hint")
+        hint_str: str = str(hint_value) if isinstance(hint_value, str) else ""
         prompt = self._prompt_template.format_map(
             {
                 "phase": current_phase,
                 "active_topology": current_topology,
                 "iter_within_topology": iter_within_topology,
                 "signals_keys": list(signals.keys()),  # sanitized: keys only
+                "human_advisor_hint": hint_str,
                 "valid_topologies": sorted(_VALID_TOPOLOGIES),
             }
         )

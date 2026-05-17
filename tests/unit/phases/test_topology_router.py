@@ -594,6 +594,110 @@ class TestOracleTopologyRouter:
         assert decision_verify.topology == "debate"
 
 
+# ===========================================================================
+# TestAdvisorHintConsumption — Rule 0 in RuleBasedTopologyRouter
+# ===========================================================================
+
+
+class TestAdvisorHintConsumption:
+    """RuleBasedTopologyRouter must read signals['human_advisor_hint'] and
+    use it as a soft suggestion (Rule 0) when the hint names a valid
+    topology.  Earlier revisions wrote the hint into signals but no router
+    consumed it, making advisory HITL a no-op for routing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_hint_with_valid_topology_proposes_that_topology(self) -> None:
+        from atm.phases.topology_router import RuleBasedTopologyRouter
+
+        router = RuleBasedTopologyRouter()
+        state = _make_state(
+            phase=Phase.EXECUTION,
+            active_topology="linear",
+            signals={"human_advisor_hint": "Try mesh — brainstorm a few approaches"},
+        )
+
+        decision = await router.decide(state)
+        assert decision.topology == "mesh"
+        assert decision.decided_by == "rule"
+        assert "human_advisor_hint" in decision.reason
+        assert "linear" in decision.considered_alternatives
+
+    @pytest.mark.asyncio
+    async def test_hint_without_valid_topology_falls_through_to_rules(self) -> None:
+        """Free-form hint with no valid topology name — let the rule logic run."""
+        from atm.phases.topology_router import RuleBasedTopologyRouter
+
+        router = RuleBasedTopologyRouter()
+        state = _make_state(
+            phase=Phase.EXECUTION,
+            active_topology="linear",
+            signals={
+                "human_advisor_hint": "Reconsider the plan, but stick with what works",
+                "stuck": True,
+            },
+        )
+
+        decision = await router.decide(state)
+        # No valid topology in hint → rule logic fires (stuck → mesh)
+        assert decision.topology == "mesh"
+        assert "stuck" in decision.reason
+
+    @pytest.mark.asyncio
+    async def test_override_applied_marker_is_ignored(self) -> None:
+        """human_advisor_node writes 'override_applied:mesh' as a marker.
+        That marker MUST NOT trigger another switch — the override path
+        already mutated the decision via _topo_dec_slot.
+        """
+        from atm.phases.topology_router import RuleBasedTopologyRouter
+
+        router = RuleBasedTopologyRouter()
+        state = _make_state(
+            phase=Phase.EXECUTION,
+            active_topology="mesh",
+            signals={"human_advisor_hint": "override_applied:mesh"},
+        )
+
+        decision = await router.decide(state)
+        # Override-* hints are skipped → fall through to "no rule fired"
+        assert decision.topology == "mesh"
+        assert "no rule fired" in decision.reason or decision.topology == "mesh"
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_multi_topology_hint_falls_through(self) -> None:
+        """If the hint names multiple valid topologies, treat as ambiguous → fall through."""
+        from atm.phases.topology_router import RuleBasedTopologyRouter
+
+        router = RuleBasedTopologyRouter()
+        state = _make_state(
+            phase=Phase.EXECUTION,
+            active_topology="linear",
+            signals={"human_advisor_hint": "Try mesh or debate"},
+        )
+
+        decision = await router.decide(state)
+        # Ambiguous → stay with current
+        assert decision.topology == "linear"
+
+    @pytest.mark.asyncio
+    async def test_llm_router_prompt_includes_hint(self) -> None:
+        """LLMTopologyRouter must include signals['human_advisor_hint'] in its prompt."""
+        from atm.phases.topology_router import LLMTopologyRouter
+
+        # Capture the prompt sent to the mock LLM
+        llm = _make_fake_llm('{"topology": "mesh", "reason": "advised"}')
+        router = LLMTopologyRouter(llm=llm, rule_fallback=_make_rule_fallback())
+        state = _make_state(
+            phase=Phase.EXECUTION,
+            signals={"human_advisor_hint": "switch to debate please"},
+        )
+
+        await router.decide(state)
+        sent_messages = llm.ainvoke.call_args.args[0]
+        prompt_text = sent_messages[0].content
+        assert "switch to debate please" in prompt_text
+
+
 # ---------------------------------------------------------------------------
 # Import test
 # ---------------------------------------------------------------------------
