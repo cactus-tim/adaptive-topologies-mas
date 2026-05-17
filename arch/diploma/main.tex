@@ -1,3 +1,4 @@
+% !TEX program = xelatex
 % =====================================================================
 %  Выпускная квалификационная работа
 %  «Адаптивные топологии мульти-агентных LLM-систем
@@ -6,36 +7,27 @@
 %  Образовательная программа «Прикладной анализ данных и
 %  искусственный интеллект», НИУ ВШЭ — Санкт-Петербург, 2026
 %
-%  Сборка:
-%    pdflatex main.tex
-%    pdflatex main.tex     (второй прогон для оглавления/ссылок)
+%  Движок: xelatex (для системных шрифтов через fontspec).
 %
-%  Если установлен latexmk:
-%    latexmk -pdf main.tex
+%  Сборка:
+%    xelatex main.tex
+%    xelatex main.tex     (второй прогон для оглавления/ссылок)
 % =====================================================================
 
 \documentclass[14pt,a4paper]{extarticle}
 
-%%% --- Кодировка и язык --------------------------------------------- %%%
-\usepackage[T2A]{fontenc}
-\usepackage[utf8]{inputenc}
-\usepackage[english,russian]{babel}
+%%% --- Шрифты через fontspec (xelatex) ----------------------------- %%%
+\usepackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont{Times New Roman}
+\setmonofont{Liberation Mono}[Scale=0.85]   % замена Consolas
+\usepackage[english,main=russian]{babel}
 
-%%% --- Шрифт с полной поддержкой кириллицы ------------------------- %%%
-% Linux Libertine --- бесплатный шрифт с засечками, visually
-% близок к Times New Roman, имеет тонкое начертание (меньше
-% x-height, чем у PT Serif), полная T2A кириллица.
-% Методичка ВКР НИУ ВШЭ допускает отступления от TNR
-% (Приложение 6 п. 2.2 --- «в идеале TNR, отступления возможны»).
-\usepackage{libertine}
-\usepackage[T2A,T1]{fontenc}
-\usepackage{microtype}
-
-%%% --- Поля, междустрочный интервал, отступ -------------------------- %%%
-% Методичка: левое поле >= 2см. Стандарт ВКР: левое 2.5 cm, правое 1.5 cm.
-\usepackage[left=2.5cm, right=1.5cm, top=2cm, bottom=2cm]{geometry}
+%%% --- Поля по требованиям задачи ----------------------------------- %%%
+% Левое 2.5, правое 2.0, верхнее/нижнее 2.0.
+\usepackage[left=2.5cm, right=2cm, top=2cm, bottom=2cm]{geometry}
 \usepackage{setspace}
-\setstretch{1.3}                 % 1.3 (в пределах допуска методички 1.3--1.5)
+\setstretch{1.4}                 % 1.4 (в пределах допуска методички 1.3--1.5)
 \usepackage{indentfirst}
 \setlength{\parindent}{1cm}      % красная строка 1 см
 \setcounter{tocdepth}{1}         % в оглавлении --- только до subsection
@@ -83,9 +75,9 @@
     {\normalfont\large\bfseries}{\thesubsection}{1em}{}
 \titleformat{\subsubsection}
     {\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
-\titlespacing*{\section}{0pt}{0.8\baselineskip}{0.4\baselineskip}
-\titlespacing*{\subsection}{0pt}{0.6\baselineskip}{0.3\baselineskip}
-\titlespacing*{\subsubsection}{0pt}{0.5\baselineskip}{0.25\baselineskip}
+\titlespacing*{\section}{0pt}{0.6\baselineskip}{0.3\baselineskip}
+\titlespacing*{\subsection}{0pt}{0.4\baselineskip}{0.2\baselineskip}
+\titlespacing*{\subsubsection}{0pt}{0.3\baselineskip}{0.15\baselineskip}
 
 %%% --- Колонтитулы ------------------------------------------------- %%%
 \pagestyle{plain}
@@ -176,7 +168,7 @@
 %%% ===== Приложения ===== %%%
 \newpage
 \appendix
-\renewcommand{\thesection}{\Asbuk{section}}
+\renewcommand{\thesection}{\ifcase\value{section}\or А\or Б\or В\or Г\or Д\or Е\fi}
 \titleformat{\section}{\normalfont\Large\bfseries}{Приложение~\thesection}{1em}{}
 
 \input{sections/appendix_a_uml.tex}
