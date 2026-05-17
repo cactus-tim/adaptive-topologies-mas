@@ -1,0 +1,33 @@
+# Dockerfile for the ATM Streamlit HITL UI (M14).
+#
+# Build via docker-compose profile:
+#   docker compose --profile ui build
+#
+# Or standalone:
+#   docker build -f Dockerfile.ui -t atm-ui .
+
+FROM python:3.11-slim
+
+# Install uv package manager.
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Copy dependency manifests and README first for layer caching.
+# README.md is required by hatchling at build time (referenced in pyproject.toml).
+COPY pyproject.toml uv.lock README.md ./
+
+# Install only the [ui] extra (no dev deps) with frozen lockfile.
+RUN uv sync --extra ui --frozen --no-dev
+
+# Copy application source and config.
+COPY src /app/src
+COPY conf /app/conf
+COPY alembic /app/alembic
+
+EXPOSE 8501
+
+CMD ["uv", "run", "--extra", "ui", "streamlit", "run", "src/atm/ui/app.py", \
+     "--server.headless=true", \
+     "--server.address=0.0.0.0", \
+     "--server.port=8501"]

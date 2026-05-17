@@ -6,6 +6,10 @@
 #   docker compose up -d
 #   # wait ~15s for healthy status
 #   docker compose ps
+#
+# To also start the Streamlit HITL UI (M14):
+#   docker compose --profile ui up -d
+#   # UI available at http://localhost:8501
 
 services:
   postgres:
@@ -34,6 +38,27 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+
+  ui:
+    profiles: [ui]
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: atm-ui
+    restart: unless-stopped
+    environment:
+      ATM_PG_DSN: ${ATM_PG_DSN}
+      ATM_UI_SECRET: ${ATM_UI_SECRET}
+      ATM_UI_PORT: ${ATM_UI_PORT:-8501}
+    ports:
+      - "${ATM_UI_PORT:-8501}:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src:ro
+      - ./conf:/app/conf:ro
+      - ./alembic:/app/alembic:ro
 
 volumes:
   postgres_data:
