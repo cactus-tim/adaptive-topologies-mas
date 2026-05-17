@@ -1,0 +1,177 @@
+% =====================================================================
+%  Выпускная квалификационная работа
+%  «Адаптивные топологии мульти-агентных LLM-систем
+%   с включением человека в контур управления»
+%
+%  Образовательная программа «Прикладной анализ данных и
+%  искусственный интеллект», НИУ ВШЭ — Санкт-Петербург, 2026
+%
+%  Сборка:
+%    pdflatex main.tex
+%    pdflatex main.tex     (второй прогон для оглавления/ссылок)
+%
+%  Если установлен latexmk:
+%    latexmk -pdf main.tex
+% =====================================================================
+
+\documentclass[14pt,a4paper]{extarticle}
+
+%%% --- Кодировка и язык --------------------------------------------- %%%
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+
+%%% --- Шрифт Times New Roman ---------------------------------------- %%%
+\usepackage{mathptmx}
+
+%%% --- Поля, междустрочный интервал, отступ -------------------------- %%%
+% Методичка: левое поле >= 2см. Стандарт ВКР: левое 2.5 cm, правое 1.5 cm.
+\usepackage[left=2.5cm, right=1.5cm, top=2cm, bottom=2cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing                  % 1.5 (в пределах 1.3--1.5)
+\usepackage{indentfirst}
+\setlength{\parindent}{1cm}      % красная строка 1 см
+
+%%% --- Графика, ссылки, таблицы, формулы ---------------------------- %%%
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning, shapes.geometric, arrows.meta, fit,
+                backgrounds, calc}
+\usepackage[hidelinks]{hyperref}
+\usepackage{csquotes}
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=*, labelindent=\parindent}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{caption}
+\captionsetup[figure]{labelfont=bf,format=plain,justification=centering,
+                      labelsep=period}
+\captionsetup[table]{labelfont=bf,format=plain,justification=raggedright,
+                     singlelinecheck=false,labelsep=period}
+
+%%% --- Подписи на русском ----------------------------------------- %%%
+\addto\captionsrussian{%
+  \renewcommand{\figurename}{Рисунок}%
+  \renewcommand{\tablename}{Таблица}%
+  \renewcommand{\contentsname}{Оглавление}%
+  \renewcommand{\refname}{Библиографический список}%
+  \renewcommand{\appendixname}{Приложение}%
+}
+
+%%% --- Нумерация рисунков/таблиц с указанием раздела ---------------- %%%
+\numberwithin{figure}{section}
+\numberwithin{table}{section}
+\numberwithin{equation}{section}
+
+%%% --- Стиль заголовков -------------------------------------------- %%%
+\usepackage{titlesec}
+\titleformat{\section}
+    {\normalfont\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}
+    {\normalfont\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+    {\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
+\titlespacing*{\section}{0pt}{1.2\baselineskip}{0.6\baselineskip}
+\titlespacing*{\subsection}{0pt}{1.0\baselineskip}{0.5\baselineskip}
+
+%%% --- Колонтитулы ------------------------------------------------- %%%
+\pagestyle{plain}
+
+%%% --- Листинги (для YAML-конфигов в приложении Б) ----------------- %%%
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false,
+    frame=single,
+    rulecolor=\color{gray!60},
+    framerule=0.4pt,
+}
+
+%%% --- Гиперссылки в оглавлении ----------------------------------- %%%
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    linktoc=all,
+    bookmarksnumbered=true
+}
+
+%%% --- Глобальные команды ----------------------------------------- %%%
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\TODO}[1]{\textcolor{red}{\textbf{[TODO #1]}}}
+\newcommand{\PLACEHOLDER}[1]{\textcolor{orange}{[#1]}}
+
+% =====================================================================
+\begin{document}
+
+%%% ===== Титульный лист ===== %%%
+\input{sections/00_titlepage.tex}
+
+%%% ===== Оглавление ===== %%%
+\newpage
+\tableofcontents
+\thispagestyle{empty}
+
+%%% ===== Аннотация RU + EN ===== %%%
+\newpage
+\input{sections/00_annotation.tex}
+
+%%% ===== Ключевые слова ===== %%%
+\newpage
+\input{sections/00_keywords.tex}
+
+%%% ===== Введение ===== %%%
+\newpage
+\input{sections/00_introduction.tex}
+
+%%% ===== Главы ===== %%%
+\newpage
+\input{sections/01_review.tex}
+
+\newpage
+\input{sections/02_methodology.tex}
+
+\newpage
+\input{sections/03_architecture.tex}
+
+\newpage
+\input{sections/04_experiments.tex}
+
+\newpage
+\input{sections/05_analysis.tex}
+
+%%% ===== Авторский вклад ===== %%%
+\newpage
+\input{sections/06_contribution.tex}
+
+%%% ===== Заключение ===== %%%
+\newpage
+\input{sections/07_conclusion.tex}
+
+%%% ===== Библиография ===== %%%
+\newpage
+\input{sections/08_bibliography.tex}
+
+%%% ===== Приложения ===== %%%
+\newpage
+\appendix
+\renewcommand{\thesection}{\Asbuk{section}}
+\titleformat{\section}{\normalfont\Large\bfseries}{Приложение~\thesection}{1em}{}
+
+\input{sections/appendix_a_uml.tex}
+\newpage
+\input{sections/appendix_c_glossary.tex}
+\newpage
+\input{sections/appendix_d_repo.tex}
+\newpage
+\input{sections/appendix_e_github.tex}
+
+\end{document}
