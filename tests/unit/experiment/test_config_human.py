@@ -1,4 +1,4 @@
-"""Unit tests for HumanCfg Pydantic model + YAML round-trips (M9 + M9.1 extra field).
+"""Unit tests for HumanCfg Pydantic model + YAML round-trips (M9 + M9.1 extra field + M14 streamlit).
 
 Tests:
   1.  HumanCfg defaults — enabled=False, gateway=llm_simulated, role=reviewer, etc.
@@ -20,6 +20,12 @@ Tests:
   16. HumanCfg with extra={"judge": "human"} is valid
   17. HumanCfg frozen — extra field also immutable
   18. ExperimentConfig with human.extra in YAML round-trips correctly
+  --- M14 streamlit gateway tests ---
+  19. gateway="streamlit" is valid
+  20. Round-trip: conf/human/streamlit.yaml loads correctly
+  21. M14 optional fields are None by default
+  22. M14 fields round-trip via OmegaConf when set in YAML
+  23. M14 fields are frozen (immutable after construction)
 """
 
 from __future__ import annotations
@@ -86,8 +92,9 @@ def test_human_cfg_is_frozen() -> None:
 
 
 def test_human_cfg_invalid_gateway() -> None:
+    # "webex" is not a valid gateway value (valid: llm_simulated, cli, streamlit)
     with pytest.raises(ValidationError, match="gateway"):
-        HumanCfg.model_validate({"gateway": "streamlit"})
+        HumanCfg.model_validate({"gateway": "webex"})
 
 
 # ---------------------------------------------------------------------------
@@ -335,3 +342,107 @@ human:
     assert cfg.human.extra["judge"] == "human"
     assert cfg.human.extra["scope"] == "top"
     assert cfg.human.extra["activation_round"] == 2
+
+
+# ===========================================================================
+# M14 streamlit gateway tests
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# 19. gateway="streamlit" is a valid value
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_streamlit_gateway_valid() -> None:
+    """gateway='streamlit' is accepted after M14 extension of the Literal."""
+    h = HumanCfg.model_validate({"gateway": "streamlit"})
+    assert h.gateway == "streamlit"
+
+
+# ---------------------------------------------------------------------------
+# 20. Round-trip: conf/human/streamlit.yaml loads correctly
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_streamlit_yaml() -> None:
+    h = _load_human_cfg(CONF_HUMAN / "streamlit.yaml")
+    assert h.enabled is True
+    assert h.gateway == "streamlit"
+    assert h.role == HumanRole.REVIEWER
+    assert h.timeout_s == pytest.approx(120.0)
+    assert h.timeout_policy == "llm_fallback"
+    assert h.queue_dsn == "postgresql+asyncpg://atm:atm@localhost:5433/atm"
+    assert h.participant_id is None
+    assert h.study_session_id is None
+    assert h.shared_secret is None
+    assert h.fallback_llm_model is None
+
+
+# ---------------------------------------------------------------------------
+# 21. M14 optional fields default to None
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_m14_fields_none_by_default() -> None:
+    """All M14 Streamlit fields are None when not provided."""
+    h = HumanCfg()
+    assert h.queue_dsn is None
+    assert h.participant_id is None
+    assert h.study_session_id is None
+    assert h.shared_secret is None
+    assert h.fallback_llm_model is None
+
+
+# ---------------------------------------------------------------------------
+# 22. M14 fields round-trip via OmegaConf when set in YAML
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_m14_fields_yaml_roundtrip(tmp_path: Path) -> None:
+    """M14 Streamlit fields survive YAML -> OmegaConf -> Pydantic round-trip."""
+    yaml_content = """
+name: "streamlit_roundtrip_test"
+model:
+  default: "fake:echo"
+agents:
+  set: "canonical_4"
+topology:
+  name: "chain"
+task:
+  name: "t1"
+observability:
+  pg_dsn: "postgresql://localhost/test"
+human:
+  enabled: true
+  gateway: streamlit
+  role: reviewer
+  timeout_s: 60
+  timeout_policy: llm_fallback
+  queue_dsn: redis://localhost:6379/1
+  participant_id: user_42
+  shared_secret: topsecret
+  fallback_llm_model: cerebras:gpt-oss-70b
+"""
+    cfg_file = tmp_path / "streamlit_roundtrip.yaml"
+    cfg_file.write_text(yaml_content)
+    cfg = load_config(str(cfg_file))
+    assert cfg.human is not None
+    assert cfg.human.gateway == "streamlit"
+    assert cfg.human.queue_dsn == "redis://localhost:6379/1"
+    assert cfg.human.participant_id == "user_42"
+    assert cfg.human.study_session_id is None
+    assert cfg.human.shared_secret == "topsecret"
+    assert cfg.human.fallback_llm_model == "cerebras:gpt-oss-70b"
+
+
+# ---------------------------------------------------------------------------
+# 23. M14 fields are frozen (immutable after construction)
+# ---------------------------------------------------------------------------
+
+
+def test_human_cfg_m14_fields_are_frozen() -> None:
+    """M14 fields obey the frozen=True model config."""
+    h = HumanCfg(gateway="streamlit", queue_dsn="redis://localhost:6379/0")
+    with pytest.raises((TypeError, ValidationError)):
+        h.queue_dsn = "redis://other:6379/0"  # type: ignore[misc]

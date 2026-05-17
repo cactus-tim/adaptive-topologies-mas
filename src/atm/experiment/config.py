@@ -405,7 +405,7 @@ class EvaluationCfg(BaseModel):
 
 
 class HumanCfg(BaseModel):
-    """HITL gateway configuration (arch.md M9/M9.1/M9.2).
+    """HITL gateway configuration (arch.md M9/M9.1/M9.2/M14).
 
     Controls whether human-in-the-loop is active, which gateway to use,
     which role the human plays, and how timeouts are handled.
@@ -427,12 +427,32 @@ class HumanCfg(BaseModel):
         ``"llm"`` → LLMRoleRouter (LLM decides; falls back to rule on error).
       ``role_table`` — optional override for the rule router's phase → HumanRole table.
       ``role_router_model`` — optional LLM model override for LLMRoleRouter.
+
+    M14 — Streamlit gateway fields:
+      ``gateway`` now accepts ``"streamlit"`` in addition to ``"llm_simulated"``
+      and ``"cli"``.  The Streamlit gateway communicates via a Postgres-backed
+      request queue (see D1 in dev/active/m14/) and exposes a web UI to human
+      participants in real-time study sessions.
+
+      ``queue_dsn``          — Postgres DSN for the Streamlit gateway request
+                               queue (e.g.
+                               ``postgresql+asyncpg://atm:atm@host/db``).
+                               Required when ``gateway="streamlit"``.
+      ``participant_id``     — Optional stable identifier for the human participant
+                               (persisted in storage for analysis).
+      ``study_session_id``   — Optional UUID for the study session; auto-generated
+                               by the gateway if not provided.
+      ``shared_secret``      — Optional HMAC secret for request authentication
+                               between the runner and the Streamlit UI.
+      ``fallback_llm_model`` — LLM model to use when the Streamlit gateway times
+                               out and ``timeout_policy="llm_fallback"``.
+                               ``None`` → inherit from ``ModelCfg.default``.
     """
 
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
-    gateway: Literal["llm_simulated", "cli"] = "llm_simulated"
+    gateway: Literal["llm_simulated", "cli", "streamlit"] = "llm_simulated"
     role: HumanRole = HumanRole.REVIEWER
     timeout_s: float | None = 900.0
     timeout_policy: Literal["fail", "llm_fallback", "skip"] = "llm_fallback"
@@ -441,6 +461,12 @@ class HumanCfg(BaseModel):
     role_router: Literal["fixed", "rule", "llm"] = "fixed"
     role_table: dict[str, str] | None = None
     role_router_model: str | None = None
+    # M14: Streamlit gateway fields
+    queue_dsn: str | None = None
+    participant_id: str | None = None
+    study_session_id: str | None = None
+    shared_secret: str | None = None
+    fallback_llm_model: str | None = None
 
 
 # ---------------------------------------------------------------------------

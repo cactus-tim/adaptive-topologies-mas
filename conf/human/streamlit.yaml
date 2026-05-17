@@ -1,0 +1,10 @@
+enabled: true
+gateway: streamlit
+role: reviewer
+timeout_s: 120
+timeout_policy: llm_fallback
+queue_dsn: postgresql+asyncpg://atm:atm@localhost:5433/atm
+participant_id: null
+study_session_id: null
+shared_secret: null
+fallback_llm_model: null

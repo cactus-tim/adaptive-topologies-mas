@@ -44,6 +44,10 @@ analysis = [
     "pandas>=2.2",
     "seaborn>=0.13",
 ]
+ui = [
+    "streamlit>=1.36,<2",
+    "nest_asyncio>=1.5,<2",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -122,3 +126,11 @@ namespace_packages = true
 explicit_package_bases = true
 mypy_path = "src"
 files = ["src/atm"]  # intentionally excludes alembic/ (M0 plan §Step 6 decision)
+
+[[tool.mypy.overrides]]
+module = ["streamlit.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["nest_asyncio"]
+ignore_missing_imports = true
