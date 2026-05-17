@@ -1,7 +1,9 @@
 % =====================================================================
 % Библиографический список.
 % Оформление по ГОСТ Р 7.0.5-2008.
-% Минимум 30 источников. На сегодня собрано 38.
+% Сортировка строго по алфавиту фамилии первого автора (для записей
+% с заглавием в начале --- по первой букве заглавия).
+% Минимум 30 источников; в списке 44 наименования.
 % =====================================================================
 
 \renewcommand{\refname}{Библиографический список}
@@ -13,49 +15,98 @@
 \begin{multicols}{2}
 \begin{thebibliography}{99}
 
-% --- Мульти-агентные системы и обзоры ---
-
 \bibitem{wang2024}
 A survey on large language model based autonomous agents
-/ L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, J.-R. Wen
-// Frontiers of Computer Science. -- 2024. -- Vol. 18, no. 6.
--- P. 186345.
+/ L. Wang, C. Ma, X. Feng [и др.] // Frontiers of Computer Science.
+-- 2024. -- Vol. 18, no. 6. -- P. 186345.
+
+\bibitem{agentbench2023}
+AgentBench: Evaluating LLMs as agents [Электронный ресурс]
+/ X. Liu, H. Yu, H. Zhang [и др.] // arXiv preprint 2308.03688.
+-- 2023. -- URL: \url{https://arxiv.org/abs/2308.03688} (дата
+обращения 17.05.2026).
+
+\bibitem{agentverse2023}
+AgentVerse: Facilitating multi-agent collaboration and exploring
+emergent behaviors [Электронный ресурс] / W. Chen, Y. Su, J. Zuo
+[и др.] // arXiv preprint 2308.10848. -- 2023.
+-- URL: \url{https://arxiv.org/abs/2308.10848} (дата обращения
+17.05.2026).
 
 \bibitem{wu2023}
 AutoGen: Enabling next-gen LLM applications via multi-agent
-conversation [Электронный ресурс] / Q. Wu, G. Bansal, J. Zhang,
-Y. Wu, B. Li, E. Zhu, C. Wang // arXiv preprint 2308.08155.
--- 2023. -- URL: \url{https://arxiv.org/abs/2308.08155} (дата
+conversation [Электронный ресурс] / Q. Wu, G. Bansal, J. Zhang
+[и др.] // arXiv preprint 2308.08155. -- 2023.
+-- URL: \url{https://arxiv.org/abs/2308.08155} (дата обращения
+17.05.2026).
+
+\bibitem{benjamini1995}
+Benjamini Y. Controlling the false discovery rate: a practical
+and powerful approach to multiple testing / Y. Benjamini,
+Y. Hochberg // Journal of the Royal Statistical Society.
+Series B. -- 1995. -- Vol. 57, no. 1. -- P. 289--300.
+
+\bibitem{camel2023}
+CAMEL: Communicative agents for «mind» exploration of large
+language model society / G. Li, H. Hammoud, H. Itani, D. Khizbullin,
+B. Ghanem // Advances in Neural Information Processing Systems.
+-- Red Hook, NY: Curran Associates, 2023. -- Vol. 36.
+-- P. 51991--52008.
+
+\bibitem{frugalgpt2023}
+Chen L. FrugalGPT: How to use large language models while
+reducing cost and improving performance [Электронный ресурс]
+/ L. Chen, M. Zaharia, J. Zou // Transactions on Machine
+Learning Research. -- 2024.
+-- URL: \url{https://openreview.net/forum?id=cSimKw5p6R} (дата
 обращения 17.05.2026).
 
 \bibitem{qian2024}
 ChatDev: Communicative agents for software development
-/ C. Qian, W. Liu, H. Liu, N. Chen, Y. Dang, J. Li, Z. Liu
-// Proceedings of the 62nd Annual Meeting of the Association
-for Computational Linguistics (ACL 2024). -- 2024.
--- P. 15174--15186.
+/ C. Qian, W. Liu, H. Liu [и др.] // Proceedings of the 62nd
+Annual Meeting of the Association for Computational Linguistics
+(ACL 2024). -- Stroudsburg, PA: ACL, 2024. -- P. 15174--15186.
 
-\bibitem{hong2024}
-MetaGPT: Meta programming for a multi-agent collaborative
-framework / S. Hong, M. Zhuge, J. Chen, X. Zheng, Y. Cheng,
-C. Zhang, Y. Wu // Proceedings of the International Conference
-on Learning Representations (ICLR 2024). -- 2024.
+\bibitem{langchain2023}
+Chase H. LangChain: Building applications with LLMs through
+composability [Электронный ресурс] / H. Chase. -- 2023.
+-- URL: \url{https://github.com/langchain-ai/langchain} (дата
+обращения 17.05.2026).
 
-\bibitem{magenticone2024}
-Magentic-One: A generalist multi-agent system for solving
-complex tasks [Электронный ресурс] / A. Fourney, G. Bansal,
-H. Mozannar, C. Tan, E. Salinas, E. Niedtner, E. Horvitz
-// arXiv preprint 2411.04468. -- 2024.
--- URL: \url{https://arxiv.org/abs/2411.04468} (дата обращения
+\bibitem{christiano2017}
+Christiano P. F. Deep reinforcement learning from human
+preferences / P. F. Christiano, J. Leike, T. Brown [и др.]
+// Advances in Neural Information Processing Systems. -- Red
+Hook, NY: Curran Associates, 2017. -- Vol. 30. -- P. 4299--4307.
+
+\bibitem{commongen2020}
+CommonGen: A constrained text generation challenge for generative
+commonsense reasoning / B. Y. Lin, W. Zhou, M. Shen [и др.]
+// Findings of the Association for Computational Linguistics
+(EMNLP 2020). -- Stroudsburg, PA: ACL, 2020. -- P. 1823--1840.
+
+\bibitem{cohen1988}
+Cohen J. Statistical power analysis for the behavioral sciences
+/ J. Cohen. -- 2nd ed. -- Hillsdale, NJ: Lawrence Erlbaum
+Associates, 1988. -- 567 p.
+
+\bibitem{pydantic2024}
+Colvin S. Pydantic: Data validation using Python type hints
+[Электронный ресурс] / S. Colvin [и др.]. -- 2024.
+-- URL: \url{https://docs.pydantic.dev/} (дата обращения
 17.05.2026).
 
-% --- Топологии и адаптация ---
+\bibitem{efron1979}
+Efron B. Bootstrap methods: another look at the jackknife
+/ B. Efron // The Annals of Statistics. -- 1979. -- Vol. 7,
+no. 1. -- P. 1--26.
 
-\bibitem{zhuge2024}
-GPTSwarm: Language agents as optimizable graphs / M. Zhuge,
-W. Wang, L. Kirsch, F. Faccio, D. Khizbullin, J. Schmidhuber
-// Proceedings of the International Conference on Machine
-Learning (ICML 2024). -- 2024.
+\bibitem{humaneval2021}
+Evaluating large language models trained on code [Электронный
+ресурс] / M. Chen, J. Tworek, H. Jun [и др.]
+// arXiv preprint 2107.03374. -- 2021.
+-- URL: \url{https://arxiv.org/abs/2107.03374} (дата обращения
+17.05.2026).
 
 \bibitem{zhang2024}
 G-Designer: Architecting multi-agent communication topologies
@@ -64,28 +115,106 @@ K. Xu, Y. Li, Z. Liu, D. Shen // arXiv preprint 2410.11782.
 -- 2024. -- URL: \url{https://arxiv.org/abs/2410.11782} (дата
 обращения 17.05.2026).
 
-\bibitem{qian2024scaling}
-Scaling large-language-model-based multi-agent collaboration
-[Электронный ресурс] / C. Qian, Z. Ye, W. Liu, N. Chen, Z. Liu
-// arXiv preprint 2406.07155. -- 2024.
--- URL: \url{https://arxiv.org/abs/2406.07155} (дата обращения
+\bibitem{zhuge2024}
+GPTSwarm: Language agents as optimizable graphs / M. Zhuge,
+W. Wang, L. Kirsch, F. Faccio, D. Khizbullin, J. Schmidhuber
+// Proceedings of the International Conference on Machine
+Learning (ICML 2024). -- Cambridge, MA: PMLR, 2024.
+-- P. 62556--62583.
+
+\bibitem{nasatlx1988}
+Hart S. G. Development of NASA-TLX (Task Load Index): results
+of empirical and theoretical research / S. G. Hart,
+L. E. Staveland // Human Mental Workload / ed. by P. A. Hancock,
+N. Meshkati. -- Amsterdam: North-Holland, 1988. -- P. 139--183.
+
+\bibitem{hellaswag2019}
+HellaSwag: Can a machine really finish your sentence?
+/ R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, Y. Choi
+// Proceedings of the 57th Annual Meeting of the Association
+for Computational Linguistics (ACL 2019). -- Stroudsburg, PA:
+ACL, 2019. -- P. 4791--4800.
+
+\bibitem{horvitz1999}
+Horvitz E. Principles of Mixed-Initiative User Interfaces
+/ E. Horvitz // Proceedings of the SIGCHI Conference on Human
+Factors in Computing Systems (CHI '99). -- New York: ACM, 1999.
+-- P. 159--166.
+
+\bibitem{du2023}
+Improving factuality and reasoning in language models through
+multiagent debate [Электронный ресурс] / Y. Du, S. Li,
+A. Torralba, J. Tenenbaum, I. Mordatch // arXiv preprint
+2305.14325. -- 2023.
+-- URL: \url{https://arxiv.org/abs/2305.14325} (дата обращения
+17.05.2026).
+
+\bibitem{dabench2024}
+InfiAgent-DABench: Evaluating agents on data analysis tasks
+[Электронный ресурс] / X. Hu, Z. Zhao, S. Wei [и др.]
+// arXiv preprint 2401.05507. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2401.05507} (дата обращения
+17.05.2026).
+
+\bibitem{humanevalplus2023}
+Is your code generated by ChatGPT really correct? Rigorous
+evaluation of large language models for code generation
+/ J. Liu, C. S. Xia, Y. Wang, L. Zhang // Advances in Neural
+Information Processing Systems. -- Red Hook, NY: Curran
+Associates, 2023. -- Vol. 36. -- P. 21558--21572.
+
+\bibitem{langgraph2024}
+LangGraph: A framework for building stateful, multi-actor
+applications with LLMs [Электронный ресурс] / LangChain AI.
+-- Электрон. дан. -- 2024.
+-- URL: \url{https://langchain-ai.github.io/langgraph/} (дата
+обращения 17.05.2026).
+
+\bibitem{langsmith2024}
+LangSmith: Observability and evaluation for LLM applications
+[Электронный ресурс] / LangChain AI. -- Электрон. дан. -- 2024.
+-- URL: \url{https://docs.smith.langchain.com/} (дата обращения
+17.05.2026).
+
+\bibitem{rouge2004}
+Lin C.-Y. ROUGE: A package for automatic evaluation of summaries
+/ C.-Y. Lin // Text Summarization Branches Out: Proceedings
+of the ACL-04 Workshop. -- Stroudsburg, PA: ACL, 2004.
+-- P. 74--81.
+
+\bibitem{livecodebench2024}
+LiveCodeBench: Holistic and contamination-free evaluation of
+large language models for code [Электронный ресурс] / N. Jain,
+K. Han, A. Gu [и др.] // arXiv preprint 2403.07974. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2403.07974} (дата обращения
 17.05.2026).
 
 \bibitem{liu2023}
-Dynamic LLM-agent network: an LLM-agent collaboration framework
-with agent team optimization [Электронный ресурс] / Z. Liu,
-Y. Zhang, P. Li, Y. Liu, D. Yang // arXiv preprint
- 2310.02170. -- 2023.
+Liu Z. Dynamic LLM-agent network: an LLM-agent collaboration
+framework with agent team optimization [Электронный ресурс]
+/ Z. Liu, Y. Zhang, P. Li, Y. Liu, D. Yang // arXiv preprint
+2310.02170. -- 2023.
 -- URL: \url{https://arxiv.org/abs/2310.02170} (дата обращения
 17.05.2026).
 
-\bibitem{agentverse2023}
-AgentVerse: Facilitating multi-agent collaboration and
-exploring emergent behaviors [Электронный ресурс] / W. Chen,
-Y. Su, J. Zuo, C. Yang, C. Yuan, C.-M. Chan, H. Yu, Y. Lu
-// arXiv preprint 2308.10848. -- 2023.
--- URL: \url{https://arxiv.org/abs/2308.10848} (дата обращения
+\bibitem{magenticone2024}
+Magentic-One: A generalist multi-agent system for solving complex
+tasks [Электронный ресурс] / A. Fourney, G. Bansal, H. Mozannar
+[и др.] // arXiv preprint 2411.04468. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2411.04468} (дата обращения
 17.05.2026).
+
+\bibitem{mathbench2021}
+Measuring mathematical problem solving with the MATH dataset
+/ D. Hendrycks, C. Burns, S. Kadavath [и др.] // Advances in
+Neural Information Processing Systems. -- Red Hook, NY: Curran
+Associates, 2021. -- Vol. 34. -- P. 2280--2292.
+
+\bibitem{hong2024}
+MetaGPT: Meta programming for a multi-agent collaborative
+framework / S. Hong, M. Zhuge, J. Chen [и др.]
+// Proceedings of the International Conference on Learning
+Representations (ICLR 2024). -- 2024.
 
 \bibitem{moa2024}
 Mixture-of-Agents enhances large language model capabilities
@@ -93,20 +222,34 @@ Mixture-of-Agents enhances large language model capabilities
 // Proceedings of the Conference on Language Modeling
 (COLM 2024). -- 2024.
 
-\bibitem{camel2023}
-CAMEL: Communicative agents for ''mind'' exploration of large
-language model society / G. Li, H. Hammoud, H. Itani,
-D. Khizbullin, B. Ghanem // Advances in Neural Information
-Processing Systems. -- 2023. -- Vol. 36.
+\bibitem{mmlupro2024}
+MMLU-Pro: A more robust and challenging multi-task language
+understanding benchmark [Электронный ресурс] / Y. Wang, X. Ma,
+G. Zhang [и др.] // arXiv preprint 2406.01574. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2406.01574} (дата обращения
+17.05.2026).
 
-\bibitem{du2023}
-Improving factuality and reasoning in language models through
-multiagent debate [Электронный ресурс] / Y. Du, S. Li, A. Torralba,
-J. Tenenbaum, I. Mordatch // arXiv preprint 2305.14325.
--- 2023. -- URL: \url{https://arxiv.org/abs/2305.14325} (дата
-обращения 17.05.2026).
+\bibitem{mosqueira2023}
+Mosqueira-Rey E. Human-in-the-loop machine learning: a state
+of the art / E. Mosqueira-Rey, E. Hern\'{a}ndez-Pereira,
+D. Alonso-R\'{i}os, J. Bobes-Bascar\'{a}n,
+\'{A}. Fern\'{a}ndez-Leal // Artificial Intelligence Review.
+-- 2023. -- Vol. 56, no. 4. -- P. 3005--3054.
 
-% --- Одиночные методы рассуждения и итеративного улучшения ---
+\bibitem{yu2024}
+NetSafe: Exploring the topological safety of multi-agent
+networks against adversarial attacks [Электронный ресурс]
+/ M. Yu, S. Wang, G. Zhang, H. Li // arXiv preprint 2410.15686.
+-- 2024.
+-- URL: \url{https://arxiv.org/abs/2410.15686} (дата обращения
+17.05.2026).
+
+\bibitem{ouyang2022}
+Ouyang L. Training language models to follow instructions with
+human feedback / L. Ouyang, J. Wu, X. Jiang [и др.]
+// Advances in Neural Information Processing Systems. -- Red
+Hook, NY: Curran Associates, 2022. -- Vol. 35.
+-- P. 27730--27744.
 
 \bibitem{react2022}
 ReAct: Synergizing reasoning and acting in language models
@@ -117,210 +260,50 @@ Learning Representations (ICLR 2023). -- 2023.
 \bibitem{reflexion2023}
 Reflexion: Language agents with verbal reinforcement learning
 / N. Shinn, F. Cassano, A. Gopinath, K. Narasimhan, S. Yao
-// Advances in Neural Information Processing Systems. -- 2023.
--- Vol. 36.
+// Advances in Neural Information Processing Systems. -- Red
+Hook, NY: Curran Associates, 2023. -- Vol. 36.
+-- P. 8634--8652.
+
+\bibitem{routellm2024}
+RouteLLM: Learning to route LLMs with preference data
+[Электронный ресурс] / I. Ong, A. Almahairi, V. Wu [и др.]
+// arXiv preprint 2406.18665. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2406.18665} (дата обращения
+17.05.2026).
+
+\bibitem{qian2024scaling}
+Scaling large-language-model-based multi-agent collaboration
+[Электронный ресурс] / C. Qian, Z. Ye, W. Liu [и др.]
+// arXiv preprint 2406.07155. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2406.07155} (дата обращения
+17.05.2026).
 
 \bibitem{selfrefine2024}
-Self-Refine: Iterative refinement with self-feedback
-/ A. Madaan, N. Tandon, P. Gupta, S. Hallinan, L. Gao,
-S. Wiegreffe, U. Alon, N. Dziri // Advances in Neural
-Information Processing Systems. -- 2023. -- Vol. 36.
-
-\bibitem{tot2023}
-Tree of Thoughts: Deliberate problem solving with large
-language models / S. Yao, D. Yu, J. Zhao, I. Shafran,
-T. Griffiths, Y. Cao, K. Narasimhan // Advances in Neural
-Information Processing Systems. -- 2023. -- Vol. 36.
-
-% --- Безопасность мульти-агентных систем ---
-
-\bibitem{yu2024}
-NetSafe: Exploring the topological safety of multi-agent
-networks against adversarial attacks [Электронный ресурс]
-/ M. Yu, S. Wang, G. Zhang, H. Li // arXiv preprint
- 2410.15686. -- 2024.
--- URL: \url{https://arxiv.org/abs/2410.15686} (дата обращения
-17.05.2026).
+Self-Refine: Iterative refinement with self-feedback / A. Madaan,
+N. Tandon, P. Gupta [и др.] // Advances in Neural Information
+Processing Systems. -- Red Hook, NY: Curran Associates, 2023.
+-- Vol. 36. -- P. 46534--46594.
 
 \bibitem{liang2024}
 Tipping the dominos: Topology-aware multi-hop attacks on
 LLM-based multi-agent systems [Электронный ресурс] / R. Liang,
-J. Ye, Z. Chen, Q. Zhu // arXiv preprint 2412.04129.
--- 2024. -- URL: \url{https://arxiv.org/abs/2412.04129} (дата
-обращения 17.05.2026).
-
-% --- Человек в контуре управления и обратная связь ---
-
-\bibitem{mosqueira2023}
-Human-in-the-loop machine learning: a state of the art
-/ E. Mosqueira-Rey, E. Hern\'{a}ndez-Pereira,
-D. Alonso-R\'{i}os, J. Bobes-Bascar\'{a}n,
-\'{A}. Fern\'{a}ndez-Leal
-// Artificial Intelligence Review. -- 2023. -- Vol. 56, no. 4.
--- P. 3005--3054.
-
-\bibitem{horvitz1999}
-Horvitz E. Principles of Mixed-Initiative User Interfaces
-/ E. Horvitz // Proceedings of the SIGCHI Conference on Human
-Factors in Computing Systems (CHI '99). -- New York: ACM,
-1999. -- P. 159--166.
-
-\bibitem{christiano2017}
-Deep reinforcement learning from human preferences
-/ P. F. Christiano, J. Leike, T. Brown, M. Martic, S. Legg,
-D. Amodei // Advances in Neural Information Processing
-Systems. -- 2017. -- Vol. 30.
-
-\bibitem{ouyang2022}
-Training language models to follow instructions with human
-feedback / L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright,
-P. Mishkin, C. Zhang, S. Agarwal // Advances in Neural
-Information Processing Systems. -- 2022. -- Vol. 35.
--- P. 27730--27744.
-
-\bibitem{nasatlx1988}
-Hart S. G. Development of NASA-TLX (Task Load Index): results
-of empirical and theoretical research / S. G. Hart,
-L. E. Staveland // Human Mental Workload / ed. by P. A. Hancock,
-N. Meshkati. -- Amsterdam: North-Holland, 1988. -- P. 139--183.
-
-% --- Корпуса задач ---
-
-\bibitem{humaneval2021}
-Evaluating large language models trained on code [Электронный
-ресурс] / M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. de Oliveira
-Pinto, J. Kaplan, H. Edwards, Y. Burda // arXiv preprint
- 2107.03374. -- 2021. -- URL: \url{https://arxiv.org/abs/2107.03374}
-(дата обращения 17.05.2026).
-
-\bibitem{humanevalplus2023}
-Is your code generated by ChatGPT really correct? Rigorous
-evaluation of large language models for code generation
-/ J. Liu, C. S. Xia, Y. Wang, L. Zhang // Advances in Neural
-Information Processing Systems. -- 2023. -- Vol. 36.
-
-\bibitem{livecodebench2024}
-LiveCodeBench: Holistic and contamination-free evaluation of
-large language models for code [Электронный ресурс] / N. Jain,
-K. Han, A. Gu, W.-D. Li, F. Yan, T. Zhang, S. Wang, A. Solar-Lezama
-// arXiv preprint 2403.07974. -- 2024.
--- URL: \url{https://arxiv.org/abs/2403.07974} (дата обращения
+J. Ye, Z. Chen, Q. Zhu // arXiv preprint 2412.04129. -- 2024.
+-- URL: \url{https://arxiv.org/abs/2412.04129} (дата обращения
 17.05.2026).
 
 \bibitem{gsm8k2021}
 Training verifiers to solve math word problems [Электронный
-ресурс] / K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun,
-L. Kaiser, M. Plappert, J. Tworek // arXiv preprint
- 2110.14168. -- 2021.
+ресурс] / K. Cobbe, V. Kosaraju, M. Bavarian [и др.]
+// arXiv preprint 2110.14168. -- 2021.
 -- URL: \url{https://arxiv.org/abs/2110.14168} (дата обращения
 17.05.2026).
 
-\bibitem{mathbench2021}
-Measuring mathematical problem solving with the MATH dataset
-/ D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart,
-E. Tang, D. Song, J. Steinhardt // Advances in Neural
-Information Processing Systems. -- 2021. -- Vol. 34.
-
-\bibitem{mmlupro2024}
-MMLU-Pro: A more robust and challenging multi-task language
-understanding benchmark [Электронный ресурс] / Y. Wang, X. Ma,
-G. Zhang, Y. Ni, A. Chandra, S. Guo, W. Ren, A. Arulraj
-// arXiv preprint 2406.01574. -- 2024.
--- URL: \url{https://arxiv.org/abs/2406.01574} (дата обращения
-17.05.2026).
-
-\bibitem{commongen2020}
-CommonGen: A constrained text generation challenge for
-generative commonsense reasoning / B. Y. Lin, W. Zhou,
-M. Shen, P. Zhou, C. Bhagavatula, Y. Choi, X. Ren
-// Findings of the Association for Computational Linguistics
-(EMNLP 2020). -- 2020. -- P. 1823--1840.
-
-\bibitem{dabench2024}
-InfiAgent-DABench: Evaluating agents on data analysis tasks
-[Электронный ресурс] / X. Hu, Z. Zhao, S. Wei, Z. Chai, Q. Ma,
-G. Wang, X. Wang, J. Su, J. Xu, M. Zhu, Y. Cheng, J. Yuan
-// arXiv preprint 2401.05507. -- 2024.
--- URL: \url{https://arxiv.org/abs/2401.05507} (дата обращения
-17.05.2026).
-
-\bibitem{hellaswag2019}
-HellaSwag: Can a machine really finish your sentence?
-/ R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, Y. Choi
-// Proceedings of the 57th Annual Meeting of the Association
-for Computational Linguistics (ACL 2019). -- 2019.
--- P. 4791--4800.
-
-% --- Метрики и статистика ---
-
-\bibitem{rouge2004}
-Lin C.-Y. ROUGE: A package for automatic evaluation of summaries
-/ C.-Y. Lin // Text Summarization Branches Out: Proceedings
-of the ACL-04 Workshop. -- Barcelona, 2004. -- P. 74--81.
-
-\bibitem{cohen1988}
-Cohen J. Statistical power analysis for the behavioral sciences
-/ J. Cohen. -- 2nd ed. -- Hillsdale, NJ: Lawrence Erlbaum
-Associates, 1988. -- 567 p.
-
-\bibitem{benjamini1995}
-Benjamini Y. Controlling the false discovery rate: a practical
-and powerful approach to multiple testing / Y. Benjamini,
-Y. Hochberg // Journal of the Royal Statistical Society.
-Series B. -- 1995. -- Vol. 57, no. 1. -- P. 289--300.
-
-\bibitem{efron1979}
-Efron B. Bootstrap methods: another look at the jackknife
-/ B. Efron // The Annals of Statistics. -- 1979. -- Vol. 7,
-no. 1. -- P. 1--26.
-
-% --- Бенчмаркинг агентов и маршрутизация ---
-
-\bibitem{agentbench2023}
-AgentBench: Evaluating LLMs as agents [Электронный ресурс]
-/ X. Liu, H. Yu, H. Zhang, Y. Xu, X. Lei, H. Lai, Y. Gu, H. Ding
-// arXiv preprint 2308.03688. -- 2023.
--- URL: \url{https://arxiv.org/abs/2308.03688} (дата обращения
-17.05.2026).
-
-\bibitem{routellm2024}
-RouteLLM: Learning to route LLMs with preference data
-[Электронный ресурс] / I. Ong, A. Almahairi, V. Wu, W.-L. Chiang,
-T. Wu, J. E. Gonzalez, M. W. Kadous, I. Stoica // arXiv preprint
-2406.18665. -- 2024.
--- URL: \url{https://arxiv.org/abs/2406.18665} (дата обращения
-17.05.2026).
-
-\bibitem{frugalgpt2023}
-Chen L. FrugalGPT: How to use large language models while
-reducing cost and improving performance / L. Chen, M. Zaharia,
-J. Zou // Transactions on Machine Learning Research. -- 2024.
-
-% --- Инфраструктура реализации ---
-
-\bibitem{langgraph2024}
-LangGraph: A framework for building stateful, multi-actor
-applications with LLMs [Электронный ресурс] / LangChain AI.
--- 2024. -- URL: \url{https://langchain-ai.github.io/langgraph/}
-(дата обращения 17.05.2026).
-
-\bibitem{langchain2023}
-Chase H. LangChain: Building applications with LLMs through
-composability [Электронный ресурс] / H. Chase. -- 2023.
--- URL: \url{https://github.com/langchain-ai/langchain} (дата
-обращения 17.05.2026).
-
-\bibitem{pydantic2024}
-Pydantic: Data validation using Python type hints [Электронный
-ресурс] / S. Colvin et al. -- 2024.
--- URL: \url{https://docs.pydantic.dev/} (дата обращения
-17.05.2026).
-
-\bibitem{langsmith2024}
-LangSmith: Observability and evaluation for LLM applications
-[Электронный ресурс] / LangChain AI. -- 2024.
--- URL: \url{https://docs.smith.langchain.com/} (дата обращения
-17.05.2026).
+\bibitem{tot2023}
+Tree of Thoughts: Deliberate problem solving with large language
+models / S. Yao, D. Yu, J. Zhao, I. Shafran, T. Griffiths, Y. Cao,
+K. Narasimhan // Advances in Neural Information Processing
+Systems. -- Red Hook, NY: Curran Associates, 2023. -- Vol. 36.
+-- P. 11809--11822.
 
 \end{thebibliography}
 \end{multicols}
