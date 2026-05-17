@@ -2,31 +2,31 @@
   "_default": "linear",
   "by_task_id": {
     "commongen": {
-      "execution": "hierarchical",
-      "planning": "hierarchical",
-      "verification": "hierarchical"
-    },
-    "dabench": {
-      "execution": "hierarchical",
-      "planning": "hierarchical",
-      "verification": "hierarchical"
-    },
-    "gsm8k": {
-      "execution": "hierarchical",
-      "planning": "hierarchical",
-      "verification": "hierarchical"
-    },
-    "humaneval": {
       "execution": "debate",
       "planning": "debate",
       "verification": "debate"
+    },
+    "dabench": {
+      "execution": "debate",
+      "planning": "debate",
+      "verification": "debate"
+    },
+    "gsm8k": {
+      "execution": "star",
+      "planning": "star",
+      "verification": "star"
+    },
+    "humaneval": {
+      "execution": "chain",
+      "planning": "chain",
+      "verification": "chain"
     }
   },
   "by_task_type": {
     "unknown": {
-      "execution": "hierarchical",
-      "planning": "hierarchical",
-      "verification": "hierarchical"
+      "execution": "debate",
+      "planning": "debate",
+      "verification": "debate"
     }
   }
 }

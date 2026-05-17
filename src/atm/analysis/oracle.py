@@ -226,7 +226,14 @@ def _infer_task_type(task_id: str) -> str:
 
 
 def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
-    """Build an OracleTable via Leave-One-Out aggregation over experiment rows.
+    """Build an OracleTable as a per-task TOP-1 upper-bound table.
+
+    Despite the historical function name ("loo"), this builder now picks the
+    empirically best topology per task_id (and per task_type) — i.e. the
+    ceiling assuming perfect topology knowledge. This matches the RQ2
+    "oracle = upper bound" semantics used in arch.md and the e3 acceptance
+    criteria. The earlier leave-one-out semantics measured generalisation
+    from sibling tasks and conflated with predictor performance.
 
     Each row must have at minimum:
         task_id       : str
@@ -242,12 +249,12 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
         and mean budget_spent_usd (secondary tiebreak, if present).
         Pick topology with highest mean quality_score.
 
-    Pass 2 (by_task_id):
+    Pass 2 (by_task_id) — TOP-1 PER TASK:
         For each target task_id:
-            Exclude ALL rows whose task_id == target.
-            Within the remaining rows of the same task_type, aggregate by topology.
+            Take only rows whose task_id == target.
+            Aggregate quality_score per topology.
             Pick topology with highest mean quality_score.
-            If no remaining rows for that task_type → fall back to _default topology.
+            If no rows for that task_id → fall back to _default topology.
 
     Returns:
         OracleTable with by_task_type, by_task_id, and default_topology set.
@@ -287,40 +294,33 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
             by_task_type[tt] = best
 
     # ------------------------------------------------------------------
-    # Pass 2: per-task_id LOO (exclude target task_id from aggregation)
+    # Pass 2: per-task_id TOP-1 (upper-bound oracle)
     # ------------------------------------------------------------------
     all_task_ids = sorted({str(row.get("task_id", "")) for row in normalized if row.get("task_id")})
 
     by_task_id: dict[str, str] = {}
     for target_id in all_task_ids:
-        # Infer task_type for this target from the rows themselves
-        target_type = next(
-            (str(r["task_type"]) for r in normalized if str(r.get("task_id")) == target_id),
-            "unknown",
-        )
-
-        # Gather rows for the same task_type, excluding the target task_id
-        remainder: list[dict[str, Any]] = [
+        # Take ONLY rows for this exact task_id (no LOO exclusion)
+        target_rows: list[dict[str, Any]] = [
             r
             for r in normalized
-            if str(r.get("task_id")) != target_id
-            and str(r.get("task_type")) == target_type
+            if str(r.get("task_id")) == target_id
             and str(r.get("topology", "")) in _VALID_TOPOLOGIES
         ]
 
-        if not remainder:
-            # Empty LOO fold → fall back to default
+        if not target_rows:
+            # No data for this task → fall back to default
             by_task_id[target_id] = _DEFAULT_TOPOLOGY
             continue
 
-        # Aggregate scores by topology over the remainder
-        loo_topo_scores: dict[str, list[float]] = defaultdict(list)
-        for r in remainder:
+        # Aggregate scores by topology over rows of THIS task
+        task_topo_scores: dict[str, list[float]] = defaultdict(list)
+        for r in target_rows:
             topo = str(r.get("topology", ""))
             score = float(r.get("quality_score") or 0.0)
-            loo_topo_scores[topo].append(score)
+            task_topo_scores[topo].append(score)
 
-        best = _pick_best_topology(loo_topo_scores)
+        best = _pick_best_topology(task_topo_scores)
         by_task_id[target_id] = best if best is not None else _DEFAULT_TOPOLOGY
 
     return OracleTable(
@@ -409,7 +409,11 @@ async def build_leave_one_out_oracle(
     *,
     session_factory: Any,
 ) -> OracleTable:
-    """Build OracleTable via LOO over all runs for a given experiment.
+    """Build OracleTable (per-task TOP-1 upper bound) over all runs for an exp.
+
+    Despite the historical "leave_one_out" function name (kept for API
+    stability), the underlying builder now picks the empirically best
+    topology per task_id — the upper-bound semantics required by RQ2.
 
     Queries the ``runs`` table (SQLAlchemy 2.x async session) for all rows
     matching ``exp_id``, extracts relevant columns as dicts, and delegates
