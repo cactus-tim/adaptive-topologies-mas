@@ -211,36 +211,32 @@ class TestBuildLooFromRowsBasic:
 # ---------------------------------------------------------------------------
 
 
-class TestBuildLooOracleExclusionFlipsWinner:
-    """The LOO exclusion changes the recommended topology for HumanEval/0.
+class TestBuildOracleTop1PerTaskIsIndependent:
+    """Per-task TOP-1 oracle: each task's winner depends ONLY on its own rows.
 
-    Key assertion: WITHOUT LOO this would be "mesh" (global winner);
-    WITH LOO it MUST be "linear".
+    HumanEval/0 has 5x mesh@0.95 + 1x linear@0.50 → mesh wins for /0.
+    HumanEval/1 has 2x linear@0.80 + 1x mesh@0.40 → linear wins for /1.
+    HumanEval/2 has 2x linear@0.80 + 1x mesh@0.40 → linear wins for /2.
+
+    Under the old LOO algorithm /0 would have flipped to "linear" (because
+    excluding /0 leaves /1 and /2 which prefer linear). The new top-1
+    semantics deliberately do NOT exclude — each task is judged on its own
+    empirical evidence, giving the true upper-bound ceiling for RQ2.
     """
 
-    def test_build_loo_oracle_exclusion_flips_winner(self, rows_flip: list[dict]) -> None:
+    def test_build_oracle_top1_per_task_is_independent(self, rows_flip: list[dict]) -> None:
         from atm.analysis.oracle import OracleTable, build_loo_from_rows
 
         table: OracleTable = build_loo_from_rows(rows_flip)
 
-        # Sanity: verify the global (non-LOO) winner would be mesh by confirming
-        # that the other tasks (not excluded) prefer linear in LOO.
-        # HumanEval/1 and HumanEval/2: when excluding them from their own LOO fold,
-        # HumanEval/0's mesh rows dominate → they also flip toward mesh.
-        # But for HumanEval/0 itself: excluding it leaves only /1 and /2 which
-        # both clearly prefer linear.
-
-        # WITHOUT LOO this would be "mesh" (global winner); WITH LOO it MUST be "linear"
-        assert table.by_task_id["HumanEval/0"] == "linear", (
-            "LOO exclusion of HumanEval/0 must flip winner from mesh (global) to linear"
+        # /0: own rows clearly prefer mesh (0.95 vs 0.50). NOT excluded.
+        assert table.by_task_id["HumanEval/0"] == "mesh", (
+            "Top-1 must pick the best topology FOR THIS task — mesh wins HumanEval/0"
         )
 
-        # HumanEval/1 and HumanEval/2: when excluded, remaining set = /0 (5xmesh@0.95, 1xlinear@0.50)
-        # mesh mean among remaining = 5*0.95/5 = 0.95 (only /0 rows contribute mesh)
-        # linear mean among remaining = 0.50/1 = 0.50
-        # → LOO winner for /1 and /2 is "mesh"
-        assert table.by_task_id["HumanEval/1"] == "mesh"
-        assert table.by_task_id["HumanEval/2"] == "mesh"
+        # /1 and /2: own rows clearly prefer linear (0.80 vs 0.40).
+        assert table.by_task_id["HumanEval/1"] == "linear"
+        assert table.by_task_id["HumanEval/2"] == "linear"
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +266,7 @@ class TestBuildLooEdgeCaseEmptyRows:
 
 
 class TestBuildLooEdgeCaseSingleTask:
-    """A task type with only one task_id falls back gracefully (empty LOO fold)."""
+    """A single task uses its own rows for top-1 (no LOO exclusion)."""
 
     def test_build_loo_single_task_fallback(self) -> None:
         from atm.analysis.oracle import OracleTable, build_loo_from_rows
@@ -292,12 +288,10 @@ class TestBuildLooEdgeCaseSingleTask:
 
         table: OracleTable = build_loo_from_rows(rows)
 
-        # With only one task, LOO fold is empty — result must be the default topology
-        # (not crash, not use the excluded task's own data).
+        # Top-1 semantics: the task picks its own empirical winner (mesh@0.90 > linear@0.50).
+        # No LOO exclusion → no need to fall back to default.
         assert isinstance(table, OracleTable)
-        assert "HumanEval/99" in table.by_task_id
-        # The value must equal default_topology (since no other tasks in group)
-        assert table.by_task_id["HumanEval/99"] == table.default_topology
+        assert table.by_task_id["HumanEval/99"] == "mesh"
 
 
 # ---------------------------------------------------------------------------
@@ -398,5 +392,5 @@ class TestBuildLooOracleTopologyRouterContract:
         }
         decision = asyncio.get_event_loop().run_until_complete(router.decide(state))  # type: ignore[arg-type]
         assert decision.decided_by == "oracle"
-        # LOO says HumanEval/0 → "linear"
-        assert decision.topology == "linear"
+        # Top-1 per task: HumanEval/0's own rows (5x mesh@0.95 + 1x linear@0.50) pick mesh.
+        assert decision.topology == "mesh"
