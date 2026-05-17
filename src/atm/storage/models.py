@@ -1,12 +1,14 @@
 """SQLAlchemy 2.x ORM models for the ATM storage layer.
 
-6 business tables:
-  - experiments    — root entity; one experiment = a grid/sweep run
-  - runs           — one run within an experiment; reproducibility bundle §14.4
-  - phases         — phase transitions within a run §3.4
-  - human_interactions — HITL events with NASA-TLX §13.3
-  - budget_events  — budget warn/exceed events §3.4
+8 business tables:
+  - experiments         — root entity; one experiment = a grid/sweep run
+  - runs                — one run within an experiment; reproducibility bundle §14.4
+  - phases              — phase transitions within a run §3.4
+  - human_interactions  — HITL events with NASA-TLX §13.3
+  - budget_events       — budget warn/exceed events §3.4
   - topology_transitions — TopologyRouter decisions §3.4 / RQ2
+  - study_sessions      — proctored user-study sessions (M14 §HITL)
+  - human_request_queue — async PG queue between runner and Streamlit UI (M14 §HITL)
 
 All datetime columns use TIMESTAMPTZ.
 JSONB columns use server_default=sa.text("'{}'::jsonb") where arch.md requires it.
@@ -339,10 +341,25 @@ class HumanInteraction(Base):
         sa.String(64),
         nullable=True,  # idempotency key (run_id, request_id) pair
     )
+    study_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey(
+            "study_sessions.id",
+            ondelete="SET NULL",
+            name="fk_human_interactions_study_session_id",
+        ),
+        nullable=True,
+        index=True,
+    )
 
     # Relationships
     run: Mapped[Run] = relationship(
         "Run",
+        back_populates="human_interactions",
+        lazy="raise",
+    )
+    study_session: Mapped["StudySession | None"] = relationship(
+        "StudySession",
         back_populates="human_interactions",
         lazy="raise",
     )
@@ -470,5 +487,141 @@ class TopologyTransition(Base):
     run: Mapped[Run] = relationship(
         "Run",
         back_populates="topology_transitions",
+        lazy="raise",
+    )
+
+
+# ---------------------------------------------------------------------------
+# StudySession (M14 §HITL)
+# ---------------------------------------------------------------------------
+
+
+class StudySession(Base):
+    """Proctored user-study session — one per participant per experiment.
+
+    Tracks consent, start/end times, status (active/paused/ended), and
+    arbitrary metadata for the proctor.  One StudySession may be linked to
+    many HumanInteraction rows via human_interactions.study_session_id.
+    """
+
+    __tablename__ = "study_sessions"
+
+    __table_args__ = (
+        sa.Index("study_sessions_participant_id_idx", "participant_id"),
+        sa.Index("study_sessions_status_idx", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    participant_id: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    proctor_notes: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    consent_given: Mapped[bool] = mapped_column(
+        sa.Boolean,
+        nullable=False,
+        server_default=sa.text("false"),
+    )
+    started_at: Mapped[sa.DateTime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+    ended_at: Mapped[sa.DateTime | None] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        sa.String(16),
+        nullable=False,
+        server_default=sa.text("'active'"),
+    )
+    meta_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+
+    # Relationships
+    human_interactions: Mapped[list[HumanInteraction]] = relationship(
+        "HumanInteraction",
+        back_populates="study_session",
+        lazy="raise",
+    )
+
+
+# ---------------------------------------------------------------------------
+# HumanRequestQueue (M14 §HITL)
+# ---------------------------------------------------------------------------
+
+
+class HumanRequestQueue(Base):
+    """Async PG queue between the runner process and the Streamlit UI.
+
+    Lifecycle: pending → claimed → responded (or timed_out / error).
+    The UNIQUE constraint (run_id, request_id) ensures idempotent enqueue.
+    """
+
+    __tablename__ = "human_request_queue"
+
+    __table_args__ = (
+        sa.Index("human_request_queue_run_id_idx", "run_id"),
+        sa.Index("human_request_queue_status_idx", "status"),
+        sa.Index("human_request_queue_created_at_idx", "created_at"),
+        sa.UniqueConstraint(
+            "run_id",
+            "request_id",
+            name="uq_human_request_queue_run_request",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey(
+            "runs.id",
+            ondelete="CASCADE",
+            name="fk_human_request_queue_run_id",
+        ),
+        nullable=False,
+    )
+    request_id: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    context_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+    response_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,  # null until the human submits a response
+    )
+    status: Mapped[str] = mapped_column(
+        sa.String(16),
+        nullable=False,
+        server_default=sa.text("'pending'"),
+    )
+    created_at: Mapped[sa.DateTime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+    claimed_at: Mapped[sa.DateTime | None] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=True,
+    )
+    responded_at: Mapped[sa.DateTime | None] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=True,
+    )
+    claimed_by: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+
+    # Relationships
+    run: Mapped[Run] = relationship(
+        "Run",
         lazy="raise",
     )

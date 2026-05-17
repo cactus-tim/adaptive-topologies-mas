@@ -1,7 +1,8 @@
 """Unit tests for SQLAlchemy ORM models in src/atm/storage/models.py.
 
-These tests verify the structural properties of the 6 business tables:
-experiments, runs, phases, human_interactions, budget_events, topology_transitions.
+These tests verify the structural properties of the 8 business tables:
+experiments, runs, phases, human_interactions, budget_events, topology_transitions,
+study_sessions, human_request_queue.
 
 Column names, types, and nullability are asserted to match arch.md §3.4 exactly.
 No live database connection is required — all assertions are metadata-level.
@@ -18,8 +19,10 @@ from atm.storage.models import (
     Experiment,
     FinishReason,
     HumanInteraction,
+    HumanRequestQueue,
     Phase,
     Run,
+    StudySession,
     TopologyTransition,
 )
 
@@ -70,12 +73,21 @@ class TestFinishReason:
 
 
 EXPECTED_TABLE_NAMES = frozenset(
-    {"budget_events", "experiments", "human_interactions", "phases", "runs", "topology_transitions"}
+    {
+        "budget_events",
+        "experiments",
+        "human_interactions",
+        "human_request_queue",
+        "phases",
+        "runs",
+        "study_sessions",
+        "topology_transitions",
+    }
 )
 
 
 class TestBaseMetadata:
-    def test_exactly_six_tables(self) -> None:
+    def test_exactly_eight_tables(self) -> None:
         tables = {t.name for t in Base.metadata.sorted_tables}
         assert tables == EXPECTED_TABLE_NAMES
 
@@ -87,8 +99,16 @@ class TestBaseMetadata:
         # experiments must precede runs (runs.exp_id → experiments.id)
         assert experiments_idx < runs_idx
         # runs must precede all FK dependents
-        for dependent in ("budget_events", "human_interactions", "phases", "topology_transitions"):
+        for dependent in (
+            "budget_events",
+            "human_interactions",
+            "human_request_queue",
+            "phases",
+            "topology_transitions",
+        ):
             assert runs_idx < names.index(dependent)
+        # study_sessions must precede human_interactions (FK study_session_id)
+        assert names.index("study_sessions") < names.index("human_interactions")
 
     def test_declarative_base_used(self) -> None:
         from sqlalchemy.orm import DeclarativeBase
@@ -563,3 +583,252 @@ class TestModuleExports:
             "TopologyTransition",
         ):
             assert hasattr(models, name), f"models.{name} not found"
+
+    def test_new_m14_models_exported(self) -> None:
+        from atm.storage import models
+
+        for name in ("StudySession", "HumanRequestQueue"):
+            assert hasattr(models, name), f"models.{name} not found"
+
+
+# ---------------------------------------------------------------------------
+# HumanInteraction.study_session_id extension — M14 migration 0005
+# ---------------------------------------------------------------------------
+
+
+class TestHumanInteractionStudySessionExtension:
+    def _table(self) -> sa.Table:
+        return Base.metadata.tables["human_interactions"]
+
+    def test_study_session_id_column_exists(self) -> None:
+        """M14: human_interactions must have study_session_id column."""
+        assert "study_session_id" in self._table().c
+
+    def test_study_session_id_nullable(self) -> None:
+        """M14: study_session_id is nullable (SET NULL on delete)."""
+        col = self._table().c["study_session_id"]
+        assert col.nullable
+
+    def test_study_session_id_uuid_type(self) -> None:
+        """M14: study_session_id is a UUID column."""
+        col = self._table().c["study_session_id"]
+        assert "uuid" in type(col.type).__name__.lower()
+
+    def test_study_session_id_fk_to_study_sessions(self) -> None:
+        """M14: study_session_id FK → study_sessions.id."""
+        col = self._table().c["study_session_id"]
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        assert "study_sessions.id" in str(fks[0].target_fullname)
+
+    def test_study_session_relationship_lazy_raise(self) -> None:
+        """M14: study_session relationship on HumanInteraction uses lazy='raise'."""
+        mapper = sa.inspect(HumanInteraction)
+        rel = mapper.relationships["study_session"]
+        assert rel.lazy == "raise"
+
+    def test_mapped_column_python_type(self) -> None:
+        """M14: study_session_id is mapped on the ORM class (not just table)."""
+        import uuid
+
+        mapper = sa.inspect(HumanInteraction)
+        attr = mapper.attrs["study_session_id"]
+        # Mapped column attribute must exist
+        assert attr is not None
+
+
+# ---------------------------------------------------------------------------
+# StudySession table — M14 §HITL
+# ---------------------------------------------------------------------------
+
+
+class TestStudySessionModel:
+    def _table(self) -> sa.Table:
+        return Base.metadata.tables["study_sessions"]
+
+    def test_table_name(self) -> None:
+        assert StudySession.__tablename__ == "study_sessions"  # type: ignore[attr-defined]
+
+    def test_pk_is_uuid(self) -> None:
+        col = self._table().c["id"]
+        assert col.primary_key
+        assert "uuid" in type(col.type).__name__.lower()
+
+    def test_participant_id_not_nullable(self) -> None:
+        col = self._table().c["participant_id"]
+        assert isinstance(col.type, sa.String)
+        assert not col.nullable
+
+    def test_participant_id_max_length(self) -> None:
+        col = self._table().c["participant_id"]
+        assert col.type.length == 64  # type: ignore[union-attr]
+
+    def test_proctor_notes_nullable_text(self) -> None:
+        col = self._table().c["proctor_notes"]
+        assert isinstance(col.type, sa.Text)
+        assert col.nullable
+
+    def test_consent_given_boolean_not_nullable(self) -> None:
+        col = self._table().c["consent_given"]
+        assert isinstance(col.type, sa.Boolean)
+        assert not col.nullable
+
+    def test_consent_given_server_default_false(self) -> None:
+        col = self._table().c["consent_given"]
+        assert col.server_default is not None
+
+    def test_started_at_timestamptz_not_nullable(self) -> None:
+        col = self._table().c["started_at"]
+        assert col.type.timezone is True  # type: ignore[union-attr]
+        assert not col.nullable
+
+    def test_started_at_server_default(self) -> None:
+        col = self._table().c["started_at"]
+        assert col.server_default is not None
+
+    def test_ended_at_timestamptz_nullable(self) -> None:
+        col = self._table().c["ended_at"]
+        assert col.type.timezone is True  # type: ignore[union-attr]
+        assert col.nullable
+
+    def test_status_string16_not_nullable(self) -> None:
+        col = self._table().c["status"]
+        assert isinstance(col.type, sa.String)
+        assert col.type.length == 16  # type: ignore[union-attr]
+        assert not col.nullable
+
+    def test_status_server_default_active(self) -> None:
+        col = self._table().c["status"]
+        assert col.server_default is not None
+
+    def test_meta_json_jsonb_not_nullable(self) -> None:
+        col = self._table().c["meta_json"]
+        assert isinstance(col.type, JSONB)
+        assert not col.nullable
+
+    def test_meta_json_server_default_empty_object(self) -> None:
+        col = self._table().c["meta_json"]
+        assert col.server_default is not None
+
+    def test_participant_id_index_exists(self) -> None:
+        index_names = {idx.name for idx in self._table().indexes}
+        assert "study_sessions_participant_id_idx" in index_names
+
+    def test_status_index_exists(self) -> None:
+        index_names = {idx.name for idx in self._table().indexes}
+        assert "study_sessions_status_idx" in index_names
+
+    def test_all_relationships_lazy_raise(self) -> None:
+        mapper = sa.inspect(StudySession)
+        for rel in mapper.relationships:
+            assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
+
+
+# ---------------------------------------------------------------------------
+# HumanRequestQueue table — M14 §HITL
+# ---------------------------------------------------------------------------
+
+
+class TestHumanRequestQueueModel:
+    def _table(self) -> sa.Table:
+        return Base.metadata.tables["human_request_queue"]
+
+    def test_table_name(self) -> None:
+        assert HumanRequestQueue.__tablename__ == "human_request_queue"  # type: ignore[attr-defined]
+
+    def test_pk_is_uuid(self) -> None:
+        col = self._table().c["id"]
+        assert col.primary_key
+        assert "uuid" in type(col.type).__name__.lower()
+
+    def test_run_id_fk_to_runs(self) -> None:
+        col = self._table().c["run_id"]
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        assert "runs.id" in str(fks[0].target_fullname)
+
+    def test_run_id_not_nullable(self) -> None:
+        col = self._table().c["run_id"]
+        assert not col.nullable
+
+    def test_request_id_varchar64_not_nullable(self) -> None:
+        col = self._table().c["request_id"]
+        assert isinstance(col.type, sa.String)
+        assert col.type.length == 64  # type: ignore[union-attr]
+        assert not col.nullable
+
+    def test_context_json_jsonb_not_nullable(self) -> None:
+        col = self._table().c["context_json"]
+        assert isinstance(col.type, JSONB)
+        assert not col.nullable
+
+    def test_context_json_server_default(self) -> None:
+        col = self._table().c["context_json"]
+        assert col.server_default is not None
+
+    def test_response_json_jsonb_nullable(self) -> None:
+        """response_json is null until the human submits a response."""
+        col = self._table().c["response_json"]
+        assert isinstance(col.type, JSONB)
+        assert col.nullable
+
+    def test_status_string16_not_nullable(self) -> None:
+        col = self._table().c["status"]
+        assert isinstance(col.type, sa.String)
+        assert col.type.length == 16  # type: ignore[union-attr]
+        assert not col.nullable
+
+    def test_status_server_default_pending(self) -> None:
+        col = self._table().c["status"]
+        assert col.server_default is not None
+
+    def test_created_at_timestamptz_not_nullable(self) -> None:
+        col = self._table().c["created_at"]
+        assert col.type.timezone is True  # type: ignore[union-attr]
+        assert not col.nullable
+
+    def test_created_at_server_default(self) -> None:
+        col = self._table().c["created_at"]
+        assert col.server_default is not None
+
+    def test_claimed_at_timestamptz_nullable(self) -> None:
+        col = self._table().c["claimed_at"]
+        assert col.type.timezone is True  # type: ignore[union-attr]
+        assert col.nullable
+
+    def test_responded_at_timestamptz_nullable(self) -> None:
+        col = self._table().c["responded_at"]
+        assert col.type.timezone is True  # type: ignore[union-attr]
+        assert col.nullable
+
+    def test_claimed_by_varchar64_nullable(self) -> None:
+        col = self._table().c["claimed_by"]
+        assert isinstance(col.type, sa.String)
+        assert col.type.length == 64  # type: ignore[union-attr]
+        assert col.nullable
+
+    def test_unique_constraint_run_request(self) -> None:
+        """UNIQUE(run_id, request_id) must exist as uq_human_request_queue_run_request."""
+        uc_names = {
+            c.name
+            for c in self._table().constraints
+            if isinstance(c, sa.UniqueConstraint)
+        }
+        assert "uq_human_request_queue_run_request" in uc_names
+
+    def test_run_id_index_exists(self) -> None:
+        index_names = {idx.name for idx in self._table().indexes}
+        assert "human_request_queue_run_id_idx" in index_names
+
+    def test_status_index_exists(self) -> None:
+        index_names = {idx.name for idx in self._table().indexes}
+        assert "human_request_queue_status_idx" in index_names
+
+    def test_created_at_index_exists(self) -> None:
+        index_names = {idx.name for idx in self._table().indexes}
+        assert "human_request_queue_created_at_idx" in index_names
+
+    def test_all_relationships_lazy_raise(self) -> None:
+        mapper = sa.inspect(HumanRequestQueue)
+        for rel in mapper.relationships:
+            assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
