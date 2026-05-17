@@ -637,24 +637,27 @@ class HierarchicalTopology:
 
         # ----------------------------------------------------------------
         # Build gateway (shared for both top + sub_team scopes)
+        # D7: honour pre-built gateway from runner first.
         # ----------------------------------------------------------------
         gateway_instance: Any = None
         if hitl_enabled and human_cfg is not None:
-            gateway_llm: Any = kwargs.get("human_gateway_llm")
-            if human_cfg.gateway == "cli":
-                gateway_instance = CLIGateway() if CLIGateway is not None else None
-            else:
-                gateway_instance = (
-                    LLMSimulatedGateway(llm=gateway_llm)
-                    if LLMSimulatedGateway is not None
-                    else None
-                )
+            gateway_instance = kwargs.get("human_gateway")
+            if gateway_instance is None:
+                gateway_llm: Any = kwargs.get("human_gateway_llm")
+                if human_cfg.gateway == "cli":
+                    gateway_instance = CLIGateway() if CLIGateway is not None else None
+                else:
+                    gateway_instance = (
+                        LLMSimulatedGateway(llm=gateway_llm)
+                        if LLMSimulatedGateway is not None
+                        else None
+                    )
 
-            if gateway_instance is None:  # pragma: no cover
-                raise ImportError(
-                    f"Gateway class for '{human_cfg.gateway}' could not be imported. "
-                    "Ensure atm.human is installed."
-                )
+                if gateway_instance is None:  # pragma: no cover
+                    raise ImportError(
+                        f"Gateway class for '{human_cfg.gateway}' could not be imported. "
+                        "Ensure atm.human is installed."
+                    )
 
         # ----------------------------------------------------------------
         # Build team subgraphs

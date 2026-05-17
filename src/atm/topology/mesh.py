@@ -211,24 +211,27 @@ class MeshTopology:
         )
         on_consensus_pending: bool = bool(human_extra.get("on_consensus_pending", False))
 
-        # Build human_peer gateway when HITL is enabled
+        # Build human_peer gateway when HITL is enabled.
+        # D7: reassign from kwargs["human_gateway"] first; no rename of this local.
         human_gateway: Any = None
         if human_enabled and human_cfg is not None:
-            gateway_llm: Any = kwargs.get("human_gateway_llm")
-            gateway_kind: str = getattr(human_cfg, "gateway", "llm_simulated")
-            if gateway_kind == "cli":
-                human_gateway = CLIGateway() if CLIGateway is not None else None
-            else:
-                human_gateway = (
-                    LLMSimulatedGateway(llm=gateway_llm)
-                    if LLMSimulatedGateway is not None
-                    else None
-                )
-            if human_gateway is None:  # pragma: no cover
-                raise ImportError(
-                    f"Gateway class for '{gateway_kind}' could not be imported. "
-                    "Ensure atm.human is installed."
-                )
+            human_gateway = kwargs.get("human_gateway")
+            if human_gateway is None:
+                gateway_llm: Any = kwargs.get("human_gateway_llm")
+                gateway_kind: str = getattr(human_cfg, "gateway", "llm_simulated")
+                if gateway_kind == "cli":
+                    human_gateway = CLIGateway() if CLIGateway is not None else None
+                else:
+                    human_gateway = (
+                        LLMSimulatedGateway(llm=gateway_llm)
+                        if LLMSimulatedGateway is not None
+                        else None
+                    )
+                if human_gateway is None:  # pragma: no cover
+                    raise ImportError(
+                        f"Gateway class for '{gateway_kind}' could not be imported. "
+                        "Ensure atm.human is installed."
+                    )
 
         # Extend agent_order with human_peer when HITL is enabled
         effective_agent_order: list[str] = list(agent_order)

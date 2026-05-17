@@ -735,9 +735,9 @@ class DebateTopology:
         human_cfg: HumanCfg | None = kwargs.get("human_cfg")
         role_router: Any = kwargs.get("role_router")
 
-        # Build gateway from human_gateway_llm kwarg (Runner pattern, mirrors chain.py).
-        # Tests may also pass a pre-built gateway directly via kwargs["gateway"].
-        gateway: HumanGateway | None = kwargs.get("gateway")
+        # Build gateway from kwargs. D7 canonical key is "human_gateway"; legacy key
+        # "gateway" is still honoured for back-compat with existing unit tests.
+        gateway: HumanGateway | None = kwargs.get("human_gateway") or kwargs.get("gateway")
         if gateway is None and human_cfg is not None and getattr(human_cfg, "enabled", False):
             _gateway_llm: Any = kwargs.get("human_gateway_llm")
             if getattr(human_cfg, "gateway", "llm_simulated") == "cli":

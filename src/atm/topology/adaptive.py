@@ -560,21 +560,24 @@ class AdaptiveTopology:
             _human_extra: dict[str, Any] = dict(getattr(human_cfg, "extra", None) or {})
             _human_can_override = bool(_human_extra.get("human_can_override_router", False))
 
-            gateway_type: str = getattr(human_cfg, "gateway", "llm_simulated")
-            if gateway_type == "cli" and _CLIGateway is not None:
-                _gateway = _CLIGateway()
-            elif _LLMSimulatedGateway is not None:
-                # Build LLMWrapper for LLMSimulatedGateway if human_gateway_llm kwarg provided.
-                # NOTE: kwarg name is "human_gateway_llm" (matches Runner.run_one contract).
-                llm_wrapper = kwargs.get("human_gateway_llm")
-                if llm_wrapper is not None:
-                    _gateway = _LLMSimulatedGateway(llm_wrapper)
-                else:
-                    _log.warning(
-                        "adaptive: human_cfg.enabled=True but no human_gateway_llm kwarg provided; "
-                        "HITL gateway unavailable — falling back to no-op advisory mode"
-                    )
-                    _hitl_enabled = False
+            # D7: honour pre-built gateway from runner first; reassign existing _gateway.
+            _gateway = kwargs.get("human_gateway") or _gateway
+            if _gateway is None:
+                gateway_type: str = getattr(human_cfg, "gateway", "llm_simulated")
+                if gateway_type == "cli" and _CLIGateway is not None:
+                    _gateway = _CLIGateway()
+                elif _LLMSimulatedGateway is not None:
+                    # Build LLMWrapper for LLMSimulatedGateway if human_gateway_llm kwarg provided.
+                    # NOTE: kwarg name is "human_gateway_llm" (matches Runner.run_one contract).
+                    llm_wrapper = kwargs.get("human_gateway_llm")
+                    if llm_wrapper is not None:
+                        _gateway = _LLMSimulatedGateway(llm_wrapper)
+                    else:
+                        _log.warning(
+                            "adaptive: human_cfg.enabled=True but no human_gateway_llm kwarg provided; "
+                            "HITL gateway unavailable — falling back to no-op advisory mode"
+                        )
+                        _hitl_enabled = False
 
         # ----------------------------------------------------------------
         # Node: phase_router_node

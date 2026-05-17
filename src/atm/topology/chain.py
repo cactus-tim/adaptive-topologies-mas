@@ -535,20 +535,26 @@ class ChainTopology:
             return _route_from_critic(state, cfg)
 
         if human_cfg is not None and human_cfg.enabled:
-            # Build gateway based on human_cfg.gateway setting.
-            # The LLM wrapper for LLMSimulatedGateway may be passed via kwargs
-            # (e.g. by Runner); if absent, it is left as None and the class is
-            # expected to be patched in tests.
-            gateway_llm: Any = kwargs.get("human_gateway_llm")
-            if human_cfg.gateway == "cli":
-                gateway_instance: Any = CLIGateway() if CLIGateway is not None else None
+            # D7: honour pre-built gateway from runner (canonical key: human_gateway).
+            # If provided, use it directly and skip inline construction entirely.
+            human_gateway: Any = kwargs.get("human_gateway")
+            if human_gateway is not None:
+                gateway_instance: Any = human_gateway
             else:
-                # default: llm_simulated
-                gateway_instance = (
-                    LLMSimulatedGateway(llm=gateway_llm)
-                    if LLMSimulatedGateway is not None
-                    else None
-                )
+                # Build gateway based on human_cfg.gateway setting.
+                # The LLM wrapper for LLMSimulatedGateway may be passed via kwargs
+                # (e.g. by Runner); if absent, it is left as None and the class is
+                # expected to be patched in tests.
+                gateway_llm: Any = kwargs.get("human_gateway_llm")
+                if human_cfg.gateway == "cli":
+                    gateway_instance = CLIGateway() if CLIGateway is not None else None
+                else:
+                    # default: llm_simulated
+                    gateway_instance = (
+                        LLMSimulatedGateway(llm=gateway_llm)
+                        if LLMSimulatedGateway is not None
+                        else None
+                    )
 
             if gateway_instance is None:  # pragma: no cover
                 raise ImportError(

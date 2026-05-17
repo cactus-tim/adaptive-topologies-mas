@@ -448,17 +448,21 @@ class StarTopology:
             # build_human_node_factory that maps action → signals["human_phase_override"].
             # _override_coordinator = bool((human_cfg.extra or {}).get("override_coordinator"))
 
-            # Build gateway
-            gateway_llm: Any = kwargs.get("human_gateway_llm")
-            if human_cfg.gateway == "cli":
-                gateway_instance: Any = CLIGateway() if CLIGateway is not None else None
+            # Build gateway — D7: honour pre-built gateway from runner first.
+            human_gateway: Any = kwargs.get("human_gateway")
+            if human_gateway is not None:
+                gateway_instance: Any = human_gateway
             else:
-                # default: llm_simulated
-                gateway_instance = (
-                    LLMSimulatedGateway(llm=gateway_llm)
-                    if LLMSimulatedGateway is not None
-                    else None
-                )
+                gateway_llm: Any = kwargs.get("human_gateway_llm")
+                if human_cfg.gateway == "cli":
+                    gateway_instance = CLIGateway() if CLIGateway is not None else None
+                else:
+                    # default: llm_simulated
+                    gateway_instance = (
+                        LLMSimulatedGateway(llm=gateway_llm)
+                        if LLMSimulatedGateway is not None
+                        else None
+                    )
 
             if gateway_instance is None:  # pragma: no cover
                 raise ImportError(
