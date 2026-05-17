@@ -90,6 +90,7 @@ import logging
 import time
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -113,8 +114,6 @@ from atm.phases.guards import (
     _violates_min_dwell,
 )
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
-from pathlib import Path
-
 from atm.phases.topology_router import (
     LLMTopologyRouter,
     OracleTopologyRouter,
@@ -186,6 +185,7 @@ def apply_transition_gate(
     topology_decision: TopologyDecision,
     *,
     run_id: str | None = None,
+    pre_subgraph_phase: Phase | None = None,
 ) -> dict[str, Any]:
     """Apply state-transfer rules from arch.md §7.7 and record a TopologyTransition.
 
@@ -207,10 +207,20 @@ def apply_transition_gate(
     - topology_transitions     — append new TopologyTransition (every tick)
 
     Args:
-        state:             Full GraphState dict.
-        phase_decision:    PhaseDecision from PhaseRouter.
-        topology_decision: TopologyDecision from TopologyRouter (possibly GuardedRouter).
-        run_id:            Optional UUID string for TopologyTransition.run_id.
+        state:               Full GraphState dict.
+        phase_decision:      PhaseDecision from PhaseRouter.
+        topology_decision:   TopologyDecision from TopologyRouter (possibly GuardedRouter).
+        run_id:              Optional UUID string for TopologyTransition.run_id.
+        pre_subgraph_phase:  Phase observed BEFORE dispatch_topology_node ran the
+                             active sub-graph.  When the sub-graph internally
+                             advances the FSM (star coordinator goes
+                             planning→execution inside a single meta-tick) the
+                             post-subgraph ``shared.phase`` already reflects the
+                             new phase, so deriving phase_changed from that
+                             value alone misses the transition.  Passing the
+                             pre-dispatch phase here lets us detect the
+                             subgraph-driven advance and properly clear inboxes
+                             and the previous-phase guard signal.
 
     Returns:
         New state dict with all mutations applied.
@@ -240,14 +250,15 @@ def apply_transition_gate(
         else subgraph_phase
     )
 
-    # The "original" phase before this tick (before subgraph ran).
-    # Since subgraph may have changed shared.phase, we use phase_started_at_iter
-    # to infer what the phase was at the start of the tick.
-    # Approximation: if subgraph returned a different phase, the "current" phase
-    # for state-transfer purposes is the subgraph's input phase.
-    # We record from_phase in the transition as the pre-subgraph phase.
-    # For simplicity, treat shared.phase as the authoritative post-subgraph value.
-    current_phase: Phase = subgraph_phase  # for transition record (from_topology context)
+    # current_phase is the phase observed BEFORE the subgraph ran in this
+    # meta-tick.  Callers pass it via pre_subgraph_phase when they captured
+    # it in a closure slot prior to dispatch.  Falling back to subgraph_phase
+    # (post-dispatch) is the legacy behaviour: it loses subgraph-internal
+    # phase advances and skips state-transfer cleanup, but keeps existing
+    # callers that don't yet thread the pre-dispatch phase through.
+    current_phase: Phase = (
+        pre_subgraph_phase if pre_subgraph_phase is not None else subgraph_phase
+    )
 
     current_topology: str | None = shared.get("active_topology")
     next_topology: str = topology_decision.topology
@@ -264,6 +275,14 @@ def apply_transition_gate(
         shared["phase"] = next_phase
         shared["phase_started_at_iter"] = iter_total
         phase_started_at = iter_total
+        # Per-phase switch counter is consumed by SwitchGuards.max_per_phase.
+        # Reset to 0 whenever the phase advances so each new phase starts with
+        # a clean per-phase switch budget.  Earlier revisions never wrote this
+        # field, leaving SwitchGuards._violates_max_per_phase to fall back to
+        # len(topology_history), which conflated per-phase with per-run.
+        _signals_for_phase_reset: dict[str, Any] = dict(shared.get("signals") or {})
+        _signals_for_phase_reset["phase_switch_count"] = 0
+        shared["signals"] = _signals_for_phase_reset
 
     # ---- Topology update ----
     if topology_changed or current_topology is None:
@@ -272,9 +291,20 @@ def apply_transition_gate(
         topo_started_at = iter_total
 
         if topology_changed:
-            # Track switch count
+            # Track per-run switch count
             switch_count: int = int(shared.get("topology_switch_count", 0))
             shared["topology_switch_count"] = switch_count + 1
+
+            # Track per-phase switch count (consumed by SwitchGuards.max_per_phase).
+            # We update signals here even if phase did not change so the counter
+            # reflects every switch within the current phase.  When phase
+            # changed earlier in this function, the counter was just reset to
+            # 0; the increment below produces 1, correctly reflecting "this is
+            # the first switch in the newly-entered phase".
+            _signals_with_phase_count: dict[str, Any] = dict(shared.get("signals") or {})
+            _prev_phase_count: int = int(_signals_with_phase_count.get("phase_switch_count", 0))
+            _signals_with_phase_count["phase_switch_count"] = _prev_phase_count + 1
+            shared["signals"] = _signals_with_phase_count
 
             # Update topology_history (short tail for cooldown checks)
             history: list[str] = list(shared.get("topology_history") or [])
@@ -330,6 +360,17 @@ def apply_transition_gate(
             a["outbox"] = []
             cleaned_agents[agent_id] = a
         new_state["agents"] = cleaned_agents
+
+    # ---- Consume single-use advisor hint after every tick ----
+    # signals['human_advisor_hint'] is a one-shot suggestion: regardless of
+    # whether the rule router acted on it, the topology router got to see
+    # it on this tick.  Carrying it forward would make the same hint
+    # influence every subsequent tick until a new hint overwrites it, which
+    # is rarely the operator's intent (they wrote it for one decision).
+    _hint_signals: dict[str, Any] = dict(shared.get("signals") or {})
+    if "human_advisor_hint" in _hint_signals:
+        del _hint_signals["human_advisor_hint"]
+        shared["signals"] = _hint_signals
 
     # ---- Record TopologyTransition (every tick, even no-change) ----
     _run_id = uuid.UUID(run_id) if run_id else uuid.uuid4()
@@ -545,6 +586,10 @@ class AdaptiveTopology:
         # ----------------------------------------------------------------
         _phase_dec_slot: list[PhaseDecision | None] = [None]
         _topo_dec_slot: list[TopologyDecision | None] = [None]
+        # Pre-subgraph phase snapshot.  Captured by phase_router_node (which
+        # runs before dispatch) and consumed by transition_gate_node so
+        # apply_transition_gate can detect subgraph-internal phase advances.
+        _pre_subgraph_phase_slot: list[Phase | None] = [None]
 
         # ----------------------------------------------------------------
         # HITL: human_advisor gateway setup (M9.1 / M9.2)
@@ -581,11 +626,18 @@ class AdaptiveTopology:
         # ----------------------------------------------------------------
 
         async def phase_router_node(state: GraphState) -> dict[str, Any]:
-            """Invoke PhaseRouter; store decision in closure slot (not in state)."""
+            """Invoke PhaseRouter; capture pre-dispatch phase and decision in slots."""
+            _shared_now: dict[str, Any] = dict(state.get("shared") or {})
+            _raw_phase = _shared_now.get("phase", Phase.PLANNING)
+            _pre_phase: Phase = (
+                Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
+            )
+            _pre_subgraph_phase_slot[0] = _pre_phase
+
             decision: PhaseDecision = await phase_router.decide(state)
             _log.debug(
                 "adaptive phase_router: %s → %s (decided_by=%s)",
-                (state.get("shared") or {}).get("phase"),
+                _shared_now.get("phase"),
                 decision.next_phase,
                 decision.decided_by,
             )
@@ -880,20 +932,46 @@ class AdaptiveTopology:
                 )
                 topo_name = "linear"
 
-            # Increment iter_total before delegating to subgraph
-            iter_total: int = int(shared.get("iter_total", 0)) + 1
-            shared["iter_total"] = iter_total
+            # Track meta-tick count separately from iter_total. iter_total is
+            # the sole responsibility of the dispatched sub-topology (chain /
+            # star / mesh / debate / hierarchical), each of which increments it
+            # inside its own loop. Incrementing it here as well would
+            # double-count adaptive's work relative to a baseline static run
+            # with the same cfg.max_iterations, biasing every iter-based
+            # metric against adaptive. We keep meta_ticks as a hard safety cap
+            # against infinite meta-graph spin (separate from iter_total).
+            meta_ticks: int = int(shared.get("meta_ticks", 0)) + 1
+            shared["meta_ticks"] = meta_ticks
+
+            iter_total: int = int(shared.get("iter_total", 0))
 
             _log.info(
-                "adaptive dispatch: tick=%d → subgraph=%r",
+                "adaptive dispatch: meta_tick=%d iter_total=%d → subgraph=%r",
+                meta_ticks,
                 iter_total,
                 topo_name,
             )
 
-            # Check global tick cap
-            max_ticks: int = cfg.max_iterations or _DEFAULT_MAX_TICKS
-            if iter_total > max_ticks:
-                _log.info("adaptive: max_ticks=%d reached, routing to END", max_ticks)
+            # Safety: cap on meta-ticks to prevent infinite spin.
+            if meta_ticks > _DEFAULT_MAX_TICKS:
+                _log.info(
+                    "adaptive: meta_ticks=%d > %d safety cap, routing to END",
+                    meta_ticks,
+                    _DEFAULT_MAX_TICKS,
+                )
+                shared["active_topology"] = topo_name
+                return {"shared": shared}
+
+            # iter_total guard: enforce cfg.max_iterations.  Sub-topologies
+            # also enforce this, but checking here lets us short-circuit before
+            # paying the cost of one more subgraph compile / invoke.
+            max_iter: int = cfg.max_iterations or _DEFAULT_MAX_TICKS
+            if iter_total >= max_iter:
+                _log.info(
+                    "adaptive: iter_total=%d >= max_iterations=%d, routing to END",
+                    iter_total,
+                    max_iter,
+                )
                 shared["active_topology"] = topo_name
                 return {"shared": shared}
 
@@ -954,6 +1032,7 @@ class AdaptiveTopology:
                 phase_decision,
                 topo_decision,
                 run_id=run_id_str,
+                pre_subgraph_phase=_pre_subgraph_phase_slot[0],
             )
 
             # ---- Dispatch custom events so ExperimentCallback persists them ----
@@ -988,6 +1067,7 @@ class AdaptiveTopology:
             # Clear slots for next tick
             _phase_dec_slot[0] = None
             _topo_dec_slot[0] = None
+            _pre_subgraph_phase_slot[0] = None
 
             return new_state
 
@@ -996,18 +1076,41 @@ class AdaptiveTopology:
         # ----------------------------------------------------------------
 
         def _should_end(state: GraphState) -> str:
-            """Return '__end__' if done or max ticks exceeded, else loop."""
+            """Return '__end__' if done or max iterations / meta-ticks exceeded.
+
+            Termination conditions (any of):
+              - shared.phase == DONE  → success / phase FSM reached terminal
+              - shared.iter_total >= cfg.max_iterations → work budget exhausted
+                (iter_total is incremented only by sub-topologies; this matches
+                the semantics of cfg.max_iterations in static topologies)
+              - shared.meta_ticks  >= _DEFAULT_MAX_TICKS → safety net against
+                infinite meta-graph spin even when sub-graph never advances
+                iter_total (e.g. degenerate mock subgraph in tests).
+            """
             shared: dict[str, Any] = dict(state.get("shared") or {})
             phase: Phase = shared.get("phase", Phase.PLANNING)
             iter_total: int = int(shared.get("iter_total", 0))
-            max_ticks: int = cfg.max_iterations or _DEFAULT_MAX_TICKS
+            meta_ticks: int = int(shared.get("meta_ticks", 0))
+            max_iter: int = cfg.max_iterations or _DEFAULT_MAX_TICKS
 
             if phase == Phase.DONE or str(phase) == "done":
                 _log.info("adaptive: phase=done → END")
                 return END
 
-            if iter_total >= max_ticks:
-                _log.info("adaptive: iter_total=%d >= max_ticks=%d → END", iter_total, max_ticks)
+            if iter_total >= max_iter:
+                _log.info(
+                    "adaptive: iter_total=%d >= max_iterations=%d → END",
+                    iter_total,
+                    max_iter,
+                )
+                return END
+
+            if meta_ticks >= _DEFAULT_MAX_TICKS:
+                _log.info(
+                    "adaptive: meta_ticks=%d >= safety cap %d → END",
+                    meta_ticks,
+                    _DEFAULT_MAX_TICKS,
+                )
                 return END
 
             return "phase_router_node"
