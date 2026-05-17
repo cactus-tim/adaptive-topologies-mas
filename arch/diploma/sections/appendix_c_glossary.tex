@@ -13,9 +13,13 @@
 инфраструктура, эксперимент и статистика. В пределах каждого
 блока термины упорядочены логически от общего к частному.
 
+\begingroup
+\small
+\begin{multicols}{2}
+
 \subsection*{Мульти-агентные системы и языковые модели}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{Большая языковая модель} (от англ. Large Language
    Model, LLM)] Глубокая нейронная сеть с большим числом параметров,
    обученная на текстовом корпусе для предсказания следующего
@@ -67,7 +71,7 @@
 
 \subsection*{Коммуникационные топологии}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{Коммуникационная топология}] Направленный граф,
    описывающий допустимые маршруты обмена сообщениями между
    агентами мульти-агентной системы и порядок их активации.
@@ -94,7 +98,7 @@
 
 \subsection*{Фазы и маршрутизаторы}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{Фаза решения задачи}] Состояние конечного автомата
    процесса решения. Множество фаз содержит четыре значения ---
    планирование, исполнение, проверка и завершение.
@@ -126,7 +130,7 @@
 
 \subsection*{Человек в контуре управления}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{Человек в контуре управления} (от англ. Human-in-the-
    Loop, HITL)] Парадигма, в которой автоматизированная система
    обращается к человеку за решением, оценкой или подтверждением
@@ -161,7 +165,7 @@
 
 \subsection*{Метрики}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{Качество решения} ($q$)] Агрегированный показатель
    качества в диапазоне $[0, 1]$. Конкретная формула зависит от
    класса задач --- доля прошедших юнит-тестов, точное совпадение
@@ -208,7 +212,7 @@
 
 \subsection*{Инфраструктура реализации}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{LangGraph}] Библиотека на языке Python для построения
    и исполнения направленных графов состояния с поддержкой
    асинхронных вызовов, чекпойнтера и параллельного выполнения
@@ -230,7 +234,7 @@
 
 \subsection*{Эксперимент и статистика}
 
-\begin{description}[leftmargin=*, style=nextline]
+\begin{description}[leftmargin=2em, itemsep=0pt]
 \item[\textbf{Корпус задач}] Размеченное множество тестовых задач
    одного класса с заранее определенной процедурой автоматической
    оценки ответа. В работе используются четыре корпуса.
@@ -274,3 +278,5 @@
    которой для каждой задачи оптимальная конфигурация вычисляется
    на остальных задачах того же класса.
 \end{description}
+\end{multicols}
+\endgroup
