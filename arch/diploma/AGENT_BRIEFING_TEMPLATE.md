@@ -166,6 +166,19 @@ expectations and any methodological caveats discovered.
 | E3 | e1_top3.json + oracle file + warning про retry duplicates (как в E3 был!) |
 | E4 | E3 champion config + E2 best-role-per-task таблица |
 | E5 | E4 champion + survey schema + Latin square design |
+| confirmation_e3 | original E3 results (aggregated rule vs llm: mean_q, mean_cost) — для сравнения. Worker: `cerebras:qwen-3-235b-a22b-instruct-2507` (cross-family). Judge не менялся. Expected sweep after dedupe: **360** (2 routers × 4 tasks × 15 shuffle × 3 seeds). Only rule + llm (oracle skipped — see handoff §5). |
+| confirmation_e4 | original E4 results aggregated by role_router + E3 confirmation results for chained narrative. Same qwen worker. |
+
+### Особый фокус для confirmation experiments
+
+Question framing — **НЕ** "кто winner на qwen", а:
+
+1. **Сохраняется ли direction исходной delta?** Если на gpt-oss было `rule.mean_q > llm.mean_q` на 0.021 — на qwen тоже `rule > llm`?
+2. **Сохраняется ли magnitude в близком range?** Delta ±50% от исходной — "confirmation"; >2× — "weak confirmation"; смена знака — "не воспроизводится / family-specific artefact".
+3. **Сохраняется ли cost-ratio rule:llm ≈ 2.3×?** Цена per-token у qwen другая (0.60/1.20 vs 0.35/0.75 у gpt-oss), но **отношение** rule_cost / llm_cost внутри одной модели должно сохраниться если router-decisions structurally идентичны.
+4. **Сохраняется ли per-task rank-order?** E1 на gpt-oss дал: commongen→debate, dabench→debate, gsm8k→star, humaneval→chain. На qwen rank может смениться — это **не bug confirmation**, это переоткрытие что best-static topology family-зависим.
+
+Дай агенту **обе таблицы** (исходная E3 + новая qwen E3) бок-о-бок, чтобы он мог считать delta-of-delta. Не оставляй "сравни сам найди исходные числа" — он потратит tool calls.
 
 ## Lessons learned (по итогам сессий)
 

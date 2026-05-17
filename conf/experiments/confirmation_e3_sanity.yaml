@@ -1,0 +1,58 @@
+# Confirmation E3 Sanity — wiring smoke for Box A operator.
+#
+# Before launching the full 360-run confirmation_e3.yaml, run this 2-cell smoke
+# to validate:
+#   - cerebras:qwen-3-235b-a22b-instruct-2507 endpoint is live + accessible with current CEREBRAS_API_KEY
+#   - build_llm() factory does not break on qwen model_id
+#   - pricing.yaml has the qwen entry (no "Unknown model" error)
+#   - topology_router sweep produces 2 distinct cells (router != ignored)
+#   - judge openai:gpt-4.1-mini still works alongside qwen workers
+#
+# Size: 2 routers × 1 task × 1 shuffle × 1 seed = 2 cells. ~$0.20, ~2 min.
+# If smoke FAILS — do NOT launch confirmation_e3.yaml; debug first.
+#
+# NOTE: yaml `include` is single-level only — we include e3_full directly
+# and duplicate the qwen-3-235b model overrides (mirrors confirmation_e3.yaml).
+
+include: e3_full.yaml
+
+name: confirmation_e3_sanity
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.50
+  per_experiment_usd: 1.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 2
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    task.name: [humaneval]
+    task.shuffle_seed: [0]
+    topology.extra.adaptive.topology_router:
+      - rule
+      - llm
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
