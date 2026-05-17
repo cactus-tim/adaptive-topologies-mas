@@ -1,0 +1,158 @@
+{
+  "exp_id": "272bb2cf-e1c2-4e0d-96c8-432f4e5f9a29",
+  "mode_task_matrix": {
+    "fixed/commongen": {
+      "cost": 0.00521,
+      "n": 45,
+      "q": 0.568,
+      "std": 0.0731,
+      "wall_s": 278.5
+    },
+    "fixed/dabench": {
+      "cost": 0.03118,
+      "n": 45,
+      "q": 0.1556,
+      "std": 0.3452,
+      "wall_s": 864.9
+    },
+    "fixed/gsm8k": {
+      "cost": 0.00308,
+      "n": 45,
+      "q": 0.9778,
+      "std": 0.1491,
+      "wall_s": 141.2
+    },
+    "fixed/humaneval": {
+      "cost": 0.00799,
+      "n": 45,
+      "q": 0.9111,
+      "std": 0.2878,
+      "wall_s": 240.6
+    },
+    "llm/commongen": {
+      "cost": 0.00485,
+      "n": 45,
+      "q": 0.5914,
+      "std": 0.0899,
+      "wall_s": 220.5
+    },
+    "llm/dabench": {
+      "cost": 0.02682,
+      "n": 45,
+      "q": 0.1815,
+      "std": 0.3621,
+      "wall_s": 438.3
+    },
+    "llm/gsm8k": {
+      "cost": 0.00439,
+      "n": 45,
+      "q": 0.9556,
+      "std": 0.2084,
+      "wall_s": 164.3
+    },
+    "llm/humaneval": {
+      "cost": 0.01064,
+      "n": 45,
+      "q": 0.8444,
+      "std": 0.3665,
+      "wall_s": 317.6
+    },
+    "rule/commongen": {
+      "cost": 0.00454,
+      "n": 45,
+      "q": 0.5862,
+      "std": 0.0828,
+      "wall_s": 157.3
+    },
+    "rule/dabench": {
+      "cost": 0.03107,
+      "n": 45,
+      "q": 0.1778,
+      "std": 0.3665,
+      "wall_s": 765.3
+    },
+    "rule/gsm8k": {
+      "cost": 0.00357,
+      "n": 45,
+      "q": 0.9778,
+      "std": 0.1491,
+      "wall_s": 171.3
+    },
+    "rule/humaneval": {
+      "cost": 0.00856,
+      "n": 45,
+      "q": 0.9778,
+      "std": 0.1491,
+      "wall_s": 329.2
+    }
+  },
+  "mode_totals": {
+    "fixed": {
+      "mean_cost": 0.01186,
+      "mean_q": 0.6531,
+      "mean_wall_s": 381.3,
+      "n": 180
+    },
+    "llm": {
+      "mean_cost": 0.01168,
+      "mean_q": 0.6432,
+      "mean_wall_s": 285.2,
+      "n": 180
+    },
+    "rule": {
+      "mean_cost": 0.01193,
+      "mean_q": 0.6799,
+      "mean_wall_s": 355.8,
+      "n": 180
+    }
+  },
+  "per_task_winner": {
+    "commongen": {
+      "delta_vs_fixed": 0.0234,
+      "mode": "llm",
+      "q": 0.5914
+    },
+    "dabench": {
+      "delta_vs_fixed": 0.0259,
+      "mode": "llm",
+      "q": 0.1815
+    },
+    "gsm8k": {
+      "delta_vs_fixed": 0.0,
+      "mode": "fixed",
+      "q": 0.9778
+    },
+    "humaneval": {
+      "delta_vs_fixed": 0.0667,
+      "mode": "rule",
+      "q": 0.9778
+    }
+  },
+  "role_distribution": {
+    "fixed": {
+      "reviewer": 180
+    },
+    "llm": {
+      "coordinator": 159,
+      "reviewer": 21
+    },
+    "rule": {
+      "coordinator": 177,
+      "peer": 3
+    }
+  },
+  "rq4": {
+    "fixed_q": 0.6531,
+    "llm_confirmed": false,
+    "llm_delta": -0.0099,
+    "llm_q": 0.6432,
+    "rule_confirmed": true,
+    "rule_delta": 0.0268,
+    "rule_q": 0.6799
+  },
+  "status_totals": {
+    "completed": 540
+  },
+  "total_cost_usd": 0,
+  "wall_time_h": 2.1039
+}
