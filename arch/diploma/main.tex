@@ -34,9 +34,10 @@
 % Методичка: левое поле >= 2см. Стандарт ВКР: левое 2.5 cm, правое 1.5 cm.
 \usepackage[left=2.5cm, right=1.5cm, top=2cm, bottom=2cm]{geometry}
 \usepackage{setspace}
-\onehalfspacing                  % 1.5 (в пределах 1.3--1.5)
+\setstretch{1.3}                 % 1.3 (в пределах допуска методички 1.3--1.5)
 \usepackage{indentfirst}
 \setlength{\parindent}{1cm}      % красная строка 1 см
+\setcounter{tocdepth}{1}         % в оглавлении --- только до subsection
 
 %%% --- Графика, ссылки, таблицы, формулы ---------------------------- %%%
 \usepackage{graphicx}
@@ -81,14 +82,21 @@
     {\normalfont\large\bfseries}{\thesubsection}{1em}{}
 \titleformat{\subsubsection}
     {\normalfont\normalsize\bfseries}{\thesubsubsection}{1em}{}
-\titlespacing*{\section}{0pt}{1.2\baselineskip}{0.6\baselineskip}
-\titlespacing*{\subsection}{0pt}{1.0\baselineskip}{0.5\baselineskip}
+\titlespacing*{\section}{0pt}{0.8\baselineskip}{0.4\baselineskip}
+\titlespacing*{\subsection}{0pt}{0.6\baselineskip}{0.3\baselineskip}
+\titlespacing*{\subsubsection}{0pt}{0.5\baselineskip}{0.25\baselineskip}
 
 %%% --- Колонтитулы ------------------------------------------------- %%%
 \pagestyle{plain}
 
 %%% --- Листинги (для YAML-конфигов в приложении Б) ----------------- %%%
 \usepackage{listings}
+\usepackage{multicol}
+\usepackage[section]{placeins}      % \FloatBarrier на границах разделов
+\renewcommand{\textfraction}{0.05}  % минимум 5% текста на странице с float
+\renewcommand{\topfraction}{0.95}   % float может занимать до 95% верха
+\renewcommand{\bottomfraction}{0.95}
+\renewcommand{\floatpagefraction}{0.6} % float-only page если >=60% заполнено
 \lstset{
     basicstyle=\ttfamily\small,
     breaklines=true,
