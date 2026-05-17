@@ -6,8 +6,10 @@
 # Active experimental lineup (Variant B'.1, decided 2026-05-15):
 #   - workers / critic / summarizer / router / HITL-sim → cerebras:gpt-oss-120b
 #   - judge (LLM-as-judge, evaluation) → openai:gpt-4.1-mini (cross-family independence)
-#   - confirmation primary (cross-family on Cerebras) → cerebras:zai-glm-4.7
-#   - confirmation cross-family → openai:gpt-4o
+#   - confirmation primary (cross-family on Cerebras) → cerebras:qwen-3-235b-a22b-instruct-2507
+#     (revised 2026-05-17: qwen is 3.75× cheaper than zai-glm-4.7 at comparable cross-family signal).
+#   - confirmation backup if qwen deprecates → cerebras:zai-glm-4.7
+#   - both Cerebras confirmation models deprecate 2026-05-27 → run confirmation before that date.
 version: 1
 
 models:
@@ -78,10 +80,21 @@ models:
   cerebras:zai-glm-4.7:
     # Cerebras Z.ai GLM 4.7 — 355B preview model, ~1000 tok/s.
     # Used for cross-family confirmation runs on Cerebras (different model family from gpt-oss).
-    # Status: PREVIEW (Cerebras catalog) — pricing not yet published publicly.
-    # Source: https://inference-docs.cerebras.ai/models/overview
-    input_per_1k: 0.0006  # VERIFY — preview-tier estimate; sync with Cerebras dashboard before E4 confirmation
-    output_per_1k: 0.0022  # VERIFY
+    # Status: PREVIEW, deprecating 2026-05-27 (Cerebras catalog).
+    # Source: pricepertoken.com/endpoints/cerebras (2026-05) — $2.25 in / $2.75 out per 1M.
+    input_per_1k: 0.00225
+    output_per_1k: 0.00275
+    cached_input_per_1k: 0.0
+    cache_read_per_1k: 0.0
+    cache_write_per_1k: 0.0
+
+  cerebras:qwen-3-235b-a22b-instruct-2507:
+    # Cerebras Qwen3-235B-A22B-Instruct (2025-07 release) — 235B MoE, ~1400 tok/s.
+    # PRIMARY confirmation model (cross-family vs gpt-oss-120b, cheaper than zai-glm).
+    # Status: PREVIEW, deprecating 2026-05-27 (Cerebras catalog).
+    # Source: pricepertoken.com/endpoints/cerebras (2026-05) — $0.60 in / $1.20 out per 1M.
+    input_per_1k: 0.00060
+    output_per_1k: 0.00120
     cached_input_per_1k: 0.0
     cache_read_per_1k: 0.0
     cache_write_per_1k: 0.0
