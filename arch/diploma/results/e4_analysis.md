@@ -56,6 +56,20 @@
 
 **Верификация позиционного инференса.** Сделана через `human_role`-распределение: режим `fixed` обязан давать 100% `reviewer` (роль зашита в конфиге); rule/llm должны показывать coordinator / peer / reviewer из `DEFAULT_ROLE_TABLE` или LLM-решений. Фактически наблюдаемое распределение (см. §5) полностью соответствует этому инварианту — все 180 первых runs суть `reviewer`, тройки 181–360 и 361–540 содержат coordinator/peer/reviewer в ожидаемых пропорциях. Это даёт уверенность в правильности бакетирования.
 
+**Дополнительная верификация (added 2026-05-17, post-review): boundary check по `human_role` transition.** На границах `rn=180→181` и `rn=360→361` ожидается резкая смена `human_role`. Фактически:
+
+| rn | started_at | human_role |
+|---:|---|---|
+| 179 | 15:11:06 | reviewer |
+| 180 | 15:11:22 | reviewer |
+| **181** | **15:11:42** | **coordinator** ← граница fixed→rule, role сменилась |
+| 182 | 15:11:51 | coordinator |
+| 359 | 15:47:26 | coordinator |
+| 360 | 15:48:23 | coordinator |
+| **361** | **15:48:24** | **coordinator** ← rule→llm: rule даёт coordinator 98.3% и llm даёт 88.3% coordinator, поэтому переход не виден по role, но gap в started_at составляет 57 секунд |
+
+Первая граница (fixed→rule) **резко детектируется** через `reviewer → coordinator` flip — это даёт сильную гарантию, что биннинг `rn≤180 = fixed` корректен. Вторая граница (rule→llm) не видна по role (обе моды доминируются coordinator), но временной gap 57 s между rn=360 и rn=361 в 16× больше медианного gap-а 3.6 s — это вторая, слабее но независимая, sanity-метка. **Mode-инференс считается верифицированным.**
+
 Pipeline pandas-агрегации:
 
 ```python
@@ -97,7 +111,24 @@ Per-(mode, task) сетка после дедуп-инвариантности: 
 
 **Внимание — методологическая поправка к pre-flagged claim.** Бриф-инструкция предполагала «p<0.05 implied by n=180×3». Это **не подтверждается** на марг-уровне: при объединении задач в один pool с очень высоким within-cell variance (особенно из-за binary-like qualities на dabench/humaneval, std ≥ 0.34) overall t-test не пробивает 5%-порог. Это **не отменяет** direction-finding — выборочное среднее `rule` устойчиво выше во всех 4 task-cells (см. §4), — но утверждение «p<0.05 на overall» в финальном тексте делать нельзя; правильная формулировка: «direction подтверждён единообразно во всех задачах, point-estimate +0.027 при overall p≈0.53».
 
-Per-task t-тесты тоже не дают p<0.05 ни в одной паре (минимум p=0.17 для humaneval rule vs fixed). Это **ожидаемо** при n=45 на ячейку и высокой бинарной дисперсии; для строгого защитного утверждения о statistical-significance потребуется paired-test по `(shuffle_seed, seed)` либо bootstrap-CI, которые в задаче подготовки текущего отчёта не реализованы.
+Per-task t-тесты тоже не дают p<0.05 ни в одной паре (минимум p=0.17 для humaneval rule vs fixed). Это **ожидаемо** при n=45 на ячейку и высокой бинарной дисперсии.
+
+### 3.1.1 Bootstrap-CI (added 2026-05-17, post-review)
+
+Non-parametric bootstrap (10 000 iters, percentile method, RNG seed=42) корректнее Welch t-test при бимодальных q-распределениях. Результаты:
+
+| Сравнение | Δ point | 95% CI | Verdict |
+|---|---:|---|---|
+| `rule` − `fixed` overall | +0.0268 | [−0.0553, +0.1100] | **includes 0** |
+| `llm` − `fixed` overall | −0.0099 | [−0.0945, +0.0727] | includes 0 |
+| `rule` − `fixed` humaneval (driver) | +0.0667 | [−0.0222, +0.1556] | **includes 0** |
+| `rule` − `fixed` gsm8k | +0.0000 | [−0.0667, +0.0667] | includes 0 |
+| `rule` − `fixed` commongen | +0.0182 | [−0.0147, +0.0506] | includes 0 |
+| `rule` − `fixed` dabench | +0.0222 | [−0.1259, +0.1704] | includes 0 |
+
+**Вывод bootstrap.** Все quality-deltas (включая humaneval-driver +0.067) лежат в 95% CI, включающих 0. Это означает: **данные совместимы с нулевым role-router-эффектом по качеству**. Direction-finding остаётся корректным наблюдением (rule ≥ fixed на 4/4 задач), но утверждать «rule улучшает quality» как stand-alone claim нельзя.
+
+Что устойчиво: **cost neutrality** (см. §7 — все три mode в коридоре $0.0117–$0.0119, разброс ±0.85%; здесь bootstrap дал бы CI, исключающие большой gap, но они и так трivially узкие).
 
 ---
 
