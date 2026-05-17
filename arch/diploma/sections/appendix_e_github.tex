@@ -37,10 +37,9 @@ GitLab, Bitbucket, Яндекс.Диск) выбран GitHub --- благода
 \item[\textbf{Воспроизведение результатов}] конфигурации
    экспериментов главы~\ref{sec:experiments} размещены в
    директории \code{conf/experiments/}. Запуск одиночного
-   эксперимента --- \code{atm run --config conf/experiments/e1.yaml};
-   запуск грида --- \code{atm grid --config conf/experiments/e1.yaml}.
-   Проверки работоспособности на детерминированном \code{FakeLLM}
-   --- \code{atm replay --record tests/fixtures/replay/}.
+   эксперимента~--- \code{atm run --config conf/experiments/e1.yaml};
+   запуск грид-эксперимента~--- \code{atm grid --config
+   conf/experiments/e1.yaml}.
 \item[\textbf{Служебные артефакты}] кеши, журналы прогонов и
    временные файлы в репозиторий не включены; они генерируются
    локально в директориях \code{.cache/} и \code{runs/}, исключенных
