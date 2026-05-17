@@ -10,7 +10,8 @@
 
 **Запуск:** 2026-05-16 → 2026-05-17, git `0fdd727`, primary `cerebras:gpt-oss-120b` (`reasoning_effort=low` workers / `high` critic), judge `openai:gpt-4.1-mini` (self-consistency × 3), HITL — `llm_simulated` через `openai:gpt-4.1-mini`, фиксированная роль `reviewer` (`role_router=fixed`).
 **Топология:** `adaptive` (L2 meta-graph, intra-phase + phase-bound switching), `subgraph_max_iterations=4`, `max_iterations=6`, switch-guards включены (`min_dwell_iters=1`, `cooldown_iters=2`, `max_per_run=6`, `max_per_phase=3`).
-**Oracle-источник:** `data/oracle/e1_leave_one_out.json` (после пересборки в E1 commit `d6cfcbd` — per-task top-1 из E1, см. `arch/diploma/results/e1_analysis.md §6`).
+**Oracle-источник:** `data/oracle/e1_leave_one_out.json` (после пересборки в E1 commit `d6cfcbd`).
+⚠ **Имя файла исторически называется «leave-one-out», но фактическое содержимое — `per-task top-1 lookup` из тех же E1-данных, что используются и в E3.** Это **in-sample optimal topology selection per task_id** (не true LOO), и формально это **upper bound «при знании task_id и известном in-sample winner»**, не upper bound на out-of-distribution deployment. См. `arch/diploma/results/e1_analysis.md §6`.
 **Объём после дедупа:** **540 runs** (3 router × 4 task × 15 shuffle × 3 seed = 180 на router).
 
 ---
@@ -97,6 +98,19 @@
 ### 3.2 Распределение качества
 
 Median quality_score = 1.000 для всех трёх роутеров — задачи с unit-test / exact-match-метриками дают бинарный сигнал, и медиана сидит на верхнем краю шкалы. Это объясняет, почему std_q ≈ 0.40 при mean_q ≈ 0.65: распределение бимодально (0 / 1), а средние сдвигаются за счёт промежуточных значений CommonGen (см. §4).
+
+### 3.3 Bootstrap-CI (added 2026-05-17, post-review)
+
+Non-parametric bootstrap (10 000 iters, percentile method, RNG seed=42) — корректнее t-test при бимодальных распределениях:
+
+| Сравнение | Δ point | 95% CI | Verdict |
+|---|---:|---|---|
+| `rule` − `llm` (quality) | +0.0134 | [−0.0723, +0.0972] | **includes 0** |
+| `oracle` − `rule` (quality) | +0.0528 | [−0.0325, +0.1374] | **includes 0** |
+| `oracle` − `llm` (quality) | +0.0662 | [−0.0176, +0.1507] | **includes 0** |
+| `rule_cost / llm_cost` (ratio) | 2.375× | [1.943, 2.938] | **EXCLUDES 1.0** ✓ |
+
+**Главный bootstrap-вывод.** Quality-deltas все включают 0 — то есть **внутри gpt-oss данные совместимы с нулевым quality-difference между роутерами**. Единственный устойчивый эффект — **cost-ratio** (CI устойчиво выше 1.94×, никогда не приближается к 1.0). Это переформулирует «llm — Pareto-оптимальная точка» из «дешевле при сопоставимом качестве» (где quality-parity была наблюдением, не гарантией) в **«достоверно дешевле; quality-разница не отличима от 0»** — что строже и корректнее.
 
 ---
 
