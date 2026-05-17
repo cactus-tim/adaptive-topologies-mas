@@ -35,7 +35,8 @@ topology:
   extra:
     adaptive:
       phase_router: rule
-      topology_router: rule    # use E3's best router (rule_based as default)
+      topology_router: llm     # E3 Pareto winner: ~3× cheaper than rule at quality parity
+                               # (rule 0.645 vs llm 0.624; llm-cost $0.010 vs rule-cost $0.024)
       subgraph_max_iterations: 4
       switch_guards: true
       switch_guards_config:
