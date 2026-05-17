@@ -1,0 +1,170 @@
+{
+  "config_snapshot": {
+    "agents": {
+      "scratchpad": {
+        "context_token_budget": 12000,
+        "policy": "window_with_summary",
+        "summarizer_model": null,
+        "window_size": 3
+      },
+      "set": "canonical_4"
+    },
+    "budget": {
+      "per_call_usd": 0.08,
+      "per_experiment_usd": 100.0,
+      "per_run_usd": 0.65,
+      "warn_ratio": 0.85
+    },
+    "estimate": {
+      "calls_per_iter": 4,
+      "heuristic_tokens_per_call": 700,
+      "use_historical": true
+    },
+    "evaluation": {
+      "judge_model": "openai:gpt-4.1-mini",
+      "judge_self_consistency_n": 3
+    },
+    "grid": {
+      "fail_fast": false,
+      "parallelism": 8,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "sweep": {
+        "human.role_router": [
+          "fixed",
+          "rule",
+          "llm"
+        ],
+        "task.name": [
+          "humaneval",
+          "gsm8k",
+          "commongen",
+          "dabench"
+        ],
+        "task.shuffle_seed": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    "human": {
+      "enabled": true,
+      "extra": null,
+      "gateway": "llm_simulated",
+      "model": null,
+      "role": "reviewer",
+      "role_router": "fixed",
+      "role_router_model": null,
+      "role_table": null,
+      "timeout_policy": "llm_fallback",
+      "timeout_s": 900.0
+    },
+    "model": {
+      "by_role": {
+        "critic": "cerebras:qwen-3-235b-a22b-instruct-2507",
+        "executor": "cerebras:qwen-3-235b-a22b-instruct-2507",
+        "planner": "cerebras:qwen-3-235b-a22b-instruct-2507",
+        "researcher": "cerebras:qwen-3-235b-a22b-instruct-2507"
+      },
+      "default": "cerebras:qwen-3-235b-a22b-instruct-2507",
+      "fake_fixtures": {},
+      "judge": "openai:gpt-4.1-mini",
+      "prompt_cache_scope": "per_run",
+      "provider_opts": {
+        "cerebras": null,
+        "cerebras_critic": null
+      },
+      "router": "cerebras:qwen-3-235b-a22b-instruct-2507",
+      "summarizer": "cerebras:qwen-3-235b-a22b-instruct-2507"
+    },
+    "name": "confirmation_e4",
+    "observability": {
+      "callback_sync": false,
+      "parquet_dir": "data/experiments",
+      "pg_dsn": "postgresql+asyncpg://atm:atm@localhost:5433/atm"
+    },
+    "seed": 44,
+    "task": {
+      "input": "",
+      "limit": 1,
+      "name": "humaneval",
+      "shuffle_seed": 2,
+      "split": "test"
+    },
+    "topology": {
+      "extra": {
+        "adaptive": {
+          "exec_max_iter": 3,
+          "phase_router": "rule",
+          "planning_max_iter": 3,
+          "run_id": null,
+          "subgraph_max_iterations": 4,
+          "switch_guards": true,
+          "switch_guards_config": {
+            "cooldown_iters": 2,
+            "max_per_phase": 3,
+            "max_per_run": 6,
+            "min_dwell_iters": 1
+          },
+          "topology_router": "llm",
+          "verify_max_iter": 2
+        },
+        "chain": {},
+        "debate": {
+          "debater_contra_id": null,
+          "debater_pro_id": null,
+          "judge_id": null,
+          "max_rounds": 2
+        },
+        "hierarchical": {
+          "final_answer_strategy": null,
+          "finalize_signal": "top_coord_finalize",
+          "max_rounds": 2,
+          "sub_teams": null
+        },
+        "mesh": {
+          "activation_policy": "round_robin",
+          "agent_order": [
+            "planner",
+            "researcher",
+            "executor",
+            "critic"
+          ],
+          "broadcast_bus_cap": 200,
+          "consensus_threshold": 3,
+          "max_rounds": 12
+        },
+        "star": {
+          "exec_max_iter": 5,
+          "planning_max_iter": 2,
+          "verify_max_iter": 3
+        }
+      },
+      "max_iterations": 6,
+      "name": "adaptive"
+    }
+  },
+  "finished_at": null,
+  "git_sha": "058271a",
+  "id": "d7f7d1eb-32c0-4315-a8dc-49b65a4d6894",
+  "name": "confirmation_e4",
+  "started_at": "2026-05-17T17:05:07.608153+00:00",
+  "status": "completed",
+  "total_cost_usd": 0.0
+}
