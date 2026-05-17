@@ -984,6 +984,81 @@ def _print_status_table(row: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# atm export-exp — snapshot PG aggregate rows to parquet
+# ---------------------------------------------------------------------------
+
+
+@app.command("export-exp")
+def export_exp(
+    exp_id: Annotated[
+        str,
+        typer.Option("--exp-id", help="Experiment UUID to export."),
+    ],
+    root: Annotated[
+        Path,
+        typer.Option(
+            "--root",
+            "-r",
+            help="Root of the on-disk experiment tree (matches parquet_writer).",
+        ),
+    ] = Path("data/experiments"),
+    pg_dsn: Annotated[
+        str | None,
+        typer.Option("--pg-dsn", help="Override PG_DSN (default: from env)."),
+    ] = None,
+) -> None:
+    """Snapshot the aggregate experiments + runs rows to disk parquet.
+
+    Per-run streaming events (messages, llm_calls, etc.) are already on
+    disk under ``root/experiments/{exp_id}/runs/{run_id}/``. This command
+    adds the aggregate rows so the dataset becomes self-contained:
+
+      * ``root/experiments/{exp_id}/experiment.json``  — experiments row
+      * ``root/experiments/{exp_id}/_runs.parquet``    — all Run rows
+
+    Idempotent — overwrites existing files. Auto-called by ``atm grid run``
+    on completion, but available standalone for re-snapshotting after
+    manual PG edits, partial runs, or cross-machine consolidation.
+
+    Exit codes:
+        0 — snapshot written
+        3 — exp_id not found / DSN unreachable / write failed
+    """
+    import os
+
+    from atm.storage.export import export_experiment
+
+    dsn = pg_dsn or os.environ.get("PG_DSN")
+    if not dsn:
+        typer.echo("PG_DSN not set (env or --pg-dsn).", err=True)
+        raise typer.Exit(3)
+
+    try:
+        eid = UUID(exp_id)
+    except ValueError as exc:
+        typer.echo(f"Invalid exp_id (must be UUID): {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    async def _run() -> Path:
+        engine = create_engine(dsn)
+        try:
+            sf = create_session_factory(engine)
+            return await export_experiment(str(eid), session_factory=sf, root=root)
+        finally:
+            await engine.dispose()
+
+    try:
+        out_dir = asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Failed to export experiment: {exc}", err=True)
+        raise typer.Exit(3) from exc
+
+    typer.echo(f"Snapshot written to {out_dir}/")
+    typer.echo(f"  experiment.json  ({(out_dir / 'experiment.json').stat().st_size} bytes)")
+    typer.echo(f"  _runs.parquet    ({(out_dir / '_runs.parquet').stat().st_size} bytes)")
+
+
+# ---------------------------------------------------------------------------
 # atm oracle build — generate leave-one-out oracle JSON for E3 router
 # ---------------------------------------------------------------------------
 

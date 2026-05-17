@@ -244,6 +244,16 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(grid_mod, "_update_experiment_status", fake_update)
     monkeypatch.setattr(grid_mod, "_resolve_exp_id", fake_resolve)
 
+    # Stub auto-export hook — it would otherwise try to open a real PG
+    # session against the fake DSN and trigger an extra run_in_executor call
+    # (which the inline worker stub above would count as a fourth cell).
+    async def fake_export_experiment(*args: Any, **kwargs: Any) -> Any:
+        from pathlib import Path
+
+        return Path("/tmp/atm-grid-unit-noop")
+
+    monkeypatch.setattr(grid_mod, "export_experiment", fake_export_experiment)
+
     # Stub LangGraph checkpointer pre-warmup so it doesn't try to connect to
     # the fake DSN (`postgresql+asyncpg://x:y@localhost:5432/nowhere`) and
     # hang for 30 s on PoolTimeout.

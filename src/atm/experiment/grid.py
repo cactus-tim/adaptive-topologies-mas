@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from atm.experiment.config import ExperimentConfig
 from atm.storage.checkpointer import build_checkpointer
+from atm.storage.export import export_experiment
 from atm.storage.models import Experiment
 from atm.storage.session import create_engine, create_session_factory, session_scope
 
@@ -459,6 +460,24 @@ async def run_grid(
             try:
                 sf = create_session_factory(engine)
                 await _update_experiment_status(sf, exp_id, agg)
+
+                # Auto-snapshot aggregate PG rows (experiment + all runs) to
+                # parquet so the dataset is self-contained on disk.
+                # Idempotent. Failures are swallowed at debug — backup path.
+                try:
+                    parquet_root = (
+                        configs[0].observability.parquet_dir
+                        if configs
+                        else "data/experiments"
+                    )
+                    await export_experiment(
+                        exp_id, session_factory=sf, root=parquet_root
+                    )
+                except Exception:
+                    logger.debug(
+                        "auto-export_experiment failed; aggregate not snapshotted",
+                        exc_info=True,
+                    )
             finally:
                 await engine.dispose()
 
