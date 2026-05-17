@@ -1,0 +1,70 @@
+# Confirmation run for E3 — cross-family validation on Cerebras Qwen3-235B.
+#
+# Цель: проверить что E3 Pareto-нарратив (topology_router=llm даёт ~такое же
+# quality при ~2.3× меньшей цене vs rule) воспроизводится на другой семье
+# весов. Если delta направление сохраняется — confirmation. Если делта
+# меняет знак — limitation в diploma "артефакт gpt-oss family".
+#
+# Sweep mirror E3_full (apples-to-apples): 2 routers × 4 tasks × 15 shuffle × 3 seeds = 360 runs.
+# Worker: cerebras:qwen-3-235b-a22b-instruct-2507 (PREVIEW, deprecates 2026-05-27).
+# Judge: openai:gpt-4.1-mini (KEEP CONSTANT — judge остаётся как измерительный
+# прибор across all experiments; меняем только worker для cross-family).
+#
+# Estimated cost on qwen ($0.60/$1.20 per 1M, ~1.7× gpt-oss):
+#   360 runs × ~$0.07 worker + judge ~$5 = ~$30
+# Wall on qwen (~1400 t/s vs gpt-oss ~3000): ~6h on p=8.
+#
+# Sweep does NOT include topology_router=oracle: oracle берёт решения из
+# E1 LOO table которая built под gpt-oss data — на qwen эти решения смещены.
+# Если confirmation покажет что rule/llm порядок другой — отдельный
+# вопрос пере-сборки oracle, не для confirmation.
+
+include: e3_full.yaml
+
+name: confirmation_e3
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT across all experiments
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+# Budget bumped vs e3_full: qwen ~1.7× more expensive than gpt-oss on output.
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.60
+  per_experiment_usd: 50.0
+  warn_ratio: 0.85
+
+# 360 runs total. p=8 (conservative on cross-family, может быть rate-limits).
+# Sweep keys mirror e3_full EXCEPT we add topology_router and drop oracle.
+grid:
+  parallelism: 8
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    topology.extra.adaptive.topology_router:
+      - rule
+      - llm
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: true

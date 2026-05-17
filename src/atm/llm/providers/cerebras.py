@@ -4,12 +4,16 @@ Usage::
 
     model = build_cerebras("cerebras:llama3.1-8b", {"temperature": 0.0})
 
-Supported model IDs (active as of 2026-04-26):
+Supported model IDs (active as of 2026-05-17):
 
-- ``llama3.1-8b``  — 8B-parameter Llama 3.1 tier.
-  DEPRECATION 2026-05-27: scheduled for removal from Cerebras Cloud on that date.
-  Switch to a replacement model before that date.
-- ``gpt-oss-120b`` — 120B-parameter open-source model (replaces both 70B tiers).
+- ``gpt-oss-120b`` — 120B-parameter open-source MoE (GA). Primary worker model for E1–E4.
+- ``qwen-3-235b-a22b-instruct-2507`` — 235B Alibaba Qwen3 MoE (PREVIEW).
+  Used for cross-family confirmation runs (different family from gpt-oss).
+  DEPRECATION 2026-05-27: scheduled for removal — run confirmation before that date.
+- ``zai-glm-4.7`` — 355B Z.ai GLM (PREVIEW). Backup confirmation model if qwen unavailable.
+  DEPRECATION 2026-05-27.
+- ``llama3.1-8b``  — 8B-parameter Llama 3.1 tier (DEPRECATION 2026-05-27).
+  Retained for back-compat with existing tests only; do not use in new experiments.
 
 Removed model IDs (DO NOT USE):
 
