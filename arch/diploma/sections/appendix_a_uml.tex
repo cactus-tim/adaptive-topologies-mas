@@ -1,0 +1,191 @@
+% =====================================================================
+% Приложение А. Функциональная схема программной системы.
+% Реализовано в TikZ. Версия 2 после ревью.
+% =====================================================================
+
+\section{Функциональная схема системы}
+\label{app:uml}
+
+В настоящем приложении приведена развернутая функциональная схема
+программной системы, описанной в главе~\ref{sec:architecture}.
+Схема изображает движение управления и данных между основными
+архитектурными блоками от поступления входных данных эксперимента
+до получения результирующих метрик и журналов. На рисунке~\ref{fig:appA:scheme}
+сплошными стрелками показано движение управления, штриховыми ---
+обмен сообщениями между агентами, точечными --- потоки записи
+в подсистему наблюдаемости и хранения.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  node distance=0.55cm and 0.7cm,
+  every node/.style={align=center},
+  iolayer/.style={rectangle, draw=black, thick, fill=gray!12,
+                  text width=8cm, minimum height=0.8cm, rounded corners=2pt},
+  ctrl/.style={rectangle, draw=black, thick, fill=blue!8,
+               text width=3.6cm, minimum height=0.9cm, rounded corners=2pt},
+  ctrlsm/.style={rectangle, draw=black, thick, fill=blue!8,
+                 text width=3.2cm, minimum height=0.9cm, rounded corners=2pt},
+  topo/.style={rectangle, draw=black, thick, fill=orange!18,
+               text width=1.8cm, minimum height=0.65cm, rounded corners=2pt},
+  agent/.style={rectangle, draw=black, thick, fill=green!15,
+                text width=1.5cm, minimum height=0.6cm, rounded corners=2pt},
+  infra/.style={rectangle, draw=black, thick, fill=red!10,
+                text width=2.6cm, minimum height=0.85cm, rounded corners=2pt},
+  storage/.style={cylinder, shape border rotate=90, aspect=0.25,
+                  draw=black, thick, fill=yellow!18,
+                  minimum width=2.5cm, minimum height=1.1cm},
+  group/.style={rectangle, draw=gray!60, dashed, rounded corners=4pt,
+                inner sep=0.25cm},
+  flow/.style={-{Latex[length=2mm]}, thick},
+  msgflow/.style={-{Latex[length=2mm]}, thick, dashed},
+  dataflow/.style={-{Latex[length=2mm]}, thick, dotted},
+]
+
+% --- Уровень 1. Вход ---
+\node[iolayer] (input) {Задача $\mathcal{T}$ и конфиг YAML};
+
+% --- Уровень 2. Оркестратор ---
+\node[ctrl, below=of input] (orch) {Оркестратор эксперимента\\\code{atm.experiment}};
+
+% --- Уровень 3. Маршрутизаторы (в одной группе) ---
+\node[ctrlsm, below left=1.0cm and 0.4cm of orch] (phase)
+   {Маршрутизатор фаз\\\code{PhaseRouter}};
+\node[ctrlsm, below right=1.0cm and 0.4cm of orch] (toporouter)
+   {Маршрутизатор топологий\\\code{TopologyRouter}};
+
+% --- Уровень 4. Активная топология (5 базовых) ---
+\node[topo, below=1.7cm of orch] (star)  {Star};
+\node[topo, left=0.18cm of star]  (chain) {Chain};
+\node[topo, left=0.18cm of chain] (mesh)  {Mesh};
+\node[topo, right=0.18cm of star] (debate) {Debate};
+\node[topo, right=0.18cm of debate] (hier) {Hierarchical};
+
+% --- Уровень 5. Агенты ---
+\node[agent, below=1.4cm of mesh]  (a_plan) {Planner};
+\node[agent, right=0.18cm of a_plan] (a_res) {Researcher};
+\node[agent, right=0.18cm of a_res] (a_exe) {Executor};
+\node[agent, right=0.18cm of a_exe] (a_cri) {Critic};
+\node[agent, right=0.18cm of a_cri] (a_deb) {Debater};
+\node[agent, right=0.18cm of a_deb] (a_coo) {Coordinator};
+
+% --- Уровень 6. Внешние службы ---
+\node[infra, below=1.4cm of a_plan] (tools)
+   {Инструменты\\и Docker-песочница};
+\node[infra, below=1.4cm of a_exe] (llm)
+   {Оболочка над языковыми\\моделями \code{LLMWrapper}};
+\node[infra, below=1.4cm of a_coo] (human)
+   {Шлюз человека\\\code{HumanGateway}};
+
+% --- Уровень 7. Наблюдаемость ---
+\node[ctrl, below=1.7cm of llm, text width=10cm]
+     (obs) {Подсистема наблюдаемости \code{atm.observability}};
+
+% --- Уровень 8. Хранение ---
+\node[storage, below left=1.0cm and -0.5cm of obs] (pg)  {PostgreSQL};
+\node[storage, below right=1.0cm and -0.5cm of obs] (pq) {Apache Parquet};
+
+% --- Уровень 9. Выход ---
+\node[iolayer, below=2.7cm of obs, text width=10cm] (output)
+   {Журналы взаимодействия, переходы топологий,
+    метрики $q,\, c,\, \tau,\, N_{\text{switch}},\, r_{\text{guard}},\, r_{\text{hurt}}$};
+
+% --- Группы (фоновые рамки) ---
+\begin{scope}[on background layer]
+  \node[group, fit=(phase) (toporouter),
+        label={[gray!80, font=\footnotesize]above:Слой адаптации}] (adaptLayer) {};
+  \node[group, fit=(mesh) (chain) (star) (debate) (hier),
+        label={[gray!80, font=\footnotesize]above:Пять базовых топологий, комбинируемых в адаптивную}] (topoLayer) {};
+  \node[group, fit=(a_plan) (a_res) (a_exe) (a_cri) (a_deb) (a_coo),
+        label={[gray!80, font=\footnotesize]above:Слой агентов}] (agLayer) {};
+  \node[group, fit=(tools) (llm) (human),
+        label={[gray!80, font=\footnotesize]above:Внешние службы}] (infraLayer) {};
+\end{scope}
+
+% --- Управляющие связи ---
+\draw[flow] (input) -- (orch);
+\draw[flow] (orch.south) -- ++(0,-0.25) -| (phase.north);
+\draw[flow] (orch.south) -- ++(0,-0.25) -| (toporouter.north);
+\draw[flow] (phase.east) -- (toporouter.west);
+\draw[flow] (toporouter.south) -- ++(0,-0.25) -| (star.north);
+
+% Топологии -> агенты (одна обобщенная стрелка от группы к группе)
+\draw[msgflow] (topoLayer.south) -- node[right, font=\footnotesize, align=left]
+              {активация ролей\\и протокол\\сообщений} (agLayer.north);
+
+% Агенты -> внешние службы (обобщенная)
+\draw[msgflow] (agLayer.south) -- node[right, font=\footnotesize, align=left]
+              {вызовы инструментов,\\моделей и человека} (infraLayer.north);
+
+% Внешние службы -> Observability (поток событий)
+\draw[dataflow] (infraLayer.south) -- (obs.north);
+
+% Observability -> хранилища
+\draw[flow] (obs.south) -- ++(0,-0.25) -| (pg.north);
+\draw[flow] (obs.south) -- ++(0,-0.25) -| (pq.north);
+
+% Хранилища -> Выход
+\draw[flow] (pg.south) -- ++(0,-0.25) -| (output.north);
+\draw[flow] (pq.south) -- ++(0,-0.25) -| (output.north);
+
+% Обратный канал от шлюза человека к маршрутизатору топологий
+\draw[msgflow] (human.east) to[out=20, in=-20, looseness=1.4]
+      node[right, font=\footnotesize] {HITL-сигналы}
+      (toporouter.east);
+
+% Шлюз человека -> Observability (для метрик r_guard, r_hurt)
+\draw[dataflow] (human.south) -- ++(0,-0.3) -| (obs.east);
+
+\end{tikzpicture}
+\caption{Функциональная схема программной системы. Сплошные
+стрелки --- передача управления; штриховые --- обмен сообщениями
+между блоками и обратный канал от человека к маршрутизатору
+топологий; точечные --- потоки записи событий в подсистему
+наблюдаемости. Цветовое кодирование --- серый цвет соответствует
+точкам входа и выхода, синий --- управляющим компонентам,
+оранжевый --- активным коммуникационным топологиям, зеленый ---
+слою агентов, красный --- внешним службам исполнения, желтый ---
+подсистеме хранения.}
+\label{fig:appA:scheme}
+\end{figure}
+
+\subsection*{Пояснение к схеме}
+
+Поток выполнения начинается с поступления конфигурации эксперимента
+в формате YAML и описания задачи $\mathcal{T}$ из выбранного
+корпуса. Оркестратор эксперимента (\code{atm.experiment})
+инициализирует общее состояние графа и передает управление слою
+адаптации. Маршрутизатор фаз принимает решение о текущей фазе
+решения, передает результат маршрутизатору топологий, который
+выбирает активную коммуникационную топологию. В работе одновременно
+действует ровно одна из пяти базовых топологий, а адаптивный режим
+реализуется через последовательное переключение между ними по
+решению маршрутизатора.
+
+Активная топология определяет порядок активации агентов и протокол
+обмена сообщениями между ними. Любая из шести ролей агентов
+(планировщик, исследователь, исполнитель, критик, дебатер,
+координатор) может быть подключена к любой топологии в соответствии
+с правилами раздела~\ref{sec:meth:topologies}. Агенты обращаются
+за внешними службами --- инструментами и Docker-песочницей для
+исполнения кода, оболочкой над языковыми моделями для генерации
+текста, шлюзом взаимодействия с человеком.
+
+Все события системы (вызовы языковых моделей, выставление сигналов,
+переходы между фазами, переключения топологий, обращения к человеку,
+срабатывания защитных правил маршрутизатора) перехватываются
+подсистемой наблюдаемости и направляются в два хранилища ---
+реляционную базу для метаданных и колоночные файлы Apache Parquet
+для объемных журналов. На финальной стадии результаты прогона
+становятся доступными для постобработки слою анализа
+\code{atm.analysis}.
+
+Обратный канал от шлюза человека к маршрутизатору топологий
+обозначает поступление управляющих сигналов от участника-человека
+к адаптивному слою. Через этот канал человек, действующий в роли
+координатора или наблюдателя, может форсировать переключение
+топологии или досрочно завершить фазу проверки. Точечная связь
+от шлюза к подсистеме наблюдаемости отвечает за регистрацию
+взаимодействий с человеком, на основе которой вычисляются
+метрики $r_{\text{guard}}$ и $r_{\text{hurt}}$.
