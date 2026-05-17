@@ -231,9 +231,7 @@ def _build_human_reviewer_node(
                 # Guard: only build LLMSimulatedGateway when an LLM is available
                 # (StreamlitHumanGateway has no ._llm → would silently produce None).
                 _fb_llm: Any = (
-                    fallback_llm
-                    if fallback_llm is not None
-                    else getattr(gateway, "_llm", None)
+                    fallback_llm if fallback_llm is not None else getattr(gateway, "_llm", None)
                 )
                 _fallback_gateway = (
                     LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None

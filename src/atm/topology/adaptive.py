@@ -90,6 +90,7 @@ import logging
 import time
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
 from langchain_core.callbacks.manager import adispatch_custom_event
@@ -113,8 +114,6 @@ from atm.phases.guards import (
     _violates_min_dwell,
 )
 from atm.phases.manager import PhaseLimits, RuleBasedPhaseRouter
-from pathlib import Path
-
 from atm.phases.topology_router import (
     LLMTopologyRouter,
     OracleTopologyRouter,
@@ -465,8 +464,7 @@ class AdaptiveTopology:
                     inner_topo_router = OracleTopologyRouter(oracle_path)
                 except Exception as exc:  # pragma: no cover — defensive
                     _log.warning(
-                        "adaptive: OracleTopologyRouter init failed (%s); "
-                        "falling back to rule",
+                        "adaptive: OracleTopologyRouter init failed (%s); falling back to rule",
                         exc,
                     )
                     inner_topo_router = rule_topo_router
@@ -714,9 +712,7 @@ class AdaptiveTopology:
                 _fallback_gateway: Any = None
                 if timeout_policy == "llm_fallback" and _LLMSimulatedGateway is not None:
                     _fb_llm: Any = (
-                        llm_wrapper
-                        if llm_wrapper is not None
-                        else getattr(_gateway, "_llm", None)
+                        llm_wrapper if llm_wrapper is not None else getattr(_gateway, "_llm", None)
                     )
                     _fallback_gateway = (
                         _LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None

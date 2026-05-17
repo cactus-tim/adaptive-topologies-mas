@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Coroutine, TypeVar
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 _T = TypeVar("_T")
 
@@ -44,11 +45,10 @@ def init_session_state() -> None:
     once at the top of ``app.py`` before routing to any page.
     """
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError(
-            "Streamlit is not installed. Install the [ui] extra: "
-            "uv pip install 'atm[ui]'"
+            "Streamlit is not installed. Install the [ui] extra: uv pip install 'atm[ui]'"
         ) from exc
 
     for key, default in _DEFAULTS.items():
@@ -90,8 +90,8 @@ def build_queue_from_env() -> Any:
     RuntimeError
         When ``ATM_PG_DSN`` is not set in the environment.
     """
-    from atm.human._queue import HumanRequestQueue  # noqa: PLC0415
-    from atm.storage.session import (  # noqa: PLC0415
+    from atm.human._queue import HumanRequestQueue
+    from atm.storage.session import (
         create_engine,
         create_session_factory,
     )
@@ -126,8 +126,8 @@ def build_queue_from_config(human_cfg: Any) -> Any:
         Ready-to-use queue.
     """
     if human_cfg.queue_dsn is not None:
-        from atm.human._queue import HumanRequestQueue  # noqa: PLC0415
-        from atm.storage.session import (  # noqa: PLC0415
+        from atm.human._queue import HumanRequestQueue
+        from atm.storage.session import (
             create_engine,
             create_session_factory,
         )

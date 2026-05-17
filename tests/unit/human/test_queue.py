@@ -23,7 +23,6 @@ import pytest
 
 from atm.human._queue import HumanRequestQueue, QueueRow
 
-
 # ---------------------------------------------------------------------------
 # Helpers — fake DB row objects
 # ---------------------------------------------------------------------------
@@ -389,7 +388,6 @@ class TestWaitForResponse:
         expected_response = {"answer": "approve", "score": 9}
 
         # First execute call returns None; second returns the response
-        call_count = 0
 
         async def _noop_sleep(s: float) -> None:
             pass
@@ -438,13 +436,12 @@ class TestWaitForResponse:
                 # Patch the internal clock so timeout logic fires
                 raise asyncio.CancelledError
 
-        with pytest.raises(asyncio.CancelledError):
-            with patch("asyncio.sleep", side_effect=_fast_sleep):
-                await queue.wait_for_response(
-                    run_id=run_id,
-                    request_id="req-1",
-                    timeout_s=0.001,  # effectively immediate timeout
-                )
+        with pytest.raises(asyncio.CancelledError), patch("asyncio.sleep", side_effect=_fast_sleep):
+            await queue.wait_for_response(
+                run_id=run_id,
+                request_id="req-1",
+                timeout_s=0.001,  # effectively immediate timeout
+            )
 
     async def test_returns_none_on_zero_timeout(self) -> None:
         """wait_for_response with timeout_s=0 returns None immediately (no rows)."""

@@ -101,11 +101,10 @@ class NasaTLXForm:
             ``None`` when not yet submitted.
         """
         try:
-            import streamlit as st  # noqa: PLC0415
+            import streamlit as st
         except ImportError as exc:
             raise RuntimeError(
-                "Streamlit is not installed. Install the [ui] extra: "
-                "uv pip install 'atm[ui]'"
+                "Streamlit is not installed. Install the [ui] extra: uv pip install 'atm[ui]'"
             ) from exc
 
         st.subheader("NASA Task Load Index (TLX)")
@@ -152,7 +151,7 @@ class NasaTLXForm:
         Returns
         -------
         float
-            Unweighted mean across 6 dimensions (0.0–100.0).
+            Unweighted mean across 6 dimensions (0.0-100.0).
         """
         mental = int(scores["mental"])
         physical = int(scores["physical"])
@@ -161,6 +160,4 @@ class NasaTLXForm:
         effort = int(scores["effort"])
         frustration = int(scores["frustration"])
 
-        return (
-            mental + physical + temporal + (100 - performance) + effort + frustration
-        ) / 6
+        return (mental + physical + temporal + (100 - performance) + effort + frustration) / 6

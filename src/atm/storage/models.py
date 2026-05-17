@@ -358,7 +358,7 @@ class HumanInteraction(Base):
         back_populates="human_interactions",
         lazy="raise",
     )
-    study_session: Mapped["StudySession | None"] = relationship(
+    study_session: Mapped[StudySession | None] = relationship(
         "StudySession",
         back_populates="human_interactions",
         lazy="raise",

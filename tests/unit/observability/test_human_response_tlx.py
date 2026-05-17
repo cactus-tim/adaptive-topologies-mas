@@ -18,14 +18,12 @@ For each branch the tests verify:
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers shared between all tests

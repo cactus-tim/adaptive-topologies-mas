@@ -315,9 +315,7 @@ def _build_human_top_reviewer_node(
             _fallback_gateway: Any = None
             if policy == "llm_fallback" and LLMSimulatedGateway is not None:
                 _fb_llm: Any = (
-                    fallback_llm
-                    if fallback_llm is not None
-                    else getattr(gateway, "_llm", None)
+                    fallback_llm if fallback_llm is not None else getattr(gateway, "_llm", None)
                 )
                 _fallback_gateway = (
                     LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
@@ -489,9 +487,7 @@ def _build_human_sub_reviewer_node(
             _fallback_gateway: Any = None
             if policy == "llm_fallback" and LLMSimulatedGateway is not None:
                 _fb_llm: Any = (
-                    fallback_llm
-                    if fallback_llm is not None
-                    else getattr(gateway, "_llm", None)
+                    fallback_llm if fallback_llm is not None else getattr(gateway, "_llm", None)
                 )
                 _fallback_gateway = (
                     LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
@@ -1175,7 +1171,10 @@ class HierarchicalTopology:
         # Insert human_sub_reviewer immediately after sub_coord
         human_node_name = f"human_sub_reviewer_{_team_id}"
         human_node_fn = _build_human_sub_reviewer_node(
-            _team_id, human_cfg, gateway, role_router=role_router,
+            _team_id,
+            human_cfg,
+            gateway,
+            role_router=role_router,
             fallback_llm=fallback_llm,
         )
         sub_graph.add_node(human_node_name, human_node_fn)

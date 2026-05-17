@@ -19,7 +19,7 @@ __all__ = ["NasaTLXForm"]
 
 def __getattr__(name: str) -> object:
     if name == "NasaTLXForm":
-        from atm.ui.tlx import NasaTLXForm  # noqa: PLC0415
+        from atm.ui.tlx import NasaTLXForm
 
         return NasaTLXForm
     raise AttributeError(f"module 'atm.ui' has no attribute {name!r}")

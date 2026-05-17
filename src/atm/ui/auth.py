@@ -102,11 +102,10 @@ def logout() -> None:
     navigates back to the login page.
     """
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError(
-            "Streamlit is not installed. Install the [ui] extra: "
-            "uv pip install 'atm[ui]'"
+            "Streamlit is not installed. Install the [ui] extra: uv pip install 'atm[ui]'"
         ) from exc
 
     st.session_state["authenticated"] = False

@@ -281,12 +281,12 @@ async def test_migration_0005_round_trip() -> None:
     assert await _index_exists(pg_dsn, "study_sessions", "study_sessions_participant_id_idx"), (
         "Index study_sessions_participant_id_idx must exist after upgrade to 0005"
     )
-    assert await _index_exists(
-        pg_dsn, "human_request_queue", "human_request_queue_run_id_idx"
-    ), "Index human_request_queue_run_id_idx must exist after upgrade to 0005"
-    assert await _index_exists(
-        pg_dsn, "human_request_queue", "human_request_queue_status_idx"
-    ), "Index human_request_queue_status_idx must exist after upgrade to 0005"
+    assert await _index_exists(pg_dsn, "human_request_queue", "human_request_queue_run_id_idx"), (
+        "Index human_request_queue_run_id_idx must exist after upgrade to 0005"
+    )
+    assert await _index_exists(pg_dsn, "human_request_queue", "human_request_queue_status_idx"), (
+        "Index human_request_queue_status_idx must exist after upgrade to 0005"
+    )
 
     # -----------------------------------------------------------------------
     # Phase 3: downgrade -1 → back to 0004

@@ -458,9 +458,7 @@ class MeshTopology:
                     _fallback_gateway: Any = None
                     if policy == "llm_fallback" and LLMSimulatedGateway is not None:
                         _fb_llm: Any = (
-                            gateway_llm
-                            if gateway_llm is not None
-                            else getattr(_hgw, "_llm", None)
+                            gateway_llm if gateway_llm is not None else getattr(_hgw, "_llm", None)
                         )
                         _fallback_gateway = (
                             LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None

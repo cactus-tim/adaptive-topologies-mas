@@ -34,13 +34,9 @@ async def truncate_m14_tables(pg_engine_fast: AsyncEngine) -> None:
     ]
     async with pg_engine_fast.begin() as conn:
         for tbl in _tables:
-            await conn.execute(
-                text(f"TRUNCATE TABLE {tbl} RESTART IDENTITY CASCADE")
-            )
+            await conn.execute(text(f"TRUNCATE TABLE {tbl} RESTART IDENTITY CASCADE"))
     yield
     # Post-test cleanup — belt-and-suspenders
     async with pg_engine_fast.begin() as conn:
         for tbl in _tables:
-            await conn.execute(
-                text(f"TRUNCATE TABLE {tbl} RESTART IDENTITY CASCADE")
-            )
+            await conn.execute(text(f"TRUNCATE TABLE {tbl} RESTART IDENTITY CASCADE"))

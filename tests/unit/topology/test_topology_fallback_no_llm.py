@@ -37,11 +37,8 @@ import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from atm.experiment.config import HumanCfg
 from atm.topology.base import TopologyConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,6 +52,7 @@ class FakeStreamlitGatewayNoLLM:
         # This will always "time out" because we patch request_with_timeout anyway.
         # But if called directly, return a valid response so tests don't hang.
         from atm.core.types import HumanResponse
+
         return HumanResponse(action="approve", comment="ok", source="human", timed_out=False)
 
 
@@ -105,7 +103,7 @@ def _make_fake_llm() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteA_NodeFactory:
+class TestFallbackSiteANodeFactory:
     """build_human_node_factory honours fallback_llm kwarg; no AttributeError on StreamlitGW."""
 
     def test_no_llm_attr_with_fallback_llm_injected_no_attribute_error(self) -> None:
@@ -119,11 +117,17 @@ class TestFallbackSiteA_NodeFactory:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = build_human_node_factory(
@@ -137,9 +141,11 @@ class TestFallbackSiteA_NodeFactory:
 
         state = _minimal_state()
 
-        with patch("atm.human._node_factory.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.human._node_factory.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             # Should not raise AttributeError
-            result = asyncio.run(node_fn(state))
+            asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
         # fallback_gateway should NOT be None (fallback_llm was injected)
@@ -155,11 +161,17 @@ class TestFallbackSiteA_NodeFactory:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = build_human_node_factory(
@@ -173,9 +185,11 @@ class TestFallbackSiteA_NodeFactory:
 
         state = _minimal_state()
 
-        with patch("atm.human._node_factory.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.human._node_factory.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             # Should not raise AttributeError (that was the bug)
-            result = asyncio.run(node_fn(state))
+            asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
         # Guard fired: _fb_llm is None → _fallback_gateway is None
@@ -187,7 +201,7 @@ class TestFallbackSiteA_NodeFactory:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteB_Chain:
+class TestFallbackSiteBChain:
     """Chain's _build_human_reviewer_node honours fallback_llm kwarg."""
 
     def test_no_llm_attr_with_fallback_llm_no_attribute_error(self) -> None:
@@ -200,20 +214,26 @@ class TestFallbackSiteB_Chain:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
-        node_fn = _build_human_reviewer_node(
-            human_cfg, fake_gw, fallback_llm=fake_llm
-        )
+        node_fn = _build_human_reviewer_node(human_cfg, fake_gw, fallback_llm=fake_llm)
 
         state = _minimal_state()
 
-        with patch("atm.topology.chain.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.chain.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             # Must not raise AttributeError
             asyncio.run(node_fn(state))
 
@@ -229,21 +249,30 @@ class TestFallbackSiteB_Chain:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = _build_human_reviewer_node(
-            human_cfg, fake_gw
+            human_cfg,
+            fake_gw,
             # no fallback_llm
         )
 
         state = _minimal_state()
 
-        with patch("atm.topology.chain.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.chain.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -255,7 +284,7 @@ class TestFallbackSiteB_Chain:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteC_Mesh:
+class TestFallbackSiteCMesh:
     """Mesh human_peer_node closure honours gateway_llm fallback; no AttributeError."""
 
     def _build_peer_node(
@@ -298,14 +327,16 @@ class TestFallbackSiteC_Mesh:
         with patch("atm.topology.mesh.StateGraph", return_value=CapturingGraph()):
             if gateway_llm is not None:
                 MeshTopology().build(
-                    agents, cfg,
+                    agents,
+                    cfg,
                     human_cfg=human_cfg,
                     human_gateway=fake_gw,
                     human_gateway_llm=gateway_llm,
                 )
             else:
                 MeshTopology().build(
-                    agents, cfg,
+                    agents,
+                    cfg,
                     human_cfg=human_cfg,
                     human_gateway=fake_gw,
                 )
@@ -320,11 +351,17 @@ class TestFallbackSiteC_Mesh:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         peer_node = self._build_peer_node(fake_gw, human_cfg, gateway_llm=fake_llm)
@@ -345,11 +382,17 @@ class TestFallbackSiteC_Mesh:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         peer_node = self._build_peer_node(fake_gw, human_cfg, gateway_llm=None)
@@ -369,7 +412,7 @@ class TestFallbackSiteC_Mesh:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteD_DebateHumanJudge:
+class TestFallbackSiteDDebateHumanJudge:
     """Debate's _build_human_judge_node honours fallback_llm; no AttributeError."""
 
     def test_no_llm_attr_with_fallback_llm_no_attribute_error(self) -> None:
@@ -382,11 +425,17 @@ class TestFallbackSiteD_DebateHumanJudge:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = _build_human_judge_node(
@@ -400,7 +449,9 @@ class TestFallbackSiteD_DebateHumanJudge:
 
         state = _minimal_state()
 
-        with patch("atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -415,11 +466,17 @@ class TestFallbackSiteD_DebateHumanJudge:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = _build_human_judge_node(
@@ -433,7 +490,9 @@ class TestFallbackSiteD_DebateHumanJudge:
 
         state = _minimal_state()
 
-        with patch("atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -445,7 +504,7 @@ class TestFallbackSiteD_DebateHumanJudge:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteE_DebateBothMode:
+class TestFallbackSiteEDebateBothMode:
     """Debate's _both_judge_postprocess honours _gateway_llm; no AttributeError."""
 
     def _build_combined_node(
@@ -504,11 +563,17 @@ class TestFallbackSiteE_DebateBothMode:
             return {}
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         combined_node = self._build_combined_node(fake_gw, human_cfg, gateway_llm=fake_llm)
@@ -517,7 +582,9 @@ class TestFallbackSiteE_DebateBothMode:
         state = _minimal_state()
 
         with (
-            patch("atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout),
+            patch(
+                "atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout
+            ),
             patch.object(MagicMock, "step", side_effect=fake_judge_step, create=True),
         ):
             asyncio.run(combined_node(state))
@@ -532,11 +599,17 @@ class TestFallbackSiteE_DebateBothMode:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         combined_node = self._build_combined_node(fake_gw, human_cfg, gateway_llm=None)
@@ -544,7 +617,9 @@ class TestFallbackSiteE_DebateBothMode:
 
         state = _minimal_state()
 
-        with patch("atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.debate.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(combined_node(state))
 
         assert len(intercepted) == 1
@@ -556,7 +631,7 @@ class TestFallbackSiteE_DebateBothMode:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteF_HierarchicalTop:
+class TestFallbackSiteFHierarchicalTop:
     """Hierarchical's _build_human_top_reviewer_node honours fallback_llm; no AttributeError."""
 
     def test_no_llm_attr_with_fallback_llm_no_attribute_error(self) -> None:
@@ -569,20 +644,26 @@ class TestFallbackSiteF_HierarchicalTop:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
-        node_fn = _build_human_top_reviewer_node(
-            human_cfg, fake_gw, fallback_llm=fake_llm
-        )
+        node_fn = _build_human_top_reviewer_node(human_cfg, fake_gw, fallback_llm=fake_llm)
 
         state = _minimal_state()
 
-        with patch("atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -597,18 +678,26 @@ class TestFallbackSiteF_HierarchicalTop:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = _build_human_top_reviewer_node(human_cfg, fake_gw)
 
         state = _minimal_state()
 
-        with patch("atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -620,7 +709,7 @@ class TestFallbackSiteF_HierarchicalTop:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteG_HierarchicalSub:
+class TestFallbackSiteGHierarchicalSub:
     """Hierarchical's _build_human_sub_reviewer_node honours fallback_llm; no AttributeError."""
 
     def test_no_llm_attr_with_fallback_llm_no_attribute_error(self) -> None:
@@ -633,11 +722,17 @@ class TestFallbackSiteG_HierarchicalSub:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = _build_human_sub_reviewer_node(
@@ -646,7 +741,9 @@ class TestFallbackSiteG_HierarchicalSub:
 
         state = _minimal_state()
 
-        with patch("atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -661,18 +758,26 @@ class TestFallbackSiteG_HierarchicalSub:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="approve", comment="ok", source="fallback", timed_out=True)
 
         node_fn = _build_human_sub_reviewer_node("team_a", human_cfg, fake_gw)
 
         state = _minimal_state()
 
-        with patch("atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.hierarchical.request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(node_fn(state))
 
         assert len(intercepted) == 1
@@ -684,7 +789,7 @@ class TestFallbackSiteG_HierarchicalSub:
 # ---------------------------------------------------------------------------
 
 
-class TestFallbackSiteH_Adaptive:
+class TestFallbackSiteHAdaptive:
     """Adaptive's human_advisor_node honours llm_wrapper fallback; no AttributeError."""
 
     def _build_advisor_node(
@@ -749,11 +854,17 @@ class TestFallbackSiteH_Adaptive:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="advise", comment="hint", source="fallback", timed_out=True)
 
         advisor_node = self._build_advisor_node(fake_gw, human_cfg, gateway_llm=fake_llm)
@@ -763,7 +874,9 @@ class TestFallbackSiteH_Adaptive:
         # Inject a topo decision slot via the closure for human_advisor_node
         # (adaptive stores it in a closure-level slot; we only need the node itself)
 
-        with patch("atm.topology.adaptive._request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.adaptive._request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(advisor_node(state))
 
         assert len(intercepted) == 1
@@ -776,11 +889,17 @@ class TestFallbackSiteH_Adaptive:
         intercepted: list[Any] = []
 
         async def fake_request_with_timeout(
-            gateway: Any, ctx: Any, *, request_id: str,
-            timeout_s: Any, policy: Any, llm_fallback_gateway: Any = None
+            gateway: Any,
+            ctx: Any,
+            *,
+            request_id: str,
+            timeout_s: Any,
+            policy: Any,
+            llm_fallback_gateway: Any = None,
         ) -> Any:
             intercepted.append(llm_fallback_gateway)
             from atm.core.types import HumanResponse
+
             return HumanResponse(action="advise", comment="hint", source="fallback", timed_out=True)
 
         # For adaptive, we need human_gateway_llm to build successfully (or gateway passed directly)
@@ -790,7 +909,9 @@ class TestFallbackSiteH_Adaptive:
 
         state = _minimal_state()
 
-        with patch("atm.topology.adaptive._request_with_timeout", side_effect=fake_request_with_timeout):
+        with patch(
+            "atm.topology.adaptive._request_with_timeout", side_effect=fake_request_with_timeout
+        ):
             asyncio.run(advisor_node(state))
 
         assert len(intercepted) == 1

@@ -47,11 +47,11 @@ def render_login() -> None:
         st.session_state.page = "queue"
     """
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError("Install the [ui] extra: uv pip install 'atm[ui]'") from exc
 
-    from atm.ui.auth import get_expected_secret, login  # noqa: PLC0415
+    from atm.ui.auth import get_expected_secret, login
 
     st.title("ATM HITL — Participant Login")
     st.markdown(
@@ -91,12 +91,12 @@ def render_queue() -> None:
     ``render_response``.
     """
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError("Install the [ui] extra: uv pip install 'atm[ui]'") from exc
 
-    from atm.ui._state import _run_sync  # noqa: PLC0415
-    from atm.ui.auth import logout  # noqa: PLC0415
+    from atm.ui._state import _run_sync
+    from atm.ui.auth import logout
 
     participant_id: str | None = st.session_state.get("participant_id")
     queue = st.session_state.get("queue")
@@ -154,7 +154,7 @@ def render_queue() -> None:
 # ---------------------------------------------------------------------------
 
 
-def render_response(queue_row: "QueueRow") -> None:
+def render_response(queue_row: QueueRow) -> None:
     """Render the response form for a claimed queue row.
 
     Displays the full context (messages, scratchpad, tool calls) and
@@ -168,15 +168,14 @@ def render_response(queue_row: "QueueRow") -> None:
         The ``QueueRow`` obtained from :func:`render_queue` after claiming.
     """
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError("Install the [ui] extra: uv pip install 'atm[ui]'") from exc
 
-    from atm.ui._state import _run_sync  # noqa: PLC0415
-    from atm.ui.tlx import NasaTLXForm  # noqa: PLC0415
+    from atm.ui._state import _run_sync
+    from atm.ui.tlx import NasaTLXForm
 
     queue = st.session_state.get("queue")
-    participant_id: str | None = st.session_state.get("participant_id")
 
     col_title, col_back = st.columns([5, 1])
     with col_title:
@@ -312,11 +311,11 @@ def render_proctor() -> None:
     The proctor navigates to this page via the sidebar.
     """
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError("Install the [ui] extra: uv pip install 'atm[ui]'") from exc
 
-    from atm.ui._state import _run_sync  # noqa: PLC0415
+    from atm.ui._state import _run_sync
 
     st.title("Proctor Panel — Study Sessions")
     st.markdown(
@@ -327,9 +326,7 @@ def render_proctor() -> None:
 
     queue = st.session_state.get("queue")
     if queue is None:
-        st.warning(
-            "Database not configured.  Set ``ATM_PG_DSN`` or load a config bundle."
-        )
+        st.warning("Database not configured.  Set ``ATM_PG_DSN`` or load a config bundle.")
         return
 
     # Fetch sessions directly via the queue's session factory
@@ -379,7 +376,7 @@ def render_proctor() -> None:
 def _render_context_summary(ctx: dict[str, Any]) -> None:
     """Render a short summary of *ctx* in the queue listing."""
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError("Install the [ui] extra: uv pip install 'atm[ui]'") from exc
 
@@ -398,11 +395,11 @@ def _render_context_summary(ctx: dict[str, Any]) -> None:
 def _render_session_row(queue: Any, sess: Any) -> None:
     """Render a single study-session row in the proctor panel."""
     try:
-        import streamlit as st  # noqa: PLC0415
+        import streamlit as st
     except ImportError as exc:
         raise RuntimeError("Install the [ui] extra: uv pip install 'atm[ui]'") from exc
 
-    from atm.ui._state import _run_sync  # noqa: PLC0415
+    from atm.ui._state import _run_sync
 
     session_id = str(sess.get("id", "?"))
     participant = sess.get("participant_id", "?")
@@ -421,31 +418,17 @@ def _render_session_row(queue: Any, sess: Any) -> None:
 
         col_end, col_pause = st.columns(2)
         with col_end:
-            if status != "ended":
-                if st.button("End session", key=f"end_{session_id}"):
-                    _run_sync(
-                        _update_session_status(
-                            queue, uuid.UUID(session_id), "ended"
-                        )
-                    )
-                    st.rerun()
+            if status != "ended" and st.button("End session", key=f"end_{session_id}"):
+                _run_sync(_update_session_status(queue, uuid.UUID(session_id), "ended"))
+                st.rerun()
         with col_pause:
             if status == "active":
                 if st.button("Pause session", key=f"pause_{session_id}"):
-                    _run_sync(
-                        _update_session_status(
-                            queue, uuid.UUID(session_id), "paused"
-                        )
-                    )
+                    _run_sync(_update_session_status(queue, uuid.UUID(session_id), "paused"))
                     st.rerun()
-            elif status == "paused":
-                if st.button("Resume session", key=f"resume_{session_id}"):
-                    _run_sync(
-                        _update_session_status(
-                            queue, uuid.UUID(session_id), "active"
-                        )
-                    )
-                    st.rerun()
+            elif status == "paused" and st.button("Resume session", key=f"resume_{session_id}"):
+                _run_sync(_update_session_status(queue, uuid.UUID(session_id), "active"))
+                st.rerun()
 
 
 async def _fetch_study_sessions(queue: Any) -> list[dict[str, Any]]:
@@ -455,9 +438,9 @@ async def _fetch_study_sessions(queue: Any) -> list[dict[str, Any]]:
     Columns: id, participant_id, status, consent_given, started_at,
     ended_at, proctor_notes.
     """
-    import sqlalchemy as sa  # noqa: PLC0415
+    import sqlalchemy as sa
 
-    from atm.storage.models import StudySession  # noqa: PLC0415
+    from atm.storage.models import StudySession
 
     stmt = sa.select(
         StudySession.id,
@@ -495,7 +478,7 @@ async def _create_study_session(
     proctor_notes: str | None,
 ) -> uuid.UUID:
     """Insert a new StudySession row and return its UUID."""
-    from atm.storage.models import StudySession  # noqa: PLC0415
+    from atm.storage.models import StudySession
 
     new_id = uuid.uuid4()
     sess_obj = StudySession(
@@ -518,15 +501,11 @@ async def _update_session_status(
     new_status: str,
 ) -> None:
     """Update study_sessions.status for a given session_id."""
-    import sqlalchemy as sa  # noqa: PLC0415
+    import sqlalchemy as sa
 
-    from atm.storage.models import StudySession  # noqa: PLC0415
+    from atm.storage.models import StudySession
 
-    stmt = (
-        sa.update(StudySession)
-        .where(StudySession.id == session_id)
-        .values(status=new_status)
-    )
+    stmt = sa.update(StudySession).where(StudySession.id == session_id).values(status=new_status)
     async with queue._sf() as session:
         await session.execute(stmt)
         await session.commit()

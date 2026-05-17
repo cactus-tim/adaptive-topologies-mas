@@ -14,13 +14,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from atm.experiment.config import HumanCfg
 from atm.experiment.runner import _build_human_gateway
 from atm.human.streamlit_gateway import StreamlitHumanGateway
 from atm.llm.wrapper import LLMWrapper
-
 
 # ---------------------------------------------------------------------------
 # Helpers

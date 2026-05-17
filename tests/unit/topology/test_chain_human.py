@@ -801,7 +801,9 @@ class TestChainRoleRouter:
 
         captured_build_calls: list[dict[str, Any]] = []
 
-        def capturing_build_node(h_cfg: Any, gw: Any, role_router: Any = None, fallback_llm: Any = None) -> Any:
+        def capturing_build_node(
+            h_cfg: Any, gw: Any, role_router: Any = None, fallback_llm: Any = None
+        ) -> Any:
             captured_build_calls.append({"human_cfg": h_cfg, "role_router": role_router})
 
             async def noop_node(state: Any) -> dict[str, Any]:
@@ -836,7 +838,9 @@ class TestChainRoleRouter:
 
         captured_calls: list[dict[str, Any]] = []
 
-        def capturing_build_node(h_cfg: Any, gw: Any, role_router: Any = None, fallback_llm: Any = None) -> Any:
+        def capturing_build_node(
+            h_cfg: Any, gw: Any, role_router: Any = None, fallback_llm: Any = None
+        ) -> Any:
             captured_calls.append({"role_router": role_router})
 
             async def noop_node(state: Any) -> dict[str, Any]:

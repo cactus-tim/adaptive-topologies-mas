@@ -629,7 +629,6 @@ class TestHumanInteractionStudySessionExtension:
 
     def test_mapped_column_python_type(self) -> None:
         """M14: study_session_id is mapped on the ORM class (not just table)."""
-        import uuid
 
         mapper = sa.inspect(HumanInteraction)
         attr = mapper.attrs["study_session_id"]
@@ -809,11 +808,7 @@ class TestHumanRequestQueueModel:
 
     def test_unique_constraint_run_request(self) -> None:
         """UNIQUE(run_id, request_id) must exist as uq_human_request_queue_run_request."""
-        uc_names = {
-            c.name
-            for c in self._table().constraints
-            if isinstance(c, sa.UniqueConstraint)
-        }
+        uc_names = {c.name for c in self._table().constraints if isinstance(c, sa.UniqueConstraint)}
         assert "uq_human_request_queue_run_request" in uc_names
 
     def test_run_id_index_exists(self) -> None:

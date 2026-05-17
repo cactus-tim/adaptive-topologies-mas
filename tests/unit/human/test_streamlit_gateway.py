@@ -20,13 +20,10 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-import pytest
-
 from atm.core.types import HumanContext, HumanResponse, HumanRole
 from atm.experiment.config import HumanCfg
 from atm.human._queue import HumanRequestQueue
 from atm.human.streamlit_gateway import StreamlitHumanGateway
-
 
 # ---------------------------------------------------------------------------
 # Fake queue — subclass with overridden async methods
@@ -162,7 +159,14 @@ class TestSuccessPath:
         run_id = uuid.uuid4()
         ctx = _make_ctx(run_id=run_id)
         cfg = _make_cfg()
-        tlx = {"mental": 60, "physical": 30, "temporal": 50, "effort": 70, "performance": 40, "frustration": 20}
+        tlx = {
+            "mental": 60,
+            "physical": 30,
+            "temporal": 50,
+            "effort": 70,
+            "performance": 40,
+            "frustration": 20,
+        }
         fake_q = FakeQueue(
             next_response={
                 "action": "approve",

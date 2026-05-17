@@ -42,9 +42,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from atm.human.cli_gateway import CLIGateway
     from atm.human.gateway import HumanGateway
-    from atm.human.streamlit_gateway import StreamlitHumanGateway
 
 import sqlalchemy as sa
 import structlog
@@ -137,8 +135,8 @@ def _build_role_router(
 def _build_human_gateway(
     human_cfg: HumanCfg | None,
     *,
-    pricing: "Pricing",
-    budget: "BudgetTracker",
+    pricing: Pricing,
+    budget: BudgetTracker,
     default_model_id: str,
     fake_fixtures: dict[str, str],
 ) -> tuple[HumanGateway | None, LLMWrapper | None]:
@@ -185,7 +183,7 @@ def _build_human_gateway(
     # Build the fallback LLMWrapper (shared logic for all enabled gateways).
     # -----------------------------------------------------------------------
     def _build_fallback_llm(model_id_override: str | None = None) -> LLMWrapper:
-        model_id: str = model_id_override or human_cfg.model or default_model_id  # type: ignore[union-attr]
+        model_id: str = model_id_override or human_cfg.model or default_model_id
         fixture_str: str | None = (
             fake_fixtures.get("human") if model_id.startswith("fake:scripted") else None
         )
@@ -209,7 +207,7 @@ def _build_human_gateway(
     # -----------------------------------------------------------------------
     if gateway_type == "cli":
         # Lazy import avoids circular import: streamlit_gateway → config → runner
-        from atm.human.cli_gateway import CLIGateway  # noqa: PLC0415
+        from atm.human.cli_gateway import CLIGateway
 
         return (CLIGateway(), _build_fallback_llm())
 
@@ -218,13 +216,11 @@ def _build_human_gateway(
     # -----------------------------------------------------------------------
     if gateway_type == "streamlit":
         # Lazy imports avoid circular: streamlit_gateway → config → runner
-        from atm.human._queue import HumanRequestQueue  # noqa: PLC0415
-        from atm.human.streamlit_gateway import StreamlitHumanGateway  # noqa: PLC0415
+        from atm.human._queue import HumanRequestQueue
+        from atm.human.streamlit_gateway import StreamlitHumanGateway
 
         if not human_cfg.queue_dsn:
-            raise ValueError(
-                "HumanCfg.queue_dsn must be set when gateway='streamlit'"
-            )
+            raise ValueError("HumanCfg.queue_dsn must be set when gateway='streamlit'")
         queue_engine = create_engine(human_cfg.queue_dsn)
         queue_session_factory = create_session_factory(queue_engine)
         queue = HumanRequestQueue(session_factory=queue_session_factory)
@@ -1037,7 +1033,9 @@ def _build_agents(
         # tells the judge how to evaluate the new ###ANSWER### marker
         # format for non-code tasks. Mirrors the placement strategy used
         # for debaters above.
-        if topo_name in ("debate", "adaptive") and worker_id == str(debate_extra.get("judge_id") or "judge"):
+        if topo_name in ("debate", "adaptive") and worker_id == str(
+            debate_extra.get("judge_id") or "judge"
+        ):
             judge_override = (
                 "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"
                 "You judge a debate between two debaters (pro / contra). "

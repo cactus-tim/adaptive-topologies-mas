@@ -18,8 +18,7 @@ from __future__ import annotations
 import pytest
 
 from atm.evaluation.tlx import NasaTLX
-from atm.ui.tlx import NasaTLXForm, _SCALES
-
+from atm.ui.tlx import _SCALES, NasaTLXForm
 
 # ---------------------------------------------------------------------------
 # compute_raw_score
@@ -91,9 +90,30 @@ class TestComputeRawScore:
     def test_symmetry_with_nasa_tlx_model(self) -> None:
         """raw_score from dict helper equals NasaTLX.raw_score for multiple cases."""
         cases = [
-            dict(mental=10, physical=20, temporal=30, performance=40, effort=50, frustration=60),
-            dict(mental=99, physical=1, temporal=55, performance=75, effort=25, frustration=0),
-            dict(mental=0, physical=100, temporal=0, performance=100, effort=0, frustration=100),
+            {
+                "mental": 10,
+                "physical": 20,
+                "temporal": 30,
+                "performance": 40,
+                "effort": 50,
+                "frustration": 60,
+            },
+            {
+                "mental": 99,
+                "physical": 1,
+                "temporal": 55,
+                "performance": 75,
+                "effort": 25,
+                "frustration": 0,
+            },
+            {
+                "mental": 0,
+                "physical": 100,
+                "temporal": 0,
+                "performance": 100,
+                "effort": 0,
+                "frustration": 100,
+            },
         ]
         for case in cases:
             form_score = NasaTLXForm.compute_raw_score(case)
@@ -157,7 +177,7 @@ class TestScalesConstant:
 
 def test_module_importable_without_streamlit_runtime() -> None:
     """atm.ui.tlx can be imported and NasaTLXForm accessed without a running Streamlit app."""
-    from atm.ui.tlx import NasaTLXForm  # noqa: F401
+    from atm.ui.tlx import NasaTLXForm
 
     assert callable(NasaTLXForm.compute_raw_score)
     assert callable(NasaTLXForm.render)

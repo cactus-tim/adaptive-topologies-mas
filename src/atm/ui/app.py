@@ -23,6 +23,8 @@ nest_asyncio is applied first (before any other imports) so that
 Streamlit's Tornado event loop.
 """
 
+import contextlib
+
 import nest_asyncio
 
 nest_asyncio.apply()
@@ -31,16 +33,13 @@ nest_asyncio.apply()
 # Standard library + Streamlit
 # ---------------------------------------------------------------------------
 
-import os
-
-import streamlit as st
+import streamlit as st  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # ATM UI helpers
 # ---------------------------------------------------------------------------
-
-from atm.ui._state import build_queue_from_env, init_session_state
-from atm.ui.views import render_login, render_proctor, render_queue, render_response
+from atm.ui._state import build_queue_from_env, init_session_state  # noqa: E402
+from atm.ui.views import render_login, render_proctor, render_queue, render_response  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Page configuration (must be first Streamlit command)
@@ -62,11 +61,9 @@ init_session_state()
 
 # Lazy-init the queue helper once per browser session
 if st.session_state.get("queue") is None:
-    try:
-        st.session_state["queue"] = build_queue_from_env()
-    except RuntimeError:
+    with contextlib.suppress(RuntimeError):
         # ATM_PG_DSN not set — queue remains None; views show a warning
-        pass
+        st.session_state["queue"] = build_queue_from_env()
 
 # ---------------------------------------------------------------------------
 # Sidebar navigation (visible only when authenticated)
@@ -86,11 +83,12 @@ if st.session_state.get("authenticated"):
             key="sidebar_nav",
         )
         # Only update page via sidebar when not in middle of a response
-        if st.session_state.get("page") not in ("response",):
-            if nav_page != st.session_state.get("page"):
-                st.session_state["current_row"] = None
-                st.session_state["page"] = nav_page
-                st.rerun()
+        if st.session_state.get("page") not in ("response",) and nav_page != st.session_state.get(
+            "page"
+        ):
+            st.session_state["current_row"] = None
+            st.session_state["page"] = nav_page
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Page routing

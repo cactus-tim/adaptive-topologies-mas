@@ -47,7 +47,7 @@ from atm.experiment.config import HumanCfg
 from atm.human._queue import HumanRequestQueue
 from atm.human.streamlit_gateway import StreamlitHumanGateway
 from atm.observability.callbacks import ExperimentCallbackHandler
-from atm.storage.models import Base, Experiment, HumanInteraction, Run, StudySession
+from atm.storage.models import Experiment, HumanInteraction, Run, StudySession
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_session_factory, session_scope
 
@@ -376,9 +376,7 @@ async def test_streamlit_gateway_e2e_queue_to_db(
         )
         return inputs
 
-    runnable: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(
-        _dispatch_hitl_events
-    )
+    runnable: RunnableLambda[dict[str, Any], dict[str, Any]] = RunnableLambda(_dispatch_hitl_events)
     await runnable.ainvoke(
         {},
         config={
@@ -401,8 +399,7 @@ async def test_streamlit_gateway_e2e_queue_to_db(
         rows = result.scalars().all()
 
     assert len(rows) == 1, (
-        f"Expected exactly 1 human_interactions row for run_id={run_id}, "
-        f"got {len(rows)}"
+        f"Expected exactly 1 human_interactions row for run_id={run_id}, got {len(rows)}"
     )
     hi = rows[0]
 
@@ -425,6 +422,5 @@ async def test_streamlit_gateway_e2e_queue_to_db(
         "human_interactions.study_session_id is NULL — not propagated from payload"
     )
     assert str(hi.study_session_id) == study_session_id, (
-        f"study_session_id mismatch: expected {study_session_id!r}, "
-        f"got {hi.study_session_id!r}"
+        f"study_session_id mismatch: expected {study_session_id!r}, got {hi.study_session_id!r}"
     )

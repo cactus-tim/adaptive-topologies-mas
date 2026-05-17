@@ -293,9 +293,7 @@ def build_human_node_factory(
             _fallback_gateway: Any = None
             if timeout_policy == "llm_fallback" and LLMSimulatedGateway is not None:
                 _fb_llm: Any = (
-                    fallback_llm
-                    if fallback_llm is not None
-                    else getattr(gateway, "_llm", None)
+                    fallback_llm if fallback_llm is not None else getattr(gateway, "_llm", None)
                 )
                 _fallback_gateway = (
                     LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None

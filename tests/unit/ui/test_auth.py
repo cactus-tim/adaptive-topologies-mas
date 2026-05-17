@@ -15,13 +15,11 @@ Tests:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock
 
 import pytest
 
 from atm.ui.auth import check_secret, get_expected_secret, login
-
 
 # ---------------------------------------------------------------------------
 # check_secret
@@ -127,7 +125,7 @@ class TestLogin:
 
 def test_auth_importable_without_streamlit() -> None:
     """atm.ui.auth is importable and works without Streamlit installed/running."""
-    from atm.ui.auth import check_secret, get_expected_secret, login  # noqa: F401
+    from atm.ui.auth import check_secret, get_expected_secret, login
 
     assert callable(check_secret)
     assert callable(get_expected_secret)

@@ -149,7 +149,7 @@ class TestChainBackCompat:
 
         captured: list[Any] = []
 
-        def capturing_build(h_cfg: Any, gw: Any, role_router: Any = None) -> Any:
+        def capturing_build(h_cfg: Any, gw: Any, role_router: Any = None, fallback_llm: Any = None) -> Any:
             captured.append(role_router)
 
             async def noop(state: Any) -> dict[str, Any]:
@@ -383,7 +383,7 @@ class TestHierarchicalBackCompat:
 
         captured_role_routers: list[Any] = []
 
-        def capturing_top_reviewer(h_cfg: Any, gw: Any, role_router: Any = None) -> Any:
+        def capturing_top_reviewer(h_cfg: Any, gw: Any, role_router: Any = None, fallback_llm: Any = None) -> Any:
             captured_role_routers.append(role_router)
 
             async def noop(state: Any) -> dict[str, Any]:

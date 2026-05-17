@@ -23,22 +23,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import atm.topology.adaptive  # noqa: F401
-import atm.topology.chain  # noqa: F401
-import atm.topology.debate  # noqa: F401
-import atm.topology.hierarchical  # noqa: F401
-import atm.topology.mesh  # noqa: F401
+import atm.topology.adaptive
+import atm.topology.chain
+import atm.topology.debate
+import atm.topology.hierarchical
+import atm.topology.mesh
 import atm.topology.star  # noqa: F401
 from atm.experiment.config import HumanCfg
+
+# AdaptiveTopology has a different import path since build() is the method we care about
+from atm.topology.adaptive import AdaptiveTopology
 from atm.topology.base import TopologyConfig
 from atm.topology.chain import ChainTopology
 from atm.topology.debate import DebateTopology
 from atm.topology.hierarchical import HierarchicalTopology
 from atm.topology.mesh import MeshTopology
 from atm.topology.star import StarTopology
-
-# AdaptiveTopology has a different import path since build() is the method we care about
-from atm.topology.adaptive import AdaptiveTopology
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -126,9 +126,7 @@ class TestChainDispatch:
             ),
             patch("atm.topology.chain.LLMSimulatedGateway") as mock_llm_sim,
         ):
-            ChainTopology().build(
-                agents, cfg, human_cfg=human_cfg, human_gateway=fake_gw
-            )
+            ChainTopology().build(agents, cfg, human_cfg=human_cfg, human_gateway=fake_gw)
 
         # LLMSimulatedGateway must NOT have been constructed
         mock_llm_sim.assert_not_called()
@@ -201,9 +199,7 @@ class TestStarDispatch:
             ),
             patch("atm.topology.star.LLMSimulatedGateway") as mock_llm_sim,
         ):
-            StarTopology().build(
-                agents, cfg, human_cfg=human_cfg, human_gateway=fake_gw
-            )
+            StarTopology().build(agents, cfg, human_cfg=human_cfg, human_gateway=fake_gw)
 
         mock_llm_sim.assert_not_called()
         assert len(captured_gateway_args) == 1
@@ -263,7 +259,11 @@ class TestMeshDispatch:
         cfg = TopologyConfig(
             name="mesh",
             max_iterations=20,
-            extra={"max_rounds": 6, "consensus_threshold": 2, "agent_order": ["planner", "researcher", "executor"]},
+            extra={
+                "max_rounds": 6,
+                "consensus_threshold": 2,
+                "agent_order": ["planner", "researcher", "executor"],
+            },
         )
         mock_graph = _make_mock_graph()
 
@@ -271,9 +271,7 @@ class TestMeshDispatch:
             patch("atm.topology.mesh.StateGraph", return_value=mock_graph),
             patch("atm.topology.mesh.LLMSimulatedGateway") as mock_llm_sim,
         ):
-            MeshTopology().build(
-                agents, cfg, human_cfg=human_cfg, human_gateway=fake_gw
-            )
+            MeshTopology().build(agents, cfg, human_cfg=human_cfg, human_gateway=fake_gw)
 
         mock_llm_sim.assert_not_called()
 
@@ -291,7 +289,11 @@ class TestMeshDispatch:
         cfg = TopologyConfig(
             name="mesh",
             max_iterations=20,
-            extra={"max_rounds": 6, "consensus_threshold": 2, "agent_order": ["planner", "researcher", "executor"]},
+            extra={
+                "max_rounds": 6,
+                "consensus_threshold": 2,
+                "agent_order": ["planner", "researcher", "executor"],
+            },
         )
         mock_graph = _make_mock_graph()
 
@@ -706,6 +708,7 @@ class TestGlobalNoLLMSimulatedWhenHumanGatewayProvided:
         mock_graph = _make_mock_graph()
 
         import importlib
+
         mod = importlib.import_module(module_path)
 
         # Conditionally patch node factory helpers (only where they exist in module)
@@ -736,7 +739,7 @@ class TestGlobalNoLLMSimulatedWhenHumanGatewayProvided:
             except Exception:
                 pass  # We only care that LLMSimulatedGateway was NOT called
             finally:
-                for p, _ctx in zip(reversed(optional_patches), reversed(ctx_stack)):
+                for p, _ctx in zip(reversed(optional_patches), reversed(ctx_stack), strict=True):
                     p.__exit__(None, None, None)
 
         assert mock_llm_sim.call_count == 0, (
