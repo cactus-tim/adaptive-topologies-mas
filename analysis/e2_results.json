@@ -1,0 +1,189 @@
+{
+  "best_role_per_task": {
+    "commongen": {
+      "n": 45,
+      "q": 0.6426,
+      "role": "peer"
+    },
+    "dabench": {
+      "n": 90,
+      "q": 0.563,
+      "role": "peer"
+    },
+    "gsm8k": {
+      "n": 135,
+      "q": 0.963,
+      "role": "monitor"
+    },
+    "humaneval": {
+      "n": 135,
+      "q": 0.9481,
+      "role": "coordinator"
+    }
+  },
+  "by_role": {
+    "coordinator": {
+      "n": 405,
+      "q": 0.7052
+    },
+    "judge": {
+      "n": 540,
+      "q": 0.712
+    },
+    "monitor": {
+      "n": 540,
+      "q": 0.7158
+    },
+    "peer": {
+      "n": 270,
+      "q": 0.7577
+    },
+    "reviewer": {
+      "n": 540,
+      "q": 0.7217
+    }
+  },
+  "by_task": {
+    "commongen": {
+      "n": 540,
+      "q": 0.5971
+    },
+    "dabench": {
+      "n": 585,
+      "q": 0.3889
+    },
+    "gsm8k": {
+      "n": 585,
+      "q": 0.9556
+    },
+    "humaneval": {
+      "n": 585,
+      "q": 0.9265
+    }
+  },
+  "by_topology": {
+    "chain": {
+      "n": 540,
+      "q": 0.6447
+    },
+    "debate": {
+      "n": 540,
+      "q": 0.6624
+    },
+    "hierarchical": {
+      "n": 540,
+      "q": 0.8254
+    },
+    "mesh": {
+      "n": 225,
+      "q": 0.3704
+    },
+    "star": {
+      "n": 450,
+      "q": 0.9244
+    }
+  },
+  "exp_id": "783f4b1e-8888-461e-82fe-07c700f789bc",
+  "fails_by_role": {},
+  "fails_by_topology_task": [],
+  "role_task_matrix": {
+    "coordinator": {
+      "commongen": {
+        "n": 90,
+        "q": 0.5827
+      },
+      "dabench": {
+        "n": 90,
+        "q": 0.213
+      },
+      "gsm8k": {
+        "n": 90,
+        "q": 0.9556
+      },
+      "humaneval": {
+        "n": 135,
+        "q": 0.9481
+      }
+    },
+    "judge": {
+      "commongen": {
+        "n": 135,
+        "q": 0.6049
+      },
+      "dabench": {
+        "n": 135,
+        "q": 0.384
+      },
+      "gsm8k": {
+        "n": 135,
+        "q": 0.9481
+      },
+      "humaneval": {
+        "n": 135,
+        "q": 0.9111
+      }
+    },
+    "monitor": {
+      "commongen": {
+        "n": 135,
+        "q": 0.5804
+      },
+      "dabench": {
+        "n": 135,
+        "q": 0.3938
+      },
+      "gsm8k": {
+        "n": 135,
+        "q": 0.963
+      },
+      "humaneval": {
+        "n": 135,
+        "q": 0.9259
+      }
+    },
+    "peer": {
+      "commongen": {
+        "n": 45,
+        "q": 0.6426
+      },
+      "dabench": {
+        "n": 90,
+        "q": 0.563
+      },
+      "gsm8k": {
+        "n": 90,
+        "q": 0.9556
+      },
+      "humaneval": {
+        "n": 45,
+        "q": 0.8667
+      }
+    },
+    "reviewer": {
+      "commongen": {
+        "n": 135,
+        "q": 0.6004
+      },
+      "dabench": {
+        "n": 135,
+        "q": 0.3901
+      },
+      "gsm8k": {
+        "n": 135,
+        "q": 0.9556
+      },
+      "humaneval": {
+        "n": 135,
+        "q": 0.9407
+      }
+    }
+  },
+  "status_totals": {
+    "completed": {
+      "cost": 42.3713,
+      "n": 2295,
+      "q": 0.7193540540749418
+    }
+  },
+  "wall_time_h": 13.9198
+}
