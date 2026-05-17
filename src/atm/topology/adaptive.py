@@ -556,6 +556,11 @@ class AdaptiveTopology:
         # When None, the node falls back to human_cfg.role (back-compat).
         _role_router: Any = role_router
 
+        # Unconditionally capture llm_wrapper for fallback threading (Site H).
+        # Must be outside the `if _hitl_enabled:` block so the closure captures it
+        # even when human_gateway is provided directly (StreamlitHumanGateway path).
+        llm_wrapper: Any = kwargs.get("human_gateway_llm")
+
         if _hitl_enabled:
             _human_extra: dict[str, Any] = dict(getattr(human_cfg, "extra", None) or {})
             _human_can_override = bool(_human_extra.get("human_can_override_router", False))
@@ -569,7 +574,6 @@ class AdaptiveTopology:
                 elif _LLMSimulatedGateway is not None:
                     # Build LLMWrapper for LLMSimulatedGateway if human_gateway_llm kwarg provided.
                     # NOTE: kwarg name is "human_gateway_llm" (matches Runner.run_one contract).
-                    llm_wrapper = kwargs.get("human_gateway_llm")
                     if llm_wrapper is not None:
                         _gateway = _LLMSimulatedGateway(llm_wrapper)
                     else:
@@ -709,8 +713,14 @@ class AdaptiveTopology:
             if _request_with_timeout is not None and timeout_s is not None:
                 _fallback_gateway: Any = None
                 if timeout_policy == "llm_fallback" and _LLMSimulatedGateway is not None:
-                    _fb_llm: Any = getattr(_gateway, "_llm", None)
-                    _fallback_gateway = _LLMSimulatedGateway(llm=_fb_llm)
+                    _fb_llm: Any = (
+                        llm_wrapper
+                        if llm_wrapper is not None
+                        else getattr(_gateway, "_llm", None)
+                    )
+                    _fallback_gateway = (
+                        _LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                    )
                 response = await _request_with_timeout(
                     _gateway,
                     ctx,

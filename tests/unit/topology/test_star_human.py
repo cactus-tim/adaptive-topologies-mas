@@ -611,6 +611,7 @@ class TestStarRoleRouter:
             question_extractor: Any,
             apply_decision: Any = None,
             role_router: Any = None,
+            fallback_llm: Any = None,
         ) -> Any:
             captured_factory_calls.append({"role_router": role_router})
 
@@ -660,6 +661,7 @@ class TestStarRoleRouter:
             question_extractor: Any,
             apply_decision: Any = None,
             role_router: Any = None,
+            fallback_llm: Any = None,
         ) -> Any:
             captured_factory_calls.append({"role_router": role_router})
 

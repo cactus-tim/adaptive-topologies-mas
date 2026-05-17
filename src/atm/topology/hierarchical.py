@@ -213,6 +213,7 @@ def _build_human_top_reviewer_node(
     gateway: HumanGateway,
     *,
     role_router: Any = None,
+    fallback_llm: Any = None,
 ) -> Any:
     """Build and return async human_top_reviewer node for scope='top'.
 
@@ -313,8 +314,14 @@ def _build_human_top_reviewer_node(
         if request_with_timeout is not None and timeout_s_val is not None:
             _fallback_gateway: Any = None
             if policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                _fb_llm: Any = getattr(gateway, "_llm", None)
-                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+                _fb_llm: Any = (
+                    fallback_llm
+                    if fallback_llm is not None
+                    else getattr(gateway, "_llm", None)
+                )
+                _fallback_gateway = (
+                    LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                )
             response = await request_with_timeout(
                 gateway,
                 ctx,
@@ -382,6 +389,7 @@ def _build_human_sub_reviewer_node(
     gateway: HumanGateway,
     *,
     role_router: Any = None,
+    fallback_llm: Any = None,
 ) -> Any:
     """Build and return async human_sub_reviewer node for scope='sub_team'.
 
@@ -480,8 +488,14 @@ def _build_human_sub_reviewer_node(
         if request_with_timeout is not None and timeout_s_val is not None:
             _fallback_gateway: Any = None
             if policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                _fb_llm: Any = getattr(gateway, "_llm", None)
-                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+                _fb_llm: Any = (
+                    fallback_llm
+                    if fallback_llm is not None
+                    else getattr(gateway, "_llm", None)
+                )
+                _fallback_gateway = (
+                    LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                )
             response = await request_with_timeout(
                 gateway,
                 ctx,
@@ -638,12 +652,13 @@ class HierarchicalTopology:
         # ----------------------------------------------------------------
         # Build gateway (shared for both top + sub_team scopes)
         # D7: honour pre-built gateway from runner first.
+        # Unconditionally capture gateway_llm for fallback threading (Sites F, G).
         # ----------------------------------------------------------------
+        gateway_llm: Any = kwargs.get("human_gateway_llm")
         gateway_instance: Any = None
         if hitl_enabled and human_cfg is not None:
             gateway_instance = kwargs.get("human_gateway")
             if gateway_instance is None:
-                gateway_llm: Any = kwargs.get("human_gateway_llm")
                 if human_cfg.gateway == "cli":
                     gateway_instance = CLIGateway() if CLIGateway is not None else None
                 else:
@@ -671,6 +686,7 @@ class HierarchicalTopology:
                 human_cfg,
                 gateway_instance,
                 role_router=role_router,
+                fallback_llm=gateway_llm,
             )
             team_b_subgraph = self._build_subgraph_with_human(
                 team_b_id,
@@ -679,6 +695,7 @@ class HierarchicalTopology:
                 human_cfg,
                 gateway_instance,
                 role_router=role_router,
+                fallback_llm=gateway_llm,
             )
         else:
             team_a_subgraph = self._build_subgraph(team_a_id, workers_a, agents)
@@ -983,7 +1000,10 @@ class HierarchicalTopology:
         if hitl_enabled and hitl_scope == "top" and human_cfg is not None:
             # Insert human_top_reviewer as an intermediate step before finalize
             node_fn = _build_human_top_reviewer_node(
-                human_cfg, gateway_instance, role_router=role_router
+                human_cfg,
+                gateway_instance,
+                role_router=role_router,
+                fallback_llm=gateway_llm,
             )
             graph.add_node("human_top_reviewer", node_fn)
 
@@ -1108,6 +1128,7 @@ class HierarchicalTopology:
         gateway: Any,
         *,
         role_router: Any = None,
+        fallback_llm: Any = None,
     ) -> Any:
         """Build a compiled subgraph with human_sub_reviewer inserted after sub_coord.
 
@@ -1154,7 +1175,8 @@ class HierarchicalTopology:
         # Insert human_sub_reviewer immediately after sub_coord
         human_node_name = f"human_sub_reviewer_{_team_id}"
         human_node_fn = _build_human_sub_reviewer_node(
-            _team_id, human_cfg, gateway, role_router=role_router
+            _team_id, human_cfg, gateway, role_router=role_router,
+            fallback_llm=fallback_llm,
         )
         sub_graph.add_node(human_node_name, human_node_fn)
         sub_graph.add_edge(sub_coord_name, human_node_name)

@@ -112,6 +112,7 @@ def _build_human_reviewer_node(
     human_cfg: HumanCfg,
     gateway: HumanGateway,
     role_router: HumanRoleRouter | None = None,
+    fallback_llm: Any = None,
 ) -> Any:
     """Build and return an async node function for the human_reviewer step.
 
@@ -226,11 +227,17 @@ def _build_human_reviewer_node(
             # F3: build a fallback gateway for llm_fallback policy
             _fallback_gateway: Any = None
             if policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                # Reuse the same LLM as the primary gateway; if the primary is already
-                # LLMSimulatedGateway, construct a fresh instance so the fallback is a
-                # separate call (the primary timed out, so a fresh instance is needed).
-                _fb_llm: Any = getattr(gateway, "_llm", None)
-                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+                # Prefer fallback_llm param; fall back to gateway._llm for back-compat.
+                # Guard: only build LLMSimulatedGateway when an LLM is available
+                # (StreamlitHumanGateway has no ._llm → would silently produce None).
+                _fb_llm: Any = (
+                    fallback_llm
+                    if fallback_llm is not None
+                    else getattr(gateway, "_llm", None)
+                )
+                _fallback_gateway = (
+                    LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                )
             response = await request_with_timeout(
                 gateway,
                 ctx,
@@ -536,7 +543,10 @@ class ChainTopology:
 
         if human_cfg is not None and human_cfg.enabled:
             # D7: honour pre-built gateway from runner (canonical key: human_gateway).
-            # If provided, use it directly and skip inline construction entirely.
+            # gateway_llm captured unconditionally so it is available to
+            # _build_human_reviewer_node's fallback_llm even when gateway came
+            # pre-built from the runner (Streamlit path).
+            gateway_llm: Any = kwargs.get("human_gateway_llm")
             human_gateway: Any = kwargs.get("human_gateway")
             if human_gateway is not None:
                 gateway_instance: Any = human_gateway
@@ -545,7 +555,6 @@ class ChainTopology:
                 # The LLM wrapper for LLMSimulatedGateway may be passed via kwargs
                 # (e.g. by Runner); if absent, it is left as None and the class is
                 # expected to be patched in tests.
-                gateway_llm: Any = kwargs.get("human_gateway_llm")
                 if human_cfg.gateway == "cli":
                     gateway_instance = CLIGateway() if CLIGateway is not None else None
                 else:
@@ -564,7 +573,10 @@ class ChainTopology:
 
             role_router = kwargs.get("role_router")
             node_fn = _build_human_reviewer_node(
-                human_cfg, gateway_instance, role_router=role_router
+                human_cfg,
+                gateway_instance,
+                role_router=role_router,
+                fallback_llm=gateway_llm,
             )
             graph.add_node("human_reviewer", node_fn)
 

@@ -154,6 +154,7 @@ def build_human_node_factory(
     question_extractor: Callable[[dict[str, Any]], str],
     apply_decision: Callable[[Any, dict[str, Any], dict[str, Any]], None] | None = None,
     role_router: HumanRoleRouter | None = None,
+    fallback_llm: Any = None,
 ) -> Any:
     """Build an async LangGraph-compatible node closure for HITL decisions.
 
@@ -196,6 +197,14 @@ def build_human_node_factory(
         (byte-identical to pre-m9.2 behaviour).  When provided, the router's
         ``decide(phase, shared)`` is awaited to determine the active role for
         each node invocation.
+    fallback_llm:
+        Optional LLM wrapper to pass to ``LLMSimulatedGateway`` when building
+        the fallback gateway for ``timeout_policy="llm_fallback"``.  When
+        ``None`` (default), the factory attempts to read ``gateway._llm`` for
+        back-compat.  This parameter exists specifically so topologies that use
+        a ``StreamlitHumanGateway`` (which has no ``._llm``) can still thread
+        the fallback LLM through without an ``AttributeError``.
+        Guard: ``LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None``.
 
     Returns
     -------
@@ -283,8 +292,14 @@ def build_human_node_factory(
         if request_with_timeout is not None and timeout_s is not None:
             _fallback_gateway: Any = None
             if timeout_policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                _fb_llm: Any = getattr(gateway, "_llm", None)
-                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+                _fb_llm: Any = (
+                    fallback_llm
+                    if fallback_llm is not None
+                    else getattr(gateway, "_llm", None)
+                )
+                _fallback_gateway = (
+                    LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                )
             response = await request_with_timeout(
                 gateway,
                 ctx,

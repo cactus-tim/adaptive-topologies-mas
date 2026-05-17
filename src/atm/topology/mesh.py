@@ -213,11 +213,12 @@ class MeshTopology:
 
         # Build human_peer gateway when HITL is enabled.
         # D7: reassign from kwargs["human_gateway"] first; no rename of this local.
+        # Unconditionally capture gateway_llm for fallback threading (Site C).
+        gateway_llm: Any = kwargs.get("human_gateway_llm")
         human_gateway: Any = None
         if human_enabled and human_cfg is not None:
             human_gateway = kwargs.get("human_gateway")
             if human_gateway is None:
-                gateway_llm: Any = kwargs.get("human_gateway_llm")
                 gateway_kind: str = getattr(human_cfg, "gateway", "llm_simulated")
                 if gateway_kind == "cli":
                     human_gateway = CLIGateway() if CLIGateway is not None else None
@@ -456,8 +457,14 @@ class MeshTopology:
                 if request_with_timeout is not None and timeout_s_val is not None:
                     _fallback_gateway: Any = None
                     if policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                        _fb_llm: Any = getattr(_hgw, "_llm", None)
-                        _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+                        _fb_llm: Any = (
+                            gateway_llm
+                            if gateway_llm is not None
+                            else getattr(_hgw, "_llm", None)
+                        )
+                        _fallback_gateway = (
+                            LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                        )
                     response = await request_with_timeout(
                         _hgw,
                         ctx,

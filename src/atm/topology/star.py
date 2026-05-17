@@ -449,11 +449,14 @@ class StarTopology:
             # _override_coordinator = bool((human_cfg.extra or {}).get("override_coordinator"))
 
             # Build gateway — D7: honour pre-built gateway from runner first.
+            # gateway_llm captured unconditionally so it can be passed as
+            # fallback_llm to build_human_node_factory even when gateway came
+            # pre-built from the runner (Streamlit path).
+            gateway_llm: Any = kwargs.get("human_gateway_llm")
             human_gateway: Any = kwargs.get("human_gateway")
             if human_gateway is not None:
                 gateway_instance: Any = human_gateway
             else:
-                gateway_llm: Any = kwargs.get("human_gateway_llm")
                 if human_cfg.gateway == "cli":
                     gateway_instance = CLIGateway() if CLIGateway is not None else None
                 else:
@@ -490,6 +493,7 @@ class StarTopology:
                 request_id_template="star:{run_id}:{iter_total}:reviewer",
                 question_extractor=_star_question_extractor,
                 role_router=role_router,
+                fallback_llm=gateway_llm,
             )
 
             graph.add_node("human_reviewer", human_reviewer_node)

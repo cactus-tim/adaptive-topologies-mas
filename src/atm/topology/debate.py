@@ -468,6 +468,7 @@ def _build_human_judge_node(
     debater_pro_id: str,
     debater_contra_id: str,
     role_router: Any = None,
+    fallback_llm: Any = None,
 ) -> Any:
     """Build an async HITL node that synthesizes a DECISION message for the judge.
 
@@ -579,8 +580,14 @@ def _build_human_judge_node(
         if request_with_timeout is not None and timeout_s_val is not None:
             _fallback_gateway: Any = None
             if policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                _fb_llm: Any = getattr(gateway, "_llm", None)
-                _fallback_gateway = LLMSimulatedGateway(llm=_fb_llm)
+                _fb_llm: Any = (
+                    fallback_llm
+                    if fallback_llm is not None
+                    else getattr(gateway, "_llm", None)
+                )
+                _fallback_gateway = (
+                    LLMSimulatedGateway(llm=_fb_llm) if _fb_llm is not None else None
+                )
             response = await request_with_timeout(
                 gateway,
                 ctx,
@@ -735,11 +742,15 @@ class DebateTopology:
         human_cfg: HumanCfg | None = kwargs.get("human_cfg")
         role_router: Any = kwargs.get("role_router")
 
+        # Unconditionally capture _gateway_llm for fallback threading (Sites D, E).
+        # Must be outside the `if gateway is None` block so the closure captures it
+        # even when human_gateway is provided directly (StreamlitHumanGateway path).
+        _gateway_llm: Any = kwargs.get("human_gateway_llm")
+
         # Build gateway from kwargs. D7 canonical key is "human_gateway"; legacy key
         # "gateway" is still honoured for back-compat with existing unit tests.
         gateway: HumanGateway | None = kwargs.get("human_gateway") or kwargs.get("gateway")
         if gateway is None and human_cfg is not None and getattr(human_cfg, "enabled", False):
-            _gateway_llm: Any = kwargs.get("human_gateway_llm")
             if getattr(human_cfg, "gateway", "llm_simulated") == "cli":
                 gateway = CLIGateway() if CLIGateway is not None else None
             else:
@@ -913,6 +924,7 @@ class DebateTopology:
                 debater_pro_id=debater_pro_id,
                 debater_contra_id=debater_contra_id,
                 role_router=role_router,
+                fallback_llm=_gateway_llm,
             )
 
             # Node: judge_postprocess — reads from judge_id outbox (unchanged)
@@ -1081,8 +1093,14 @@ class DebateTopology:
                 if request_with_timeout is not None and timeout_s_val is not None:
                     _h_fallback_gateway: Any = None
                     if h_policy == "llm_fallback" and LLMSimulatedGateway is not None:
-                        _h_fb_llm: Any = getattr(gateway, "_llm", None)
-                        _h_fallback_gateway = LLMSimulatedGateway(llm=_h_fb_llm)
+                        _h_fb_llm: Any = (
+                            _gateway_llm
+                            if _gateway_llm is not None
+                            else getattr(gateway, "_llm", None)
+                        )
+                        _h_fallback_gateway = (
+                            LLMSimulatedGateway(llm=_h_fb_llm) if _h_fb_llm is not None else None
+                        )
                     h_response = await request_with_timeout(
                         gateway,
                         ctx,
