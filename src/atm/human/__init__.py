@@ -33,6 +33,7 @@ from atm.human.role_router import (
     RuleBasedRoleRouter,
 )
 from atm.human.runner import MaxInteractionsExceededError, run_with_human
+from atm.human.streamlit_gateway import StreamlitHumanGateway
 
 __all__ = [
     "ROLE_SYSTEM_PROMPTS",
@@ -47,6 +48,7 @@ __all__ = [
     "LLMSimulatedGateway",
     "MaxInteractionsExceededError",
     "RuleBasedRoleRouter",
+    "StreamlitHumanGateway",
     "build_human_node_factory",
     "build_role_prompt",
     "request_with_timeout",
