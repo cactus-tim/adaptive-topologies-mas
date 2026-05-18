@@ -36,6 +36,13 @@ from atm.tools.base import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
+# Cap stored ToolResult.output size when accumulating into agent state.
+# See the comment at the truncation call site in _run_tool_loop for rationale.
+# 4 KB is generous for downstream consumers (finalize uses 1.2 KB, agent
+# verifiers use only call_id/ok) and keeps a 12-iteration × 4-agent run with
+# many file_read calls well under the PG wire-protocol message limit.
+_TOOL_RESULT_OUTPUT_MAX_CHARS: int = 4096
+
 
 # ---------------------------------------------------------------------------
 # _StepOutcome — result of one _run_tool_loop() execution
@@ -496,7 +503,36 @@ class Agent:
                         latency_ms=0,
                     )
 
-                tool_results.append(result)
+                # Truncate output BEFORE appending to tool_results — the field
+                # is checkpointed via LangGraph and grows unboundedly across
+                # iterations (list-concat reducer).  Without this cap, a
+                # file_read returning 1 MB of CSV × 12 iterations × 4 agents
+                # produces 100s of MB of agent state per checkpoint, and the
+                # serialized blob hits PG's wire-protocol message size limits
+                # ("invalid message length") on long adaptive runs (dabench).
+                # Downstream consumers of tool_results only use call_id/ok
+                # (chain/star/debate verifiers, executor stuck-streak counter)
+                # or take the LAST few entries with their own truncation
+                # (finalize._format_tool_history: last 6 @ 1200 chars).  The
+                # LLM in the current iteration sees the full data via
+                # output_preview below, which is already 2000-char capped.
+                _truncated_output: Any = result.output
+                if _truncated_output is not None:
+                    _s = str(_truncated_output)
+                    if len(_s) > _TOOL_RESULT_OUTPUT_MAX_CHARS:
+                        _truncated_output = (
+                            _s[:_TOOL_RESULT_OUTPUT_MAX_CHARS]
+                            + f" …[truncated, original {len(_s)} chars]"
+                        )
+                tool_results.append(
+                    ToolResult(
+                        call_id=result.call_id,
+                        ok=result.ok,
+                        output=_truncated_output,
+                        error=result.error,
+                        latency_ms=result.latency_ms,
+                    )
+                )
 
                 # Record observation event (truncated to 2000 chars)
                 output_preview = str(result.output)[:2000]

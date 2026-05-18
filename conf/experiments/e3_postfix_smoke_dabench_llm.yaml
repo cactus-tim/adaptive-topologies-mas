@@ -1,0 +1,40 @@
+include: e3_postfix_full.yaml
+
+name: e3_postfix_smoke_dabench_llm
+
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: llm
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 2
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    task.name: [dabench]
+    task.shuffle_seed: [0, 1]
+    topology.name: [adaptive]
