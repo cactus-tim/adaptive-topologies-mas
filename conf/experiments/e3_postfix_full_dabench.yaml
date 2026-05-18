@@ -1,0 +1,10 @@
+include: e3_postfix_full.yaml
+name: e3_postfix_full_dabench
+grid:
+  parallelism: 25
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name: [dabench]
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7]
+    topology.name: [chain, star, mesh, adaptive]
