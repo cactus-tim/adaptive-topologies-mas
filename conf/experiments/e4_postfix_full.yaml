@@ -1,0 +1,134 @@
+# E4 post-fix full — adaptive topology + adaptive role (RQ4), against the
+# corrected adaptive implementation (PR #18: 5 router/state fixes).
+#
+# Same design as e4_full.yaml (RQ4: does role_router improve over fixed?),
+# but on top of the corrected adaptive code:
+#   - iter_total no longer double-counted in adaptive dispatch
+#   - cooldown guard actually blocks the just-left topology
+#   - phase_switch_count tracked per phase
+#   - subgraph-internal phase advance detected for state-transfer cleanup
+#   - advisory HITL hint consumed by RuleBased + LLM topology routers
+#
+# Hypothesis to be tested against prior E4:
+#   - fixed mode baseline lifts (same lift seen in E3 postfix rule: +0.076 mean
+#     across 4 tasks; E3 postfix llm-3task: +0.250 raw mean).
+#   - rule/llm modes may or may not retain their small advantage over fixed
+#     (in prior E4: rule +0.027, llm −0.010 — both within bootstrap CI of 0).
+#   - DABench numbers will move most (E3 rule postfix: 0.174 → 0.423 = +0.249).
+#
+# Grid: 3 role_router × 4 task × 15 shuffle × 3 seed = 540 cells.
+# Wall on p=8: ~5-6 h. Budget: ~$30 worker + ~$5 judge.
+#
+# NOTE on infrastructure (lessons learned from E3 postfix):
+#   - parallelism=8 (vs prior E4=12, vs E3 postfix=12-25). Lower p reduces
+#     PG worker-cascade risk on dabench+llm-router combinations.
+#   - mp_context=spawn already enabled in src/atm/experiment/grid.py (5b05899)
+#   - WAL caps already tuned in docker-compose.yml (5b05899)
+#   - If the full grid still cascades on dabench cells, use the per-task
+#     catchups (e4_postfix_full_dabench.yaml, e4_postfix_full_commongen.yaml)
+#     with even lower parallelism.
+
+name: e4_postfix_full
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+# Adaptive topology — same caps as prior E4 (E3-champion topology_router=llm).
+topology:
+  name: adaptive
+  max_iterations: 6
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: llm     # E3 champion (Pareto winner pre-fix; lift expected post-fix)
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 3
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 3
+
+# 540 runs × ~$0.08 (HITL + adaptive) → ~$45 worker + judge ~$5.
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 60.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL with adaptive role-router.  role_router swept by grid.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer             # initial role; router may override per phase
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: rule          # overridden by grid sweep below
+
+# 4 task × 15 shuffle × 3 seed × 3 role_router = 540 cells.
+# Parallelism=8 (lower than prior E4's 12) to reduce cascade risk under
+# adaptive+llm-router load on the dabench combo.
+grid:
+  parallelism: 8
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    human.role_router:
+      - fixed
+      - rule
+      - llm
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

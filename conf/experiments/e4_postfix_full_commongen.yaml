@@ -1,0 +1,36 @@
+# E4 post-fix CommonGen catchup — fallback for the second cascade-prone cell.
+#
+# In E3 postfix, commongen cells produced 96 LLM-timeout errors (Cerebras
+# rate-limit on long prompts).  These were not zombies — they were
+# asyncio.wait_for timeouts inside agent.step / human_advisor_node.  Lower
+# parallelism + larger per-run budget reduces the per-call timeout rate.
+#
+# Strategy: run only if e4_postfix_full produces a large fraction of error
+# (not zombie) failures on commongen cells.
+
+include: e4_postfix_full.yaml
+name: e4_postfix_full_commongen
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.50      # bumped vs base — gives commongen runs more headroom
+  per_experiment_usd: 15.0
+  warn_ratio: 0.85
+
+# Bump per-call HITL timeout so slow Cerebras responses don't surface as errors.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 1200.0      # 20 min vs base 900 s; tail-resistant
+  timeout_policy: llm_fallback
+  role_router: rule      # overridden by sweep
+
+grid:
+  parallelism: 6         # softer than full's 8
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    human.role_router: [fixed, rule, llm]
+    task.name: [commongen]
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
