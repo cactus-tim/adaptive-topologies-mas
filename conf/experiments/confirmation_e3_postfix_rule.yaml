@@ -1,0 +1,105 @@
+# Confirmation E3 post-fix — RULE router only (180 cells), cross-family
+# validation on Cerebras Qwen3-235B against the **corrected** adaptive
+# implementation (PR #18).
+#
+# Apples-to-apples with prior `confirmation_e3_rule.yaml`:
+#   - Same sweep (1 router × 4 task × 15 shuffle × 3 seed = 180 cells)
+#   - Same worker (cerebras:qwen-3-235b-a22b-instruct-2507)
+#   - Same judge (openai:gpt-4.1-mini — CONSTANT)
+#   - Same HITL config (llm_simulated, role=reviewer, role_router=fixed)
+#
+# Difference vs prior:
+#   - Includes e3_postfix_full.yaml (post-fix code defaults: iter_total
+#     single-source, cooldown semantics, phase_switch_count tracking,
+#     pre-subgraph phase detection, advisor hint consumption)
+#   - parallelism=8 (down from prior=30) — cascade safety on qwen + dabench
+#
+# Purpose: validate the RQ2 head-line claim («adaptive matches best-per-task
+# static automatically») on a different worker family.  Prior confirmation_e3
+# (on pre-fix code) observed family-divergence (cost-ratio collapse, magnitude
+# blowup, dabench solved at 0.92 instead of 0.17).  This run answers: are
+# those family-effects artefacts of the implementation artefacts, or are they
+# robust to the corrections?
+#
+# Run BEFORE confirmation_e3_postfix_llm.yaml to avoid shared-key TPM contention.
+
+include: e3_postfix_full.yaml
+
+name: confirmation_e3_postfix_rule
+
+# Override worker to qwen (judge stays gpt-4.1-mini as measurement instrument).
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT across all experiments
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  # qwen-3-235b on Cerebras rejects reasoning_effort — nullify parent's overrides.
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+# Pin topology_router to rule (apples-to-apples with confirmation_e3_rule).
+# Inherits the rest of e3_postfix_full topology config (subgraph caps, guards).
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: rule
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+# Re-enable HITL with fixed reviewer role (confirmation_e3 used HITL on).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+# qwen ~1.7× more expensive output than gpt-oss — bumped per-call/per-run/exp.
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.60
+  per_experiment_usd: 50.0
+  warn_ratio: 0.85
+
+# 4 task × 15 shuffle × 3 seed = 180 cells, adaptive-only (no static
+# topologies — confirmation tests adaptive behaviour cross-family).
+grid:
+  parallelism: 8
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    topology.name: [adaptive]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
