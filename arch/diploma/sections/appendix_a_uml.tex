@@ -21,6 +21,7 @@
 
 \begin{figure}[!htbp]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
   font=\small,
   node distance=0.55cm and 0.7cm,
@@ -169,7 +170,8 @@
 % Шлюз человека -> Observability (для метрик r_guard, r_hurt)
 \draw[dataflow] (human.south) -- ++(0,-0.3) -| (obs.east);
 
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Функциональная схема программной системы. Сплошные
 стрелки --- передача управления и записи событий в хранилище;
 штриховые --- обмен сообщениями между блоками и управляющие
