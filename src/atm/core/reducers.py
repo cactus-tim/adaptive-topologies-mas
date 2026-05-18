@@ -27,6 +27,31 @@ def _get(item: Any, field: str) -> Hashable:
     return cast(Hashable, getattr(item, field))
 
 
+def _dedup_keep_left(items: list[Any], *, key_fn: Callable[[Any], Hashable]) -> list[Any]:
+    """Stable left-wins dedup by ``key_fn`` applied to each element."""
+    seen: set[Hashable] = set()
+    out: list[Any] = []
+    for item in items:
+        k = key_fn(item)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(item)
+    return out
+
+
+def _msg_id(m: Any) -> Hashable:
+    return cast(Hashable, getattr(m, "id", None) or id(m))
+
+
+def _toolcall_id(t: Any) -> Hashable:
+    return cast(Hashable, getattr(t, "id", None) or id(t))
+
+
+def _toolresult_id(t: Any) -> Hashable:
+    return cast(Hashable, getattr(t, "call_id", None) or id(t))
+
+
 def _merge_one(left_agent: dict[str, Any], right_agent: dict[str, Any]) -> dict[str, Any]:
     """Merge a single agent state dict (per-agent rules)."""
     merged: dict[str, Any] = {}
@@ -35,9 +60,33 @@ def _merge_one(left_agent: dict[str, Any], right_agent: dict[str, Any]) -> dict[
     for key in ("agent_id", "role"):
         merged[key] = left_agent.get(key) or right_agent.get(key)
 
-    # Append-only list fields — concat left + right
-    for key in ("inbox", "outbox", "scratchpad", "tool_calls", "tool_results"):
-        merged[key] = list(left_agent.get(key, [])) + list(right_agent.get(key, []))
+    # Append-only list fields with unique id — dedup-by-id (left wins on id
+    # collision).  Plain list-concat here causes a geometric explosion in
+    # adaptive's meta-graph: each sub-graph dispatch reads the parent's
+    # accumulated agent state, appends in its own internal reducer, then
+    # returns the cumulative result as a "delta" to the parent.  The parent
+    # reducer concatenates left + right → duplicates everything from left.
+    # After N iterations the list length is 2^N − 1.  At N=12 a single agent's
+    # outbox carried 4096 Message objects and the serialized blob hit 830 MB,
+    # crashing the PG checkpointer with "invalid message length".
+    for key, key_fn in (
+        ("inbox", _msg_id),
+        ("outbox", _msg_id),
+        ("tool_calls", _toolcall_id),
+        ("tool_results", _toolresult_id),
+    ):
+        combined = list(left_agent.get(key, [])) + list(right_agent.get(key, []))
+        merged[key] = _dedup_keep_left(combined, key_fn=key_fn)
+
+    # scratchpad — list of plain dicts without an inherent id.  Same
+    # geometric-blowup hazard, but no key to dedup on.  Sub-graphs always
+    # return a superset of the parent's scratchpad (the parent's events
+    # are read as input then more are appended), so "longer side wins" is
+    # the correct deltification: it drops the parent's prefix that is
+    # already contained in the sub-graph's return.
+    left_sp = list(left_agent.get("scratchpad", []))
+    right_sp = list(right_agent.get("scratchpad", []))
+    merged["scratchpad"] = right_sp if len(right_sp) >= len(left_sp) else left_sp
 
     # Summary — right wins if non-empty, else left
     merged["summary_before_window"] = right_agent.get("summary_before_window") or left_agent.get(
@@ -72,10 +121,20 @@ def merge_agent_states(
       4. Input immutability: does not mutate left or right.
 
     Per-key rules:
-      inbox, outbox, scratchpad, tool_calls, tool_results  — list concat (left + right)
+      inbox, outbox, tool_calls, tool_results              — dedup-by-id (left + right, left wins on collision)
+      scratchpad                                            — longer-list wins (no inherent id; sub-graph delta is always a superset)
       summary_before_window                                 — right wins if non-empty else left
       step_count, tokens_spent, cost_spent_usd             — max(left, right)
       agent_id, role                                       — left wins (immutable)
+
+    Pre-fix history: ``inbox``/``outbox``/``scratchpad``/``tool_calls``/
+    ``tool_results`` were merged with plain list-concat ``left + right``.
+    This produced a geometric blowup in adaptive's meta-graph (a single
+    agent's outbox reached 2^N − 1 entries after N meta-ticks because each
+    sub-graph dispatch returned its cumulative agent state — including the
+    parent's items — and the parent reducer concatenated them back in).
+    After 12 iterations the agents-channel blob exceeded 830 MB and crashed
+    the PG checkpointer with "invalid message length".
     """
     if not left:
         return dict(right or {})
