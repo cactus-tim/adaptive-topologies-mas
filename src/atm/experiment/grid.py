@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import multiprocessing as mp
 import time
 from collections.abc import Callable
 from concurrent.futures import CancelledError as FuturesCancelledError
@@ -363,7 +364,14 @@ async def run_grid(
         logger.debug("checkpointer warmup skipped (%s); workers will retry", exc)
 
     # ProcessPoolExecutor created fresh per call to ensure clean state.
-    executor = ProcessPoolExecutor(max_workers=parallelism)
+    # mp_context="spawn" avoids inheriting parent's PG socket FDs (from the
+    # checkpointer warmup above + reconcile in the caller); under fork, workers
+    # share those FDs with the parent and any concurrent write garbles the
+    # wire protocol → PG closes connection → cascade of worker abrupt-deaths.
+    executor = ProcessPoolExecutor(
+        max_workers=parallelism,
+        mp_context=mp.get_context("spawn"),
+    )
     cancelled = False
 
     try:
