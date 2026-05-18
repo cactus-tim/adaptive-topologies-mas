@@ -860,8 +860,34 @@ def _build_agents(
             str(debate_extra.get("debater_pro_id") or "debater_pro"),
             str(debate_extra.get("debater_contra_id") or "debater_contra"),
         ):
+            is_contra = worker_id == str(
+                debate_extra.get("debater_contra_id") or "debater_contra"
+            )
+            if is_contra:
+                stance_header = (
+                    "[YOUR STANCE — CONTRA]\n"
+                    "You are the CONTRA debater, the opposing / skeptical side. "
+                    "Produce your own independent answer, then attack the PRO side "
+                    "head-on: hunt for bugs, missed edge cases, counterexamples, and "
+                    "false assumptions in their answer. Never copy or concede to PRO "
+                    "— if PRO is wrong, prove exactly why and submit the corrected "
+                    "answer as yours; if PRO looks right, beat it with a cleaner or "
+                    "more robust answer. You win by showing your answer is more "
+                    "correct than PRO's.\n\n"
+                )
+            else:
+                stance_header = (
+                    "[YOUR STANCE — PRO]\n"
+                    "You are the PRO debater, the proposing / affirmative side. "
+                    "Commit to the strongest possible answer and defend it: argue for "
+                    "its correctness with explicit reasons and evidence. When you see "
+                    "the CONTRA side's draft, rebut its objections and expose its "
+                    "weaknesses rather than adopting it — do not concede prematurely. "
+                    "You win by defending your answer as the most correct one.\n\n"
+                )
             debate_override = (
-                "[DEBATE ROLE — HARD RULES, READ FIRST]\n"
+                stance_header
+                + "[DEBATE ROLE — HARD RULES, READ FIRST]\n"
                 "You are a DEBATER who is ALSO the executor. Your job has TWO "
                 "outputs every single turn, in this strict order:\n"
                 "\n"
