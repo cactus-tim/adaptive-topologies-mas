@@ -17,20 +17,62 @@ unchanged, but the post-fix data shows **direction changes**:
 Both new claims need cross-family backing to be defensible at the diploma
 level.
 
+### Full confirmations (apples-to-apples with pre-fix confirmation)
+
 | Config                                | Cells | Wall (p=8) | Budget | Purpose |
 |---------------------------------------|-------|-----------|--------|---------|
 | `confirmation_e3_postfix_rule.yaml`   | 180   | ~1.5-2 h  | ~$15   | E3 rule cross-family — validate RQ2 (adaptive ≈ best static) |
 | `confirmation_e3_postfix_llm.yaml`    | 180   | ~2-3 h    | ~$15   | E3 llm cross-family — validate Pareto (llm at fraction of cost) |
 | `confirmation_e4_postfix.yaml`        | 540   | ~6-8 h    | ~$45   | E4 cross-family — validate strengthened RQ4 |
 
-Total compute envelope: ~$75 worker + ~$10 judge ≈ $85, ~10-12 hours wall
-on the deploy machine if run sequentially.  Comparable to prior confirmation
-runs ($6.50 + $6.50 + $50 ≈ $63).  Slight uptick because parallelism is
-lower (cascade safety on qwen).
+Total compute envelope for full: ~$75 worker + ~$10 judge ≈ $85, ~10-12 hours
+wall on the deploy machine if run sequentially.  Comparable to prior
+confirmation runs ($6.50 + $6.50 + $50 ≈ $63).
+
+### Mini confirmations (time-constrained, single-night runs)
+
+| Config                                     | Cells | Wall (p=4) | Budget | n per cell |
+|--------------------------------------------|-------|-----------|--------|------------|
+| `confirmation_e3_postfix_rule_mini.yaml`   | 60    | ~1-1.5 h  | ~$4    | n=15 per task — **matches prior confirmation_e3 density** |
+| `confirmation_e3_postfix_llm_mini.yaml`    | 60    | ~1.5 h    | ~$4    | n=15 per task — same as rule companion |
+| `confirmation_e4_postfix_mini.yaml`        | 72    | ~1-1.5 h  | ~$5    | n=6 per (mode, task) — direction-only (formal significance already settled by prior full confirmation_e4 on n=15) |
+
+Total mini envelope: **~$13 worker + ~$3 judge ≈ $16, ~3.5-4 h wall sequentially.**
+Can be started in the evening and complete overnight.
+
+**When mini is enough**:
+- E3 rule/llm mini: n=15 per task **matches the density that was used in
+  the prior pre-fix confirmation chapter** — same statistical weight as
+  what `confirmation_e3_analysis.md` already calls «sufficient cross-family
+  backing».  Bootstrap-CI on principal effects (LLM gsm8k/humaneval lifts,
+  ~0.4 magnitude on gpt-oss postfix) will be informative.
+- E4 mini: direction-only.  Significance was not achievable on prior full
+  confirmation_e4 (n=15 per (mode, task), CI included 0) and won't appear
+  at smaller n either.  Mini just confirms direction holds cross-family.
+
+**When you need full**:
+- Defensible tight bootstrap-CI for confirmation chapter
+- Cells you want to claim parity for specific shuffles
+- Replicating prior `confirmation_e3` 360-cell density exactly
 
 ---
 
 ## Recommended order
+
+### Mini overnight (time-constrained — $16, ~3.5h)
+
+```bash
+# 1. E3 rule mini (60 cells, ~1-1.5h)
+uv run atm grid -c conf/experiments/confirmation_e3_postfix_rule_mini.yaml --parallelism 4
+
+# 2. E3 llm mini (60 cells, ~1.5h)
+uv run atm grid -c conf/experiments/confirmation_e3_postfix_llm_mini.yaml --parallelism 4
+
+# 3. E4 mini (72 cells, ~1-1.5h)
+uv run atm grid -c conf/experiments/confirmation_e4_postfix_mini.yaml --parallelism 4
+```
+
+### Full confirmation (when time permits — $85, ~10-12h)
 
 ```bash
 # Wait until e4_postfix_full.yaml main grid has completed.
