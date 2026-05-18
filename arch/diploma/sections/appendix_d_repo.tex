@@ -8,93 +8,55 @@
 \section{Состав программного репозитория}
 \label{app:repo}
 
-В приложении приведено краткое описание состава программного
-репозитория проекта. Состав фиксирован по состоянию идентификатора
-фиксации, указанного в приложении~\ref{app:github}.
+Состав репозитория фиксирован по идентификатору фиксации
+приложения~\ref{app:github}.
 
 \begingroup
 \small
 
 \subsection*{Корневая структура}
 
-\noindent\textbf{\code{src/atm/}} --- основной пакет фреймворка,
-тринадцать функциональных слоев.\quad
-\textbf{\code{conf/}} --- декларативная конфигурация экспериментов
-и компонентов в формате YAML.\quad
-\textbf{\code{scripts/}} --- самостоятельные скрипты обслуживания
-экспериментов и сборки производных артефактов.\quad
+\noindent\textbf{\code{src/atm/}} --- основной пакет (13 слоев).\quad
+\textbf{\code{conf/}} --- YAML-конфигурации экспериментов и
+компонентов.\quad
+\textbf{\code{scripts/}} --- скрипты обслуживания.\quad
 \textbf{\code{notebooks/}} --- шаблон Jupyter-ноутбука для
-аналитической постобработки результатов прогонов.\quad
-\textbf{\code{pyproject.toml}} --- декларация пакета, зависимостей
-и точки входа \code{atm}.\quad
-\textbf{\code{README.md}} --- точка входа в документацию проекта
-и инструкция по сборке среды.
+постобработки.\quad
+\textbf{\code{pyproject.toml}} --- декларация пакета и точки
+входа \code{atm}.\quad
+\textbf{\code{README.md}} --- инструкция по сборке.
 
 \subsection*{Слои пакета \code{src/atm/}}
 
-\noindent\textbf{\code{atm.core}} --- контейнеры состояния и
-базовые типы (\code{AgentState}, \code{SharedState},
-\code{GraphState}, \code{Phase}, \code{HumanRole}).\quad
-\textbf{\code{atm.llm}} --- оболочка над провайдерами языковых
-моделей, ценообразование, бюджетные ограничители,
-детерминированный \code{FakeLLM}, фабрика \code{build\_llm}.\quad
-\textbf{\code{atm.tools}} --- реестр инструментов и обертка
-над Docker-песочницей.\quad
-\textbf{\code{atm.agents}} --- базовый класс \code{Agent} и
-пять специализированных ролей плюс координатор.\quad
-\textbf{\code{atm.topology}} --- шесть реализаций топологий
-(\code{star.py}, \code{chain.py}, \code{mesh.py}, \code{debate.py},
-\code{hierarchical.py}, \code{adaptive.py}) поверх общего протокола
+\noindent\textbf{\code{atm.core}} --- состояние и базовые типы.\quad
+\textbf{\code{atm.llm}} --- оболочка провайдеров, ценообразование,
+бюджеты, \code{FakeLLM}.\quad
+\textbf{\code{atm.tools}} --- реестр инструментов и Docker-песочница.\quad
+\textbf{\code{atm.agents}} --- класс \code{Agent}, пять ролей и
+координатор.\quad
+\textbf{\code{atm.topology}} --- шесть топологий поверх протокола
 \code{Topology}.\quad
-\textbf{\code{atm.phases}} --- конечный автомат фаз, маршрутизатор
-топологий, защитные правила переключения, ворота передачи
-состояния.\quad
-\textbf{\code{atm.human}} --- слой человека в контуре управления
-(от англ. Human-in-the-Loop, HITL) --- протокол
-\code{HumanGateway}, реализации шлюзов, маршрутизатор ролей,
-политика тайм-аутов.\quad
-\textbf{\code{atm.storage}} --- объектно-реляционное отображение,
-модели таблиц PostgreSQL, асинхронные сессии, писатель Parquet,
-обертка над чекпойнтером LangGraph, миграции \code{alembic/}.\quad
-\textbf{\code{atm.observability}} --- перехватчик событий
-LangGraph, сериализация, обертки над логгером.\quad
-\textbf{\code{atm.tasks}} --- загрузчики и оценщики четырех
-корпусов (HumanEval, GSM8K, CommonGen, InfiAgent-DABench).\quad
-\textbf{\code{atm.evaluation}} --- судья оценки качества, оракулы
-достоверности, агрегатор шкалы NASA-TLX.\quad
-\textbf{\code{atm.experiment}} --- схемы конфигов на Pydantic,
-загрузчик OmegaConf с расширением по сетке, командная строка
-\code{atm} на Typer.\quad
-\textbf{\code{atm.analysis}} --- загрузчики результатов,
-агрегаторы метрик, генератор графиков, построитель оракула.
+\textbf{\code{atm.phases}} --- FSM фаз, маршрутизатор топологий,
+защитные правила, ворота передачи состояния.\quad
+\textbf{\code{atm.human}} --- HITL: \code{HumanGateway}, шлюзы,
+маршрутизатор ролей, политика тайм-аутов.\quad
+\textbf{\code{atm.storage}} --- ORM, асинхронные сессии PostgreSQL,
+писатель Parquet, чекпойнтер, миграции \code{alembic/}.\quad
+\textbf{\code{atm.observability}} --- перехватчик событий LangGraph.\quad
+\textbf{\code{atm.tasks}} --- загрузчики и оценщики четырех корпусов.\quad
+\textbf{\code{atm.evaluation}} --- судья качества, оракулы,
+агрегатор NASA-TLX.\quad
+\textbf{\code{atm.experiment}} --- схемы Pydantic, OmegaConf,
+CLI на Typer.\quad
+\textbf{\code{atm.analysis}} --- агрегаторы метрик, графики,
+построитель оракула.
 
-\subsection*{Конфигурационные файлы \code{conf/}}
+\subsection*{Конфигурации \code{conf/}}
 
-\noindent\textbf{\code{conf/experiments/}} --- полные конфигурации
-экспериментов E1--E4, подтверждающих прогонов и проверок
-работоспособности.\quad
-\textbf{\code{conf/agents/}} --- системные подсказки шести ролей
-агентов.\quad
-\textbf{\code{conf/topology/}} --- параметры по умолчанию для
-шести топологий.\quad
-\textbf{\code{conf/human/}} --- параметры шлюза HITL и системные
-подсказки симулятора.\quad
-\textbf{\code{conf/model/}} --- параметры языковых моделей.\quad
-\textbf{\code{conf/tasks/}} --- загрузчики корпусов
-и стратифицированные выборки.\quad
-\textbf{\code{conf/oracle/}} --- конфигурации построения оракула.\quad
-\textbf{\code{conf/evaluation/}} --- параметры судьи и агрегаторов.\quad
-\textbf{\code{conf/sandbox/}} --- параметры Docker-песочницы и
-профиль системных вызовов.
-
-\subsection*{Скрипты и ноутбуки}
-
-\noindent\textbf{\code{scripts/gen\_analysis\_notebook.py}} ---
-генератор аналитического ноутбука из шаблона.\quad
-\textbf{\code{scripts/derive\_seccomp.py}} --- сборка профиля
-системных вызовов для песочницы.\quad
-\textbf{\code{notebooks/analysis\_template.ipynb}} --- шаблонный
-ноутбук из шести секций для постобработки и визуализации
-результатов прогона.
+\noindent\textbf{\code{experiments/}} --- конфиги E1--E4 и
+подтверждающих прогонов.\quad
+\textbf{\code{agents/, topology/, human/, model/, tasks/, oracle/,
+evaluation/, sandbox/}} --- параметры по соответствующим
+компонентам.
 
 \endgroup
