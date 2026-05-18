@@ -42,6 +42,9 @@
                   minimum width=2.5cm, minimum height=1.1cm},
   group/.style={rectangle, draw=gray!60, dashed, rounded corners=4pt,
                 inner sep=0.25cm},
+  authgroup/.style={rectangle, draw=red!75!black, very thick, double,
+                    double distance=1.2pt, rounded corners=4pt,
+                    inner sep=0.25cm},
   flow/.style={-{Latex[length=2mm]}, thick},
   msgflow/.style={-{Latex[length=2mm]}, thick, dashed},
   dataflow/.style={-{Latex[length=2mm]}, thick, dotted},
@@ -104,9 +107,12 @@
     метрики $q,\, c,\, \tau,\, N_{\text{switch}},\, r_{\text{guard}},\, r_{\text{hurt}},\, \Delta_{\text{oracle}}$};
 
 % --- Группы (фоновые рамки) ---
+% Авторские компоненты выделены двойной красной рамкой:
+% слой адаптации (маршрутизаторы фаз и топологий),
+% оракул-маршрутизатор, шлюз HITL.
 \begin{scope}[on background layer]
-  \node[group, fit=(phase) (toporouter),
-        label={[gray!80, font=\footnotesize]above:Слой адаптации}] (adaptLayer) {};
+  \node[authgroup, fit=(phase) (toporouter),
+        label={[red!75!black, font=\footnotesize\bfseries]above:Слой адаптации $\bigstar$}] (adaptLayer) {};
   \node[group, fit=(mesh) (chain) (star) (debate) (hier),
         label={[gray!80, font=\footnotesize]above:Пять базовых топологий (шестая, адаптивная, реализуется их переключением)}] (topoLayer) {};
   \node[group, fit=(a_plan) (a_res) (a_exe) (a_cri) (a_deb) (a_coo),
@@ -115,6 +121,11 @@
         label={[gray!80, font=\footnotesize]above:Внешние службы}] (infraLayer) {};
   \node[group, fit=(eval) (oracle),
         label={[gray!80, font=\footnotesize]above:Слой оценки и оракул}] (evalLayer) {};
+  % выделяем сам оракул-маршрутизатор и шлюз HITL как авторские
+  \node[authgroup, fit=(oracle), inner sep=0.05cm,
+        label={[red!75!black, font=\footnotesize\bfseries]below:$\bigstar$}] {};
+  \node[authgroup, fit=(human), inner sep=0.05cm,
+        label={[red!75!black, font=\footnotesize\bfseries]below:$\bigstar$}] {};
 \end{scope}
 
 % --- Управляющие связи ---
@@ -162,13 +173,18 @@
 \caption{Функциональная схема программной системы. Сплошные
 стрелки --- передача управления и записи событий в хранилище;
 штриховые --- обмен сообщениями между блоками и управляющие
-сигналы от человека; точечные --- поток оракульной таблицы от оракула
-к маршрутизатору топологий. Цветовое кодирование --- серый цвет
-соответствует точкам входа и выхода, синий --- управляющим
+сигналы от человека; точечные --- поток оракульной таблицы от
+оракула к маршрутизатору топологий. Цветовое кодирование ---
+серый соответствует точкам входа и выхода, синий --- управляющим
 компонентам, оранжевый --- активным коммуникационным топологиям,
 зеленый --- слою агентов, красный --- внешним службам исполнения,
 фиолетовый --- слою оценки качества и оракулу, желтый ---
-подсистеме хранения.}
+подсистеме хранения. \textbf{Двойная красная рамка и маркер
+$\bigstar$ обозначают авторские компоненты} --- слой адаптации
+(маршрутизаторы фаз и топологий с защитными правилами),
+оракул-маршрутизатор и шлюз взаимодействия с человеком. Полный
+перечень заимствованных и авторских компонентов с источниками
+приведен в таблице~\ref{tab:arch:contribution}.}
 \label{fig:appA:scheme}
 \end{figure}
 
