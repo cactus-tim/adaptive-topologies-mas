@@ -1,0 +1,96 @@
+# Confirmation E3 post-fix — LLM router only (180 cells), cross-family
+# validation on Cerebras Qwen3-235B against the **corrected** adaptive
+# implementation (PR #18).
+#
+# Apples-to-apples with prior `confirmation_e3_llm.yaml`:
+#   - Same sweep (1 router × 4 task × 15 shuffle × 3 seed = 180 cells)
+#   - Same worker (cerebras:qwen-3-235b-a22b-instruct-2507)
+#   - Same judge (openai:gpt-4.1-mini)
+#   - Same HITL config (llm_simulated, role=reviewer, role_router=fixed)
+#
+# Difference vs prior:
+#   - Includes e3_postfix_full.yaml (post-fix code semantics)
+#   - parallelism=6 (lower than rule companion — qwen + llm-router + dabench
+#     is the cascade-prone combination per E3 postfix observations)
+#
+# Purpose: validate the cost-Pareto claim («adaptive llm-router gives
+# near-static quality at fraction of cost») on a different worker family.
+# In prior confirmation_e3 on pre-fix code, llm-router collapsed to −30.6 pp
+# vs rule on qwen; this is the cell most likely to change under PR #18.
+#
+# Run AFTER confirmation_e3_postfix_rule.yaml to avoid TPM contention.
+
+include: e3_postfix_full.yaml
+
+name: confirmation_e3_postfix_llm
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+# Pin topology_router to llm.
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: llm
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+# Re-enable HITL with fixed reviewer.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.60
+  per_experiment_usd: 50.0
+  warn_ratio: 0.85
+
+# Same sweep as rule companion, parallelism=6 (cascade-prone combo).
+grid:
+  parallelism: 6
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    topology.name: [adaptive]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
