@@ -1,0 +1,69 @@
+# Confirmation E4 post-fix — MINI (72 cells), cross-family proof-of-direction
+# for the revised RQ4 claim.
+#
+# Size: 3 role_router × 4 task × 3 shuffle × 2 seed = 72 cells (vs 540 full).
+# ~1-1.5 h on p=4, ~$5-7.
+#
+# Purpose: cross-family check whether the post-fix observation
+# «role-router slightly hurts (rule −0.113, llm −0.083 vs fixed)» reproduces
+# on qwen worker.
+#
+# Why mini is justified here: the prior confirmation_e4 already showed
+# RQ4-NOT-replicated on qwen (rule ≈ fixed ≈ llm within noise) on n=15.
+# Significance was not present even there, and won't appear on smaller n —
+# what we need is direction agreement.  n=6 per (mode, task) is sufficient.
+#
+# Acceptance signal: if rule and llm modes show mean q ≤ fixed across at
+# least 3 of 4 task families → direction confirmed.  If qwen shows the
+# opposite (rule > fixed) on ≥3 tasks → limitation: «role-router effect
+# is family-dependent on the corrected implementation».
+#
+# Loader supports single-level include only — inherits directly from
+# e4_postfix_full.yaml and re-declares the qwen-worker block here.
+
+include: e4_postfix_full.yaml
+
+name: confirmation_e4_postfix_mini
+
+# Cross-family worker.
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.65
+  per_experiment_usd: 10.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    human.role_router:
+      - fixed
+      - rule
+      - llm
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

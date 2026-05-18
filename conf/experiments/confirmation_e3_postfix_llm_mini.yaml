@@ -1,0 +1,92 @@
+# Confirmation E3 post-fix — LLM router MINI-MEDIUM (60 cells),
+# cross-family validation matched to prior confirmation_e3 density.
+#
+# Size: 4 task × 5 shuffle × 3 seed = 60 cells (vs 180 for full).
+# ~1.5 h on p=4 (llm-router slightly slower than rule), ~$4.
+#
+# n=15 per task — SAME density as prior pre-fix confirmation_e3.
+#
+# THIS IS THE MOST INTERESTING MINI — prior confirmation_e3_llm on qwen
+# showed *collapse* on verifiable tasks:
+#   gsm8k:     0.000  (vs 0.521 gpt-oss pre-fix → 0.917 gpt-oss postfix)
+#   humaneval: 0.553  (vs 0.420 → 0.808)
+# If post-fix LLM on qwen lifts gsm8k/humaneval the same way gpt-oss did →
+# strong cross-family RQ2 cost-Pareto claim.  If qwen still collapses →
+# family-specific behaviour robust to PR #18 (defensible limitation).
+#
+# Run AFTER confirmation_e3_postfix_rule_mini.yaml.
+
+include: e3_postfix_full.yaml
+
+name: confirmation_e3_postfix_llm_mini
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+# Pin llm router.
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: llm
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+# Re-enable HITL with fixed reviewer.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.60
+  per_experiment_usd: 6.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4]
+    topology.name: [adaptive]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
