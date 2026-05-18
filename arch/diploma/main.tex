@@ -114,7 +114,13 @@
 }
 
 %%% --- Глобальные команды ----------------------------------------- %%%
-\newcommand{\code}[1]{\texttt{#1}}
+% \code{...} — моноширинный фрагмент с разрешением переноса строки
+% по любым специальным символам (-, _, ., /, :, =), что предотвращает
+% выход длинных идентификаторов за правое поле. Внутренний \urlcode
+% — DeclareUrlCommand-обёртка над \texttt; внешний \code робастный
+% (работает в \caption, \section и т.п.).
+\DeclareUrlCommand{\urlcode}{\urlstyle{tt}}
+\DeclareRobustCommand{\code}[1]{\urlcode{#1}}
 \newcommand{\TODO}[1]{{\color{red}\textbf{[TODO]}~#1}}
 \newcommand{\PLACEHOLDER}[1]{\textcolor{orange}{[#1]}}
 
