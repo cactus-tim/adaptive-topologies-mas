@@ -109,8 +109,7 @@
 
 % --- Группы (фоновые рамки) ---
 % Авторские компоненты выделены двойной красной рамкой:
-% слой адаптации (маршрутизаторы фаз и топологий),
-% оракул-маршрутизатор, шлюз HITL.
+% слой адаптации, оракул-маршрутизатор, шлюз HITL.
 \begin{scope}[on background layer]
   \node[authgroup, fit=(phase) (toporouter),
         label={[red!75!black, font=\footnotesize\bfseries]above:Слой адаптации $\bigstar$}] (adaptLayer) {};
@@ -122,11 +121,13 @@
         label={[gray!80, font=\footnotesize]above:Внешние службы}] (infraLayer) {};
   \node[group, fit=(eval) (oracle),
         label={[gray!80, font=\footnotesize]above:Слой оценки и оракул}] (evalLayer) {};
-  % выделяем сам оракул-маршрутизатор и шлюз HITL как авторские
-  \node[authgroup, fit=(oracle), inner sep=0.05cm,
-        label={[red!75!black, font=\footnotesize\bfseries]below:$\bigstar$}] {};
-  \node[authgroup, fit=(human), inner sep=0.05cm,
-        label={[red!75!black, font=\footnotesize\bfseries]below:$\bigstar$}] {};
+  % Оракул-маршрутизатор и шлюз HITL --- авторские блоки,
+  % обведены тонкой красной двойной рамкой без overlay-маркера
+  % (маркер бы наложился на соседний слой).
+  \node[draw=red!75!black, very thick, double, double distance=1pt,
+        rounded corners=2pt, fit=(oracle), inner sep=1pt] {};
+  \node[draw=red!75!black, very thick, double, double distance=1pt,
+        rounded corners=2pt, fit=(human), inner sep=1pt] {};
 \end{scope}
 
 % --- Управляющие связи ---
@@ -181,12 +182,12 @@
 компонентам, оранжевый --- активным коммуникационным топологиям,
 зеленый --- слою агентов, красный --- внешним службам исполнения,
 фиолетовый --- слою оценки качества и оракулу, желтый ---
-подсистеме хранения. \textbf{Двойная красная рамка и маркер
-$\bigstar$ обозначают авторские компоненты} --- слой адаптации
-(маршрутизаторы фаз и топологий с защитными правилами),
-оракул-маршрутизатор и шлюз взаимодействия с человеком. Полный
-перечень заимствованных и авторских компонентов с источниками
-приведен в таблице~\ref{tab:arch:contribution}.}
+подсистеме хранения. \textbf{Двойная красная рамка обозначает авторские компоненты} ---
+слой адаптации с маркером $\bigstar$ (маршрутизаторы фаз и
+топологий с~защитными правилами), оракул-маршрутизатор и шлюз
+взаимодействия с~человеком. Полный перечень заимствованных и
+авторских компонентов с~источниками приведен
+в~таблице~\ref{tab:arch:contribution}.}
 \label{fig:appA:scheme}
 \end{figure}
 
