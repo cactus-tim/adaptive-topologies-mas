@@ -1,0 +1,31 @@
+# E4 post-fix smoke — diagnostic that all 3 role_router modes still produce
+# distinct role distributions in human_interactions, just like e4_role_smoke
+# did for the pre-fix code.  Cheap sanity before launching the 540-cell run.
+#
+# Acceptance criteria (mirrors prior e4_role_smoke):
+#   - fixed: every human_interactions row has role == cfg.human.role
+#   - rule:  >= 2 distinct role values across phases
+#            (DEFAULT_ROLE_TABLE: planning→coordinator, execution→peer,
+#             verification→reviewer)
+#   - llm:   role_router LLM calls produce non-zero router cost
+#
+# Size: 3 role_routers × 1 task × 1 shuffle × 1 seed = 3 cells.
+# ~2 min on p=3, ~$0.10.
+
+include: e4_postfix_full.yaml
+name: e4_postfix_smoke
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 0.50
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 3
+  fail_fast: false
+  seeds: [42]
+  sweep:
+    human.role_router: [fixed, rule, llm]
+    task.name: [humaneval]
+    task.shuffle_seed: [0]
