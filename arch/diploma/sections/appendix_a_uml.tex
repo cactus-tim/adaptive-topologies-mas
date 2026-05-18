@@ -1,8 +1,8 @@
 % =====================================================================
 % Приложение А. Функциональная схема программной системы.
-% Реализовано в TikZ. Версия 4 — горизонтальный snake-flow на
-% альбомной странице, слои представлены крупными блоками с перечнем
-% содержимого внутри, без \resizebox.
+% Реализовано в TikZ. Версия 5 --- портретная ориентация, один
+% вертикальный столбец из 11 крупных боксов с двумя обратными связями
+% по левой/правой стороне. Без \resizebox.
 % =====================================================================
 
 \clearpage
@@ -14,107 +14,93 @@
 
 В настоящем приложении приведена функциональная схема программной
 системы, описанной в главе~\ref{sec:architecture}. Схема изображает
-движение управления и данных между основными архитектурными блоками
-от поступления входных данных эксперимента до получения результирующих
-метрик и журналов. Поток выполнения организован по~двум рядам слева
-направо, переход на~второй ряд показан изгибом стрелки справа.
+движение управления и данных от поступления входных данных
+эксперимента до получения результирующих метрик и журналов.
 На~рисунке~\ref{fig:appA:scheme} двойная красная рамка отмечает
 авторские компоненты~--- слой адаптации, оракул-маршрутизатор и~шлюз
-взаимодействия с~человеком.
+взаимодействия с~человеком (внутри блока «Внешние службы»). Штриховые
+красные стрелки --- две обратные связи: оракульная таблица возвращается
+в~маршрутизатор топологий, HITL-сигналы поступают от~человека
+к~слою адаптации.
 
-\begin{sidewaysfigure}[p]
+\begin{figure}[!htbp]
 \centering
 \begin{tikzpicture}[
   font=\small,
   every node/.style={align=center},
-  io/.style={rectangle, draw=black, thick, fill=gray!12,
-             text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  ctrl/.style={rectangle, draw=black, thick, fill=blue!10,
-               text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  authctrl/.style={rectangle, draw=red!75!black, very thick, double,
-                   double distance=1.5pt, fill=blue!10,
-                   text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  topo/.style={rectangle, draw=black, thick, fill=orange!20,
-               text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  agent/.style={rectangle, draw=black, thick, fill=green!18,
-                text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  infra/.style={rectangle, draw=black, thick, fill=red!12,
-                text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  authinfra/.style={rectangle, draw=red!75!black, very thick, double,
-                    double distance=1.5pt, fill=red!12,
-                    text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  eval/.style={rectangle, draw=black, thick, fill=violet!15,
-               text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  autheval/.style={rectangle, draw=red!75!black, very thick, double,
-                   double distance=1.5pt, fill=violet!15,
-                   text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  store/.style={rectangle, draw=black, thick, fill=yellow!22,
-                text width=3.4cm, minimum height=2.0cm, rounded corners=3pt},
-  flow/.style={-{Latex[length=3mm]}, very thick},
+  base/.style={rectangle, draw=black, thick, text width=7.5cm,
+               minimum height=1.15cm, rounded corners=3pt},
+  io/.style={base, fill=gray!12},
+  ctrl/.style={base, fill=blue!10},
+  authctrl/.style={base, draw=red!75!black, very thick, double,
+                   double distance=1.4pt, fill=blue!10,
+                   minimum height=1.35cm},
+  topo/.style={base, fill=orange!20},
+  agent/.style={base, fill=green!18},
+  infra/.style={base, fill=red!12, minimum height=1.35cm},
+  eval/.style={base, fill=violet!15},
+  autheval/.style={base, draw=red!75!black, very thick, double,
+                   double distance=1.4pt, fill=violet!15,
+                   minimum height=1.35cm},
+  store/.style={base, fill=yellow!22},
+  flow/.style={-{Latex[length=2.5mm]}, very thick},
+  fb/.style={-{Latex[length=2.5mm]}, thick, dashed, red!70!black},
 ]
 
-% ===== Ряд 1 (сверху) =====
-\node[io]            (input)    at (0,   0)  {\textbf{Вход}\\Задача $\mathcal{T}$\\и YAML-конфиг};
-\node[ctrl]          (orch)     at (4.0, 0)  {\textbf{Оркестратор}\\\code{atm.experiment}\\инициализация};
-\node[authctrl]      (adapt)    at (8.0, 0)  {\textbf{Слой адаптации $\bigstar$}\\PhaseRouter\\TopologyRouter\\SwitchGuards};
-\node[topo]          (topo)     at (12.0, 0) {\textbf{Топологии}\\Star, Chain, Mesh,\\Debate, Hierarchical\\(активна одна)};
-\node[agent]         (agents)   at (16.0, 0) {\textbf{Агенты}\\Planner, Researcher,\\Executor, Critic,\\Debater, Coordinator};
-\node[infra]         (services) at (20.0, 0) {\textbf{Внешние службы}\\Инструменты+Docker\\\code{LLMWrapper}};
+\def\dy{1.7}
 
-% ===== Ряд 2 (снизу, движение справа налево) =====
-\node[authinfra]     (human)    at (20.0, -5.0) {\textbf{Шлюз человека $\bigstar$}\\\code{HumanGateway}\\(пять ролей)};
-\node[ctrl]          (obs)      at (16.0, -5.0) {\textbf{Наблюдаемость}\\\code{atm.observability}\\захват событий};
-\node[eval]          (judge)    at (12.0, -5.0) {\textbf{Слой оценки}\\\code{atm.evaluation}\\судья + NASA-TLX};
-\node[autheval]      (oracle)   at (8.0, -5.0)  {\textbf{Оракул $\bigstar$}\\per-task best-of\\$\Delta_{\text{oracle}}$};
-\node[store]         (store)    at (4.0, -5.0)  {\textbf{Хранение}\\PostgreSQL 16\\Apache Parquet};
-\node[io]            (output)   at (0,   -5.0)  {\textbf{Выход}\\Журналы +\\метрики $q, c, \tau,$\\$N_{\text{switch}}, r_{\text{guard}}$};
+\node[io]        (input)    at (0,  0)         {\textbf{Вход:} задача $\mathcal{T}$ и YAML-конфиг};
+\node[ctrl]      (orch)     at (0, -1*\dy)     {\textbf{Оркестратор} \code{atm.experiment}};
+\node[authctrl]  (adapt)    at (0, -2*\dy)     {\textbf{Слой адаптации $\bigstar$:} PhaseRouter,\\TopologyRouter, SwitchGuards};
+\node[topo]      (topo)     at (0, -3*\dy)     {\textbf{Топологии:} Star, Chain, Mesh, Debate, Hierarchical};
+\node[agent]     (agents)   at (0, -4*\dy)     {\textbf{Агенты:} Planner, Researcher, Executor,\\Critic, Debater, Coordinator};
+\node[infra]     (services) at (0, -5*\dy)     {\textbf{Внешние службы:} Tools+Docker, \code{LLMWrapper},\\\code{HumanGateway} $\bigstar$};
+\node[ctrl, minimum height=1.35cm] (obs) at (0, -6*\dy)
+   {\textbf{Наблюдаемость}\\\code{atm.observability}};
+\node[eval, minimum height=1.35cm] (judge) at (0, -7*\dy)
+   {\textbf{Слой оценки} \code{atm.evaluation}:\\судья + NASA-TLX};
+\node[autheval]  (oracle)   at (0, -8*\dy)     {\textbf{Оракул-маршрутизатор $\bigstar$:}\\per-task best-of, $\Delta_{\text{oracle}}$};
+\node[store]     (store)    at (0, -9*\dy)     {\textbf{Хранение:} PostgreSQL~16, Apache Parquet};
+\node[io]        (output)   at (0,-10*\dy)     {\textbf{Выход:} журналы + метрики\\$q,\, c,\, \tau,\, N_{\text{switch}},\, r_{\text{guard}}$};
 
-% ===== Связи ряда 1 =====
+% Прямой поток
 \draw[flow] (input)    -- (orch);
 \draw[flow] (orch)     -- (adapt);
 \draw[flow] (adapt)    -- (topo);
 \draw[flow] (topo)     -- (agents);
 \draw[flow] (agents)   -- (services);
-
-% ===== Изгиб с ряда 1 на ряд 2 =====
-\draw[flow] (services.east) -- ++(0.6, 0)
-                            |- (human.east);
-
-% ===== Связи ряда 2 (справа налево) =====
-\draw[flow] (human)    -- (obs);
+\draw[flow] (services) -- (obs);
 \draw[flow] (obs)      -- (judge);
 \draw[flow] (judge)    -- (oracle);
 \draw[flow] (oracle)   -- (store);
 \draw[flow] (store)    -- (output);
 
-% ===== Обратная связь: оракул → слой адаптации =====
-\draw[flow, dashed, red!70!black]
-    (oracle.north) -- ++(0, 1.2)
-    node[midway, right=2pt, font=\footnotesize, black]
-       {оракульная таблица}
-    -| (adapt.south);
+% ===== Обратные связи =====
+% HITL: Services -> Adaptation (по левой стороне)
+\draw[fb] (services.west) -- ++(-0.8, 0)
+          |- node[pos=0.25, left=2pt, font=\footnotesize, black, align=right]
+                 {HITL-\\сигналы}
+             (adapt.west);
 
-% ===== Обратная связь: шлюз человека → слой адаптации =====
-\draw[flow, dashed, red!70!black]
-    (human.north) -- ++(0, 1.7)
-    node[midway, right=2pt, font=\footnotesize, black]
-       {HITL-сигналы}
-    -| (adapt.south east);
+% Oracle table: Oracle -> Adaptation (по правой стороне)
+\draw[fb] (oracle.east) -- ++(0.8, 0)
+          |- node[pos=0.25, right=2pt, font=\footnotesize, black, align=left]
+                 {оракульная\\таблица}
+             (adapt.east);
 
 \end{tikzpicture}
 
-\caption{Функциональная схема программной системы. Поток управления
-организован по~двум рядам слева направо с~переходом на~второй ряд
-справа. Двойная красная рамка обозначает авторские компоненты~---
-слой адаптации с~маркером $\bigstar$ (маршрутизаторы фаз
-и~топологий с~защитными правилами \code{SwitchGuards}),
-шлюз взаимодействия с~человеком и~оракул-маршрутизатор. Штриховые
-красные стрелки --- обратные связи: оракульная таблица возвращается
-в~маршрутизатор топологий, HITL-сигналы поступают от~человека
-к~слою адаптации. Полный перечень заимствованных и~авторских
-компонентов приведен в~таблице~\ref{tab:arch:contribution}.}
+\caption{Функциональная схема программной системы. Сплошные стрелки ---
+прямой поток управления от~входа к~выходу. Штриховые красные стрелки ---
+обратные связи: оракульная таблица возвращается в~слой адаптации
+(маршрутизатор топологий), HITL-сигналы поступают от~человека
+(внутри блока внешних служб) к~слою адаптации. Двойная красная рамка
+обозначает авторские компоненты --- слой адаптации, оракул-маршрутизатор
+и~шлюз \code{HumanGateway} внутри блока внешних служб (отмечен~$\bigstar$).
+Полный перечень заимствованных и~авторских компонентов с~источниками
+приведен в~таблице~\ref{tab:arch:contribution}.}
 \label{fig:appA:scheme}
-\end{sidewaysfigure}
+\end{figure}
 
 \subsection*{Пояснение к схеме}
 
@@ -147,11 +133,10 @@
 становятся доступными для постобработки слою анализа
 \code{atm.analysis}.
 
-Обратный канал от шлюза человека к маршрутизатору топологий
-обозначает поступление управляющих сигналов от участника-человека
-к адаптивному слою. Через этот канал человек, действующий в роли
-координатора или наблюдателя, может форсировать переключение
-топологии или досрочно завершить фазу проверки. Штриховая связь
-от~оракула к~маршрутизатору топологий обеспечивает возврат
-оракульной таблицы (per-task best-of) для расчета
+Обратный канал от шлюза человека к слою адаптации обозначает
+поступление управляющих сигналов от участника-человека. Через
+этот канал человек, действующий в роли координатора или наблюдателя,
+может форсировать переключение топологии или досрочно завершить фазу
+проверки. Штриховая связь от~оракула к~слою адаптации обеспечивает
+возврат оракульной таблицы (per-task best-of) для расчета
 $\Delta_{\text{oracle}}$.
