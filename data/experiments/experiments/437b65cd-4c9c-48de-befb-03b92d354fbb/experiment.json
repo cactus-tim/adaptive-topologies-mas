@@ -159,6 +159,6 @@
   "id": "437b65cd-4c9c-48de-befb-03b92d354fbb",
   "name": "e3_postfix_full_llm_commongen",
   "started_at": "2026-05-18T08:36:22.751585+00:00",
-  "status": "partial",
+  "status": "completed",
   "total_cost_usd": 0.0
 }
