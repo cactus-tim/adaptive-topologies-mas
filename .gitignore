@@ -21,8 +21,27 @@ __pycache__/
 .vscode/
 
 # Data / runtime directories
-data/
+# Use data/* (not data/) so child whitelist patterns can re-include
+# specific files — git refuses to re-include anything under a directory
+# that is itself excluded.
+data/*
 !data/.gitkeep
+!data/experiments/
+data/experiments/*
+!data/experiments/experiments/
+data/experiments/experiments/*
+!data/experiments/experiments/*/
+data/experiments/experiments/*/*
+# Whitelist experiment-level aggregates (small, cross-machine-shareable).
+# Per-run parquets under runs/<run_id>/ stay ignored — instead concat
+# them into _llm_calls/_phases/_topology_transitions.parquet at the
+# experiment root for the full event stream as a single file each.
+!data/experiments/experiments/*/experiment.json
+!data/experiments/experiments/*/_runs.parquet
+!data/experiments/experiments/*/_human_interactions.parquet
+!data/experiments/experiments/*/_llm_calls.parquet
+!data/experiments/experiments/*/_phases.parquet
+!data/experiments/experiments/*/_topology_transitions.parquet
 logs/
 
 # OS artefacts
