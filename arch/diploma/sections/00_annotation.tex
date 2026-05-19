@@ -12,15 +12,15 @@
 и~два режима маршрутизации; воронка из~четырех экспериментов с~двумя
 кросс-семейными подтверждающими запусками охватывает~4230 завершенных
 запусков на~четырех корпусах задач. RQ1 и~RQ3 подтверждены. RQ2
-раскладывается на~task-difficulty-conditional Парето-преимущество
-адаптивной мета-топологии на~сложных корпусах и~routing strategy
-как~per-family deployment decision~--- Парето-победитель меняется
+раскладывается на~зависящее от~сложности задачи Парето-преимущество
+адаптивной мета-топологии на~сложных корпусах и~стратегия маршрутизации
+как~решение, принимаемое для~каждого семейства моделей~--- Парето-победитель меняется
 при~смене семейства весов работника ($\Delta q^{\text{rule}-\text{llm}}
 =+0{,}304$ на~Qwen-3-235B, бутстрап-CI $[+0{,}185,\,+0{,}426]$ исключает
-нуль). RQ4 опровергнут как~universal negative finding~--- адаптивный
-маршрутизатор роли не~дает положительного лифта ни~на одном
-из~двух семейств работника. Центральный structural finding работы~---
-зависимость выбора routing-стратегии от~семейства весов рабочего
+нуль). RQ4 опровергнут как~универсальный отрицательный результат~--- адаптивный
+маршрутизатор роли не~дает положительного прироста ни~на одном
+из~двух семейств работника. Центральный структурный вывод работы~---
+зависимость выбора стратегии маршрутизации от~семейства весов рабочего
 агента, требующая обязательной кросс-семейной валидации.
 
 \vspace{1cm}
@@ -37,14 +37,14 @@ was developed under the MIT license, integrating five static topologies,
 an adaptive meta-topology, five human roles, and two topology routing
 modes; a funnel of four experiments with two cross-family confirmation
 runs covers 4230 completed runs across four task corpora. RQ1 and RQ3
-are confirmed. RQ2 decomposes into a task-difficulty-conditional Pareto
+are confirmed. RQ2 decomposes into a зависящее от~сложности задачи Pareto
 advantage of the adaptive meta-topology on hard corpora and routing
-strategy as a per-family deployment decision~--- the Pareto winner
+strategy as a решение, принимаемое для~каждого семейства моделей~--- the Pareto winner
 flips when the worker family changes ($\Delta q^{\text{rule}-\text{llm}}
 =+0.304$ on Qwen-3-235B, bootstrap CI $[+0.185,\,+0.426]$ robustly
-excludes zero). RQ4 is rejected as a universal negative finding~---
+excludes zero). RQ4 is rejected as a универсальный отрицательный результат~---
 the adaptive role router yields no positive lift on either worker
-family. The central structural finding is the dependence of routing
+family. The central структурный вывод is the dependence of routing
 strategy selection on the weight family of the worker agent, which
 requires mandatory cross-family validation.
 
