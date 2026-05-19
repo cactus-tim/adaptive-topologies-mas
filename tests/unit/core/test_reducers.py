@@ -66,8 +66,9 @@ class TestMergeAgentStates:
             "a1": _agent("a1", inbox=["m1", "m2"], step_count=3, tokens_spent=100),
         }
         result = merge_agent_states(left, left)
-        # inbox should be deduplicated by concat, but idempotency means each list == original
-        assert result["a1"]["inbox"] == ["m1", "m2", "m1", "m2"]
+        # inbox is dedup-by-id (left wins on collision); merging a state with
+        # itself yields the original list — true idempotency, no geometric blowup.
+        assert result["a1"]["inbox"] == ["m1", "m2"]
         # NOTE: per arch.md §3.3, idempotency means per-agent reduction of same state
         # Step count and tokens should remain max (same value)
         assert result["a1"]["step_count"] == 3

@@ -256,9 +256,7 @@ def apply_transition_gate(
     # (post-dispatch) is the legacy behaviour: it loses subgraph-internal
     # phase advances and skips state-transfer cleanup, but keeps existing
     # callers that don't yet thread the pre-dispatch phase through.
-    current_phase: Phase = (
-        pre_subgraph_phase if pre_subgraph_phase is not None else subgraph_phase
-    )
+    current_phase: Phase = pre_subgraph_phase if pre_subgraph_phase is not None else subgraph_phase
 
     current_topology: str | None = shared.get("active_topology")
     next_topology: str = topology_decision.topology
@@ -506,8 +504,7 @@ class AdaptiveTopology:
                     inner_topo_router = OracleTopologyRouter(oracle_path)
                 except Exception as exc:  # pragma: no cover — defensive
                     _log.warning(
-                        "adaptive: OracleTopologyRouter init failed (%s); "
-                        "falling back to rule",
+                        "adaptive: OracleTopologyRouter init failed (%s); falling back to rule",
                         exc,
                     )
                     inner_topo_router = rule_topo_router
@@ -629,9 +626,7 @@ class AdaptiveTopology:
             """Invoke PhaseRouter; capture pre-dispatch phase and decision in slots."""
             _shared_now: dict[str, Any] = dict(state.get("shared") or {})
             _raw_phase = _shared_now.get("phase", Phase.PLANNING)
-            _pre_phase: Phase = (
-                Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
-            )
+            _pre_phase: Phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
             _pre_subgraph_phase_slot[0] = _pre_phase
 
             decision: PhaseDecision = await phase_router.decide(state)

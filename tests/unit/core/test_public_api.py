@@ -142,8 +142,9 @@ def test_merge_agent_states_roundtrip() -> None:
 
     assert "agent-1" in merged
     agent = merged["agent-1"]
-    # scratchpad — concat
-    assert len(agent["scratchpad"]) == 2
+    # scratchpad — longer-list wins (no inherent id; sub-graph delta is a
+    # superset of the parent's events). On a length tie the right side wins.
+    assert agent["scratchpad"] == [{"step": 2}]
     # step_count — max
     assert agent["step_count"] == 5
     # tokens_spent — max

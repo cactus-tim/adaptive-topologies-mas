@@ -169,9 +169,7 @@ def stage_workspace_for(
     #   - the ".." check below,
     #   - the length cap below,
     #   - file_write's resolve-and-confine check at write time.
-    if any(c in file_name for c in ("/", "\\", "\x00")) or any(
-        ord(c) < 32 for c in file_name
-    ):
+    if any(c in file_name for c in ("/", "\\", "\x00")) or any(ord(c) < 32 for c in file_name):
         _log.warning(
             "rejecting file_name with path separator / null / control chars",
             file_name=file_name,

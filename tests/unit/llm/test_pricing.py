@@ -58,6 +58,7 @@ def test_from_yaml_has_expected_model_keys(pricing: Pricing) -> None:
         "cerebras:llama3.1-8b",
         "cerebras:gpt-oss-120b",
         "cerebras:zai-glm-4.7",
+        "cerebras:qwen-3-235b-a22b-instruct-2507",
         "fake:deterministic",
         "fake:scripted",
         "fake:echo",

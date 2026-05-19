@@ -502,10 +502,7 @@ class TestExtractWinnerArtifact:
             }
         }
         # bad is rejected → should fall through to good
-        assert (
-            _extract_winner_artifact(agents, "debater_pro", task_id="humaneval")
-            == "GOOD"
-        )
+        assert _extract_winner_artifact(agents, "debater_pro", task_id="humaneval") == "GOOD"
 
     def test_falls_back_to_draft_when_no_file_write(self) -> None:
         """No tool_calls → returns DRAFT text (legacy / non-tool path)."""
@@ -576,26 +573,20 @@ class TestExtractWinnerArtifactTaskAware:
             "debater_pro": {
                 "outbox": [_make_draft_msg(content=draft_content)],
                 "tool_calls": [call],
-                "tool_results": [
-                    ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)
-                ],
+                "tool_results": [ToolResult(call_id=call.id, ok=True, output=None, latency_ms=1)],
             }
         }
 
     def test_code_task_prefers_solution_py(self) -> None:
         agents = self._agents_with_both(draft_content="pro argument")
-        assert (
-            _extract_winner_artifact(agents, "debater_pro", task_id="humaneval")
-            == "PYCODE"
-        )
+        assert _extract_winner_artifact(agents, "debater_pro", task_id="humaneval") == "PYCODE"
 
     def test_non_code_task_prefers_draft(self) -> None:
         for non_code in ("gsm8k", "commongen", "dabench"):
             agents = self._agents_with_both(draft_content="42")
-            assert (
-                _extract_winner_artifact(agents, "debater_pro", task_id=non_code)
-                == "42"
-            ), f"task_id={non_code!r} should prefer DRAFT over solution.py"
+            assert _extract_winner_artifact(agents, "debater_pro", task_id=non_code) == "42", (
+                f"task_id={non_code!r} should prefer DRAFT over solution.py"
+            )
 
     def test_non_code_extracts_answer_marker_from_draft(self) -> None:
         """For non-code, ###ANSWER###...###END### marker yields just the block content."""
@@ -607,9 +598,7 @@ class TestExtractWinnerArtifactTaskAware:
             "Trailing argument that should be stripped."
         )
         agents = self._agents_with_both(draft_content=marker_draft)
-        assert (
-            _extract_winner_artifact(agents, "debater_pro", task_id="gsm8k") == "42"
-        )
+        assert _extract_winner_artifact(agents, "debater_pro", task_id="gsm8k") == "42"
 
     def test_judge_postprocess_threads_task_id(self) -> None:
         """_judge_postprocess reads shared.task_id and forwards into the extractor."""
@@ -625,9 +614,7 @@ class TestExtractWinnerArtifactTaskAware:
         state: dict[str, Any] = {
             "shared": shared,
             "agents": {
-                "judge": {
-                    "outbox": [_make_decision_msg(approved=True, winner="pro")]
-                },
+                "judge": {"outbox": [_make_decision_msg(approved=True, winner="pro")]},
                 "debater_pro": {
                     "outbox": [_make_draft_msg(content="42")],
                     "tool_calls": [call],

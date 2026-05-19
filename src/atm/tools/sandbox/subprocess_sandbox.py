@@ -68,9 +68,7 @@ class SubprocessSandbox:
     image_digest: ClassVar[str | None] = None
 
     def __init__(self, workspace: Path | None = None) -> None:
-        self._workspace: Path | None = (
-            workspace.resolve() if workspace is not None else None
-        )
+        self._workspace: Path | None = workspace.resolve() if workspace is not None else None
 
     async def execute(
         self,

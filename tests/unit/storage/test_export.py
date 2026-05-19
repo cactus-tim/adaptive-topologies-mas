@@ -9,10 +9,11 @@ runs against atm-postgres when ATM_ENABLE_PG_TESTS=1.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from uuid import UUID, uuid4
 
 import pandas as pd
@@ -25,7 +26,6 @@ from atm.storage.export import (
     export_experiment,
 )
 
-
 # ---------------------------------------------------------------------------
 # _to_jsonable
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ class TestToJsonable:
         assert _to_jsonable(Decimal("1.5")) == 1.5
 
     def test_datetime_to_iso(self) -> None:
-        dt = datetime(2026, 5, 17, 10, 30, tzinfo=timezone.utc)
+        dt = datetime(2026, 5, 17, 10, 30, tzinfo=UTC)
         assert _to_jsonable(dt) == dt.isoformat()
 
     def test_uuid_to_str(self) -> None:
@@ -73,8 +73,8 @@ class TestExperimentToDict:
             name="e3_pilot",
             config_snapshot={"key": "value"},
             git_sha="abc123",
-            started_at=datetime(2026, 5, 17, 10, tzinfo=timezone.utc),
-            finished_at=datetime(2026, 5, 17, 12, tzinfo=timezone.utc),
+            started_at=datetime(2026, 5, 17, 10, tzinfo=UTC),
+            finished_at=datetime(2026, 5, 17, 12, tzinfo=UTC),
             total_cost_usd=Decimal("12.34"),
             status="completed",
         )
@@ -92,7 +92,7 @@ class TestExperimentToDict:
             name="x",
             config_snapshot=None,
             git_sha=None,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             finished_at=None,
             total_cost_usd=None,
             status="running",
@@ -122,8 +122,8 @@ class TestRunToRow:
             quality_score=0.95,
             wall_time_s=42.0,
             iterations=6,
-            started_at=datetime.now(timezone.utc),
-            finished_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
             error=None,
             cognitive_load_proxy=0.5,
             replay_of=None,
@@ -156,7 +156,7 @@ class TestRunToRow:
             quality_score=None,
             wall_time_s=None,
             iterations=None,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             finished_at=None,
             error="boom",
             cognitive_load_proxy=None,
@@ -229,8 +229,8 @@ async def test_export_experiment_writes_both_files(tmp_path: Path) -> None:
         name="e3_smoke",
         config_snapshot={},
         git_sha=None,
-        started_at=datetime.now(timezone.utc),
-        finished_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
         total_cost_usd=Decimal("0.5"),
         status="completed",
     )
@@ -253,8 +253,8 @@ async def test_export_experiment_writes_both_files(tmp_path: Path) -> None:
             quality_score=1.0,
             wall_time_s=10.0,
             iterations=3,
-            started_at=datetime.now(timezone.utc),
-            finished_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
             error=None,
             cognitive_load_proxy=None,
             replay_of=None,
@@ -296,7 +296,7 @@ async def test_export_experiment_no_runs_empty_parquet(tmp_path: Path) -> None:
         name="empty",
         config_snapshot={},
         git_sha=None,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         finished_at=None,
         total_cost_usd=Decimal("0"),
         status="failed",

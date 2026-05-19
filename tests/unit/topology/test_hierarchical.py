@@ -524,8 +524,7 @@ class TestFinalizeTaskAware:
 
             # Must be a JSON envelope, NOT the solution.py content.
             assert not final_answer.startswith("PYCODE_"), (
-                f"non-code task_id={non_code!r} leaked solution.py artifact: "
-                f"{final_answer!r}"
+                f"non-code task_id={non_code!r} leaked solution.py artifact: {final_answer!r}"
             )
             parsed = json.loads(final_answer)
             assert "team_a" in parsed and "team_b" in parsed, (

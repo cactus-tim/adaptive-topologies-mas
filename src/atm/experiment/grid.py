@@ -474,13 +474,9 @@ async def run_grid(
                 # Idempotent. Failures are swallowed at debug — backup path.
                 try:
                     parquet_root = (
-                        configs[0].observability.parquet_dir
-                        if configs
-                        else "data/experiments"
+                        configs[0].observability.parquet_dir if configs else "data/experiments"
                     )
-                    await export_experiment(
-                        exp_id, session_factory=sf, root=parquet_root
-                    )
+                    await export_experiment(exp_id, session_factory=sf, root=parquet_root)
                 except Exception:
                     logger.debug(
                         "auto-export_experiment failed; aggregate not snapshotted",

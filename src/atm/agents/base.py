@@ -39,7 +39,7 @@ logger = structlog.get_logger(__name__)
 # Cap stored ToolResult.output size when accumulating into agent state.
 # See the comment at the truncation call site in _run_tool_loop for rationale.
 # 4 KB is generous for downstream consumers (finalize uses 1.2 KB, agent
-# verifiers use only call_id/ok) and keeps a 12-iteration × 4-agent run with
+# verifiers use only call_id/ok) and keeps a 12-iteration x 4-agent run with
 # many file_read calls well under the PG wire-protocol message limit.
 _TOOL_RESULT_OUTPUT_MAX_CHARS: int = 4096
 
@@ -506,7 +506,7 @@ class Agent:
                 # Truncate output BEFORE appending to tool_results — the field
                 # is checkpointed via LangGraph and grows unboundedly across
                 # iterations (list-concat reducer).  Without this cap, a
-                # file_read returning 1 MB of CSV × 12 iterations × 4 agents
+                # file_read returning 1 MB of CSV x 12 iterations x 4 agents
                 # produces 100s of MB of agent state per checkpoint, and the
                 # serialized blob hits PG's wire-protocol message size limits
                 # ("invalid message length") on long adaptive runs (dabench).

@@ -832,9 +832,7 @@ class TestPreSubgraphPhaseDetection:
         }
         phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
         topo_dec = TopologyDecision(topology="linear", reason="stay", decided_by="rule")
-        new_state = apply_transition_gate(
-            state, phase_dec, topo_dec, run_id=str(uuid4())
-        )
+        new_state = apply_transition_gate(state, phase_dec, topo_dec, run_id=str(uuid4()))
         # Legacy: phase_changed=False, ready_for_execution NOT consumed
         assert new_state["shared"]["signals"].get("ready_for_execution") is True
 

@@ -232,9 +232,7 @@ class TestMaybeFinalizeAnswer:
                             )
                         ],
                         "tool_results": [
-                            SimpleNamespace(
-                                call_id="c1", ok=True, output="mean=34.65", error=None
-                            )
+                            SimpleNamespace(call_id="c1", ok=True, output="mean=34.65", error=None)
                         ],
                     }
                 }

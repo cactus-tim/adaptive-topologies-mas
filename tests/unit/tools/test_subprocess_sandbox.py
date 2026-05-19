@@ -165,11 +165,7 @@ async def test_workspace_files_visible_in_sandbox(tmp_path) -> None:
 
     result = await sandbox.execute(
         lang="python",
-        code=(
-            "import os\n"
-            "print(sorted(os.listdir('.')))\n"
-            "print(open('insurance.csv').read())\n"
-        ),
+        code=("import os\nprint(sorted(os.listdir('.')))\nprint(open('insurance.csv').read())\n"),
     )
     assert result.exit_code == 0, f"stderr={result.stderr}"
     assert "insurance.csv" in result.stdout
@@ -230,8 +226,6 @@ async def test_main_filename_not_clobbered_by_workspace(tmp_path) -> None:
 async def test_no_workspace_keeps_legacy_behavior() -> None:
     """Constructed without workspace= → cwd is empty (current default)."""
     sandbox = SubprocessSandbox()
-    result = await sandbox.execute(
-        lang="python", code="import os; print(sorted(os.listdir('.')))"
-    )
+    result = await sandbox.execute(lang="python", code="import os; print(sorted(os.listdir('.')))")
     assert result.exit_code == 0
     assert "main.py" in result.stdout

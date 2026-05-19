@@ -66,7 +66,7 @@ def _merge_one(left_agent: dict[str, Any], right_agent: dict[str, Any]) -> dict[
     # accumulated agent state, appends in its own internal reducer, then
     # returns the cumulative result as a "delta" to the parent.  The parent
     # reducer concatenates left + right → duplicates everything from left.
-    # After N iterations the list length is 2^N − 1.  At N=12 a single agent's
+    # After N iterations the list length is 2^N - 1.  At N=12 a single agent's
     # outbox carried 4096 Message objects and the serialized blob hit 830 MB,
     # crashing the PG checkpointer with "invalid message length".
     for key, key_fn in (
@@ -130,7 +130,7 @@ def merge_agent_states(
     Pre-fix history: ``inbox``/``outbox``/``scratchpad``/``tool_calls``/
     ``tool_results`` were merged with plain list-concat ``left + right``.
     This produced a geometric blowup in adaptive's meta-graph (a single
-    agent's outbox reached 2^N − 1 entries after N meta-ticks because each
+    agent's outbox reached 2^N - 1 entries after N meta-ticks because each
     sub-graph dispatch returned its cumulative agent state — including the
     parent's items — and the parent reducer concatenated them back in).
     After 12 iterations the agents-channel blob exceeded 830 MB and crashed

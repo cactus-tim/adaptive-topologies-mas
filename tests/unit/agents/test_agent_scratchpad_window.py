@@ -4,6 +4,15 @@ Test cases:
 1. test_window_limits_events_in_prompt — window_size=3, after 5 steps prompt uses only last 3 events
 2. test_original_scratchpad_not_mutated — full scratchpad preserved, not truncated
 3. test_prompt_contains_expected_events — after 5 steps, prompt includes R2/R3/R4, not R0/R1
+
+Note on accumulation:
+``Agent.step()`` returns a per-step *delta* for ``scratchpad`` (only the
+events produced in that step). The state-bloat fix made the LangGraph
+reducer pick the longer of the two scratchpad lists rather than concat,
+so the full append-only scratchpad is reconstructed by the caller, not by
+``merge_agent_states``. These tests therefore accumulate the per-step
+deltas explicitly (``_accumulate``) — exercising the windowing logic of
+``_build_prompt`` independently of the reducer's merge policy.
 """
 
 from __future__ import annotations
@@ -42,6 +51,31 @@ def _make_llm(fixture_name: str) -> LLMWrapper:
     )
 
 
+async def _run_steps_accumulating(
+    agent: Agent, state: dict[str, Any], n_steps: int
+) -> list[dict[str, Any]]:
+    """Run ``n_steps`` agent steps, returning the full append-only scratchpad.
+
+    ``agent.step()`` returns a per-step delta for ``scratchpad``; the LangGraph
+    reducer keeps the longer list rather than concatenating, so the full
+    scratchpad must be reconstructed by the caller. This helper does exactly
+    that: it concatenates each step's scratchpad delta and feeds the running
+    scratchpad back into ``state`` so the next step sees prior context.
+    """
+    full_scratchpad: list[dict[str, Any]] = []
+    for _ in range(n_steps):
+        delta = await agent.step(state)
+        agent_delta = delta["agents"][agent.agent_id]
+        full_scratchpad += list(agent_delta.get("scratchpad") or [])
+        # Merge the delta, then overwrite scratchpad with the full append-only
+        # list so the next step's _build_prompt sees the accumulated context.
+        existing_agents = state.get("agents") or {}
+        merged = merge_agent_states(existing_agents, delta["agents"])
+        merged[agent.agent_id]["scratchpad"] = list(full_scratchpad)
+        state["agents"] = merged
+    return full_scratchpad
+
+
 class TestScratchpadWindow:
     """Scratchpad windowing semantics for policy C."""
 
@@ -66,14 +100,8 @@ class TestScratchpadWindow:
             "llm_calls": [],
         }
 
-        for _ in range(5):
-            delta = await agent.step(state)
-            # Merge delta into state (simulating LangGraph reducer)
-            existing_agents = state.get("agents") or {}
-            state["agents"] = merge_agent_states(existing_agents, delta["agents"])
-
         # After 5 steps, scratchpad has 5 reasoning events (one per step, no tools)
-        accumulated_scratchpad = state["agents"]["p1"]["scratchpad"]
+        accumulated_scratchpad = await _run_steps_accumulating(agent, state, 5)
         assert len(accumulated_scratchpad) == 5, (
             f"Expected 5 scratchpad events after 5 steps, got {len(accumulated_scratchpad)}"
         )
@@ -124,13 +152,8 @@ class TestScratchpadWindow:
             "llm_calls": [],
         }
 
-        for _ in range(5):
-            delta = await agent.step(state)
-            existing_agents = state.get("agents") or {}
-            state["agents"] = merge_agent_states(existing_agents, delta["agents"])
-
         # Full scratchpad must have all 5 events (window_size=2 but scratchpad is append-only)
-        full_scratchpad = state["agents"]["p1"]["scratchpad"]
+        full_scratchpad = await _run_steps_accumulating(agent, state, 5)
         assert len(full_scratchpad) == 5, (
             f"Original scratchpad must have all 5 events, got {len(full_scratchpad)}"
         )
@@ -155,13 +178,8 @@ class TestScratchpadWindow:
             "llm_calls": [],
         }
 
-        for _ in range(5):
-            delta = await agent.step(state)
-            existing_agents = state.get("agents") or {}
-            state["agents"] = merge_agent_states(existing_agents, delta["agents"])
-
         # Build prompt with the final accumulated scratchpad
-        full_scratchpad = state["agents"]["p1"]["scratchpad"]
+        full_scratchpad = await _run_steps_accumulating(agent, state, 5)
         view = AgentView(
             agent_id="p1",
             self_state=state["agents"]["p1"],

@@ -17,6 +17,7 @@ All relationships use lazy="raise".
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -73,13 +74,13 @@ class Experiment(Base):
         server_default=sa.text("'{}'::jsonb"),
     )
     git_sha: Mapped[str | None] = mapped_column(sa.String(40), nullable=True)
-    started_at: Mapped[sa.DateTime] = mapped_column(
+    started_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
         index=True,
     )
-    finished_at: Mapped[sa.DateTime | None] = mapped_column(
+    finished_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,
     )
@@ -177,12 +178,12 @@ class Run(Base):
         nullable=True,
     )
     iterations: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
-    started_at: Mapped[sa.DateTime] = mapped_column(
+    started_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
     )
-    finished_at: Mapped[sa.DateTime | None] = mapped_column(
+    finished_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,
     )
@@ -252,12 +253,12 @@ class Phase(Base):
         sa.String(32),
         nullable=True,  # §3.4: None on initial init
     )
-    started_at: Mapped[sa.DateTime] = mapped_column(
+    started_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
     )
-    ended_at: Mapped[sa.DateTime | None] = mapped_column(
+    ended_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,  # §3.4: nullable — phase may still be ongoing
     )
@@ -310,12 +311,12 @@ class HumanInteraction(Base):
         nullable=False,
     )
     role: Mapped[str] = mapped_column(sa.String(32), nullable=False)
-    requested_at: Mapped[sa.DateTime] = mapped_column(
+    requested_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
     )
-    answered_at: Mapped[sa.DateTime | None] = mapped_column(
+    answered_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=True,
     )
@@ -380,7 +381,7 @@ class BudgetEvent(Base):
         sa.Numeric(10, 4),
         nullable=False,
     )
-    at: Mapped[sa.DateTime] = mapped_column(
+    at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),
@@ -460,7 +461,7 @@ class TopologyTransition(Base):
         nullable=False,
         server_default=sa.text("0"),
     )
-    at: Mapped[sa.DateTime] = mapped_column(
+    at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),

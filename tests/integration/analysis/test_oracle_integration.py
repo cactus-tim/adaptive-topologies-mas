@@ -108,11 +108,10 @@ async def test_oracle_producer_consumer_contract(
       HumanEval/1: mesh(0.8), linear(0.3)
       HumanEval/2: supervisor(0.85), linear(0.2)
 
-    LOO for HumanEval/0 (excluded): remaining programming rows from HumanEval/1 + HumanEval/2
-      mesh:       [0.8]       → mean 0.800
-      linear:     [0.3, 0.2]  → mean 0.250
-      supervisor: [0.85]      → mean 0.850
-      LOO winner for HumanEval/0 = "supervisor"
+    by_task_id is TOP-1 PER TASK (no LOO exclusion — see build_loo_from_rows).
+    HumanEval/0 uses ONLY its own rows:
+      mesh(0.9), linear(0.4), supervisor(0.5)
+      winner for HumanEval/0 = "mesh"
 
     Global programming type winner (all rows):
       mesh:       [0.9, 0.8]   → mean 0.850
@@ -122,7 +121,7 @@ async def test_oracle_producer_consumer_contract(
 
     Reasoning tasks:
       GSM8K/0: debate(0.95), linear(0.1)
-      LOO for GSM8K/0: no other reasoning rows → fallback to "linear" (default)
+      top-1 for GSM8K/0 = "debate"
       type winner for reasoning = "debate"
 
     OracleTopologyRouter lookup order:
@@ -232,15 +231,15 @@ async def test_oracle_producer_consumer_contract(
         f"Expected reasoning type winner = 'debate', got {oracle.by_task_type['reasoning']!r}"
     )
 
-    # LOO winner for HumanEval/0 = supervisor (best in remainder = HumanEval/1 + HumanEval/2)
-    assert oracle.by_task_id.get("HumanEval/0") == "supervisor", (
-        f"LOO winner for HumanEval/0: expected 'supervisor', "
+    # Top-1 winner for HumanEval/0 = mesh (own rows: mesh 0.9 > supervisor 0.5 > linear 0.4)
+    assert oracle.by_task_id.get("HumanEval/0") == "mesh", (
+        f"top-1 winner for HumanEval/0: expected 'mesh', "
         f"got {oracle.by_task_id.get('HumanEval/0')!r}"
     )
 
-    # LOO winner for GSM8K/0 = linear (no other reasoning rows → fallback to default)
-    assert oracle.by_task_id.get("GSM8K/0") == "linear", (
-        f"LOO fallback for GSM8K/0: expected 'linear', got {oracle.by_task_id.get('GSM8K/0')!r}"
+    # Top-1 winner for GSM8K/0 = debate (own rows: debate 0.95 > linear 0.1)
+    assert oracle.by_task_id.get("GSM8K/0") == "debate", (
+        f"top-1 winner for GSM8K/0: expected 'debate', got {oracle.by_task_id.get('GSM8K/0')!r}"
     )
 
     # --- Serialize to router dict and construct OracleTopologyRouter ---
@@ -262,7 +261,7 @@ async def test_oracle_producer_consumer_contract(
     router = OracleTopologyRouter(router_dict)
 
     # --- Router test 1: by_task_id lookup for HumanEval/0 ---
-    # Expected: supervisor (LOO winner for HumanEval/0)
+    # Expected: mesh (top-1 winner for HumanEval/0)
     state_he0: SharedState = {
         "task_id": "HumanEval/0",
         "phase": Phase.PLANNING,
@@ -271,16 +270,13 @@ async def test_oracle_producer_consumer_contract(
     assert decision_he0.decided_by == "oracle", (
         f"Expected decided_by='oracle', got {decision_he0.decided_by!r}"
     )
-    assert decision_he0.topology == "supervisor", (
-        f"OracleTopologyRouter for HumanEval/0: expected 'supervisor', "
-        f"got {decision_he0.topology!r}"
+    assert decision_he0.topology == "mesh", (
+        f"OracleTopologyRouter for HumanEval/0: expected 'mesh', got {decision_he0.topology!r}"
     )
 
-    # --- Router test 2: by_task_id lookup for HumanEval/1 (LOO → mesh winner) ---
-    # LOO for HumanEval/1: remaining programming rows = HumanEval/0 + HumanEval/2
-    #   mesh:       [0.9]       → mean 0.900
-    #   linear:     [0.4, 0.2]  → mean 0.300
-    #   supervisor: [0.5, 0.85] → mean 0.675
+    # --- Router test 2: by_task_id lookup for HumanEval/1 (top-1 → mesh winner) ---
+    # Top-1 for HumanEval/1 uses ONLY its own rows:
+    #   mesh(0.8), linear(0.3)
     # Winner = mesh
     state_he1: SharedState = {
         "task_id": "HumanEval/1",

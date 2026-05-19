@@ -396,7 +396,7 @@ def _prefetch_task_caches(configs: list[Any]) -> None:
             continue
         try:
             specs = loader_cls().load()
-        except Exception as exc:  # noqa: BLE001 — keep grid alive on prefetch errors
+        except Exception as exc:
             typer.echo(
                 f"  ! Prefetch failed for {name!r}: {exc} (workers will retry)",
                 err=True,

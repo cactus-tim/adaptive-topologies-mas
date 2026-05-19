@@ -140,10 +140,7 @@ def _needs_finalize(task_spec: TaskSpec, current_answer: str) -> bool:
     if task_id.startswith("dabench/") and _DABENCH_TEMPLATE_RE.search(stripped) is None:
         return True
 
-    if task_id.startswith("commongen/") and _commongen_needs_finalize(task_spec, stripped):
-        return True
-
-    return False
+    return task_id.startswith("commongen/") and _commongen_needs_finalize(task_spec, stripped)
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +243,7 @@ async def maybe_finalize_answer(
         user_parts.append("Computation results so far:\n" + tool_history)
     if current_answer.strip():
         user_parts.append(
-            "Previous (rejected) attempt — do not repeat verbatim:\n"
-            + current_answer.strip()[:600]
+            "Previous (rejected) attempt — do not repeat verbatim:\n" + current_answer.strip()[:600]
         )
     user_parts.append("Now write the final answer.")
     user_text = "\n\n".join(user_parts)

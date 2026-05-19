@@ -919,7 +919,9 @@ def _build_agents(
         # tells the judge how to evaluate the new ###ANSWER### marker
         # format for non-code tasks. Mirrors the placement strategy used
         # for debaters above.
-        if topo_name in ("debate", "adaptive") and worker_id == str(debate_extra.get("judge_id") or "judge"):
+        if topo_name in ("debate", "adaptive") and worker_id == str(
+            debate_extra.get("judge_id") or "judge"
+        ):
             judge_override = (
                 "[DEBATE JUDGE — HARD RULES, READ FIRST]\n"
                 "You judge a debate between two debaters (pro / contra). "

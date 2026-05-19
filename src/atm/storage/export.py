@@ -81,7 +81,9 @@ def _run_to_row(run: Run) -> dict[str, Any]:
         "sandbox_image_digest": run.sandbox_image_digest,
         "status": run.status,
         "finish_reason": run.finish_reason,
-        "budget_spent_usd": float(run.budget_spent_usd) if run.budget_spent_usd is not None else 0.0,
+        "budget_spent_usd": float(run.budget_spent_usd)
+        if run.budget_spent_usd is not None
+        else 0.0,
         "quality_score": float(run.quality_score) if run.quality_score is not None else None,
         "wall_time_s": float(run.wall_time_s) if run.wall_time_s is not None else None,
         "iterations": int(run.iterations) if run.iterations is not None else None,
@@ -146,6 +148,9 @@ async def export_experiment(
     df.to_parquet(runs_parquet_path, compression="snappy", index=False)
 
     logger.info(
-        "exported experiment %s: runs=%d, dir=%s", exp_uuid, len(runs), exp_dir,
+        "exported experiment %s: runs=%d, dir=%s",
+        exp_uuid,
+        len(runs),
+        exp_dir,
     )
     return exp_dir
