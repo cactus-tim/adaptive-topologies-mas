@@ -92,6 +92,15 @@ async def build_checkpointer(
     await raw_pool.open()
     pool = cast(AsyncConnectionPool[AsyncConnection[DictRow]], raw_pool)
     saver = AsyncPostgresSaver(conn=pool)
+    # Force transaction-mode in AsyncPostgresSaver._cursor instead of psycopg
+    # pipeline-mode batching. Pipeline-mode batches N blob inserts into a single
+    # network round-trip; under heavy adaptive runs (dabench + LLM router → many
+    # meta-ticks → many blobs per checkpoint) the batched bytestream occasionally
+    # desyncs the wire protocol and PG closes the connection with
+    # "invalid message length", cascading the worker. Transaction-mode sends
+    # each insert separately and waits for the response — slightly slower but
+    # robust under arbitrary state size.
+    saver.supports_pipeline = False
     await saver.setup()
     return saver, pool
 

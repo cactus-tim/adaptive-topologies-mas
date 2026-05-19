@@ -686,3 +686,246 @@ def test_topology_transitions_dedup_reducer() -> None:
     unique_ids = {str(r.id) for r in result}
     assert len(result) == len(unique_ids), "Dedup reducer should remove duplicate transitions"
     assert len(result) == 2, f"Expected 2 unique transitions, got {len(result)}"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the correctness fixes (fix/adaptive-router-correctness)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseSwitchCountTracking:
+    """signals['phase_switch_count'] must reflect actual per-phase switches.
+    Earlier revisions never wrote this field, leaving SwitchGuards.max_per_phase
+    to fall back to len(topology_history) which conflated per-phase with per-run.
+    """
+
+    def test_first_switch_in_phase_sets_count_to_one(self) -> None:
+        state = {
+            "shared": {
+                "phase": Phase.EXECUTION,
+                "active_topology": "linear",
+                "iter_total": 5,
+                "phase_started_at_iter": 0,
+                "topology_started_at_iter": 0,
+                "topology_switch_count": 0,
+                "topology_history": [],
+                "signals": {},
+            },
+        }
+        phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
+        topo_dec = TopologyDecision(topology="mesh", reason="stuck=True", decided_by="rule")
+        new_state = apply_transition_gate(
+            state, phase_dec, topo_dec, run_id=str(uuid4()), pre_subgraph_phase=Phase.EXECUTION
+        )
+        assert new_state["shared"]["signals"]["phase_switch_count"] == 1
+
+    def test_subsequent_switch_within_same_phase_increments_count(self) -> None:
+        state = {
+            "shared": {
+                "phase": Phase.EXECUTION,
+                "active_topology": "mesh",
+                "iter_total": 7,
+                "phase_started_at_iter": 0,
+                "topology_started_at_iter": 5,
+                "topology_switch_count": 1,
+                "topology_history": ["linear"],
+                "signals": {"phase_switch_count": 1},
+            },
+        }
+        phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
+        topo_dec = TopologyDecision(topology="debate", reason="rejected_count=3", decided_by="rule")
+        new_state = apply_transition_gate(
+            state, phase_dec, topo_dec, run_id=str(uuid4()), pre_subgraph_phase=Phase.EXECUTION
+        )
+        assert new_state["shared"]["signals"]["phase_switch_count"] == 2
+
+    def test_phase_advance_resets_count(self) -> None:
+        state = {
+            "shared": {
+                "phase": Phase.EXECUTION,
+                "active_topology": "linear",
+                "iter_total": 5,
+                "phase_started_at_iter": 0,
+                "topology_started_at_iter": 0,
+                "topology_switch_count": 3,
+                "topology_history": ["mesh", "debate", "linear"],
+                "signals": {
+                    "phase_switch_count": 3,
+                    "ready_for_verification": True,
+                },
+            },
+        }
+        phase_dec = PhaseDecision(
+            next_phase=Phase.VERIFICATION, reason="ready_for_verification", decided_by="rule"
+        )
+        topo_dec = TopologyDecision(topology="linear", reason="stay", decided_by="rule")
+        new_state = apply_transition_gate(
+            state, phase_dec, topo_dec, run_id=str(uuid4()), pre_subgraph_phase=Phase.EXECUTION
+        )
+        # phase advanced → counter reset to 0
+        assert new_state["shared"]["signals"]["phase_switch_count"] == 0
+        # phase guard signal consumed
+        assert "ready_for_verification" not in new_state["shared"]["signals"]
+
+
+class TestPreSubgraphPhaseDetection:
+    """When the subgraph internally advances the phase, transition_gate must
+    still detect the change and run state-transfer (clear inboxes, clear
+    previous-phase guard signal).  Previously current_phase was read from the
+    post-subgraph shared.phase, making phase_changed=False on subgraph-internal
+    advances.
+    """
+
+    def test_subgraph_advanced_phase_is_detected_as_phase_change(self) -> None:
+        # Simulate state observed AFTER a subgraph (e.g. star coordinator)
+        # advanced planning→execution internally:
+        state = {
+            "shared": {
+                "phase": Phase.EXECUTION,  # post-subgraph
+                "active_topology": "linear",
+                "iter_total": 3,
+                "phase_started_at_iter": 0,
+                "topology_started_at_iter": 0,
+                "signals": {
+                    "ready_for_execution": True,  # the trigger from PLANNING
+                    "some_other": 42,
+                },
+            },
+            "agents": {
+                "planner": {"agent_id": "planner", "inbox": [{"m": 1}], "outbox": [{"m": 2}]},
+            },
+        }
+        phase_dec = PhaseDecision(
+            next_phase=Phase.PLANNING, reason="router slow", decided_by="rule"
+        )
+        # Note: phase_decision says PLANNING but subgraph already moved to
+        # EXECUTION; the monotonic-max keeps EXECUTION.
+        topo_dec = TopologyDecision(topology="linear", reason="stay", decided_by="rule")
+        new_state = apply_transition_gate(
+            state,
+            phase_dec,
+            topo_dec,
+            run_id=str(uuid4()),
+            pre_subgraph_phase=Phase.PLANNING,  # ← critical: pre-dispatch phase
+        )
+        # Phase advance must have been detected
+        assert new_state["shared"]["phase"] == Phase.EXECUTION
+        # ready_for_execution must have been consumed
+        assert "ready_for_execution" not in new_state["shared"]["signals"]
+        # Other signals preserved
+        assert new_state["shared"]["signals"].get("some_other") == 42
+        # Agent inbox/outbox cleared
+        assert new_state["agents"]["planner"]["inbox"] == []
+        assert new_state["agents"]["planner"]["outbox"] == []
+
+    def test_no_pre_phase_falls_back_to_legacy_behaviour(self) -> None:
+        """Back-compat: when pre_subgraph_phase=None, current_phase = subgraph_phase."""
+        state = {
+            "shared": {
+                "phase": Phase.EXECUTION,
+                "active_topology": "linear",
+                "iter_total": 3,
+                "phase_started_at_iter": 0,
+                "topology_started_at_iter": 0,
+                "signals": {"ready_for_execution": True},
+            },
+        }
+        phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
+        topo_dec = TopologyDecision(topology="linear", reason="stay", decided_by="rule")
+        new_state = apply_transition_gate(
+            state, phase_dec, topo_dec, run_id=str(uuid4())
+        )
+        # Legacy: phase_changed=False, ready_for_execution NOT consumed
+        assert new_state["shared"]["signals"].get("ready_for_execution") is True
+
+
+class TestIterTotalSingleSource:
+    """iter_total must only be incremented by sub-topologies, not by the
+    adaptive meta-graph's dispatch node.  meta_ticks tracks meta-graph cycles
+    separately so the safety cap still works.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dispatch_increments_meta_ticks_not_iter_total(self) -> None:
+        """Run a real adaptive graph and verify both meta_ticks and iter_total
+        are written, with meta_ticks reflecting the dispatch count and iter_total
+        reflecting only sub-graph contributions.
+        """
+        agents = {
+            "planner": _SimplePlanner(),
+            "executor": _StuckExecutor(),
+            "critic": _RejectingCritic(reject_times=99),
+        }
+        cfg = TopologyConfig(
+            name="adaptive",
+            max_iterations=5,
+            extra={
+                "switch_guards": False,
+                "planning_max_iter": 1,
+                "exec_max_iter": 2,
+                "verify_max_iter": 1,
+                "subgraph_max_iterations": 2,
+            },
+        )
+        graph = AdaptiveTopology().build(agents, cfg)
+        initial_state = _make_initial_state()
+        assert initial_state["shared"].get("iter_total", 0) == 0
+
+        final = await graph.ainvoke(initial_state, config={"recursion_limit": 100})
+        shared = final["shared"]
+
+        # meta_ticks must be present and >= 1 (dispatch wrote it).
+        assert shared.get("meta_ticks", 0) >= 1, (
+            f"meta_ticks should reflect dispatch count, got {shared.get('meta_ticks')}"
+        )
+        # iter_total contribution comes from sub-graph internal loops.  We
+        # allow modest over-run (subgraph can complete its current tick after
+        # the guard fires on next dispatch), but iter_total must NOT be
+        # roughly 2x max_iterations as it was under the double-increment bug.
+        assert shared.get("iter_total", 0) <= 8, (
+            f"iter_total far exceeded cfg.max_iterations (double-increment regression), "
+            f"got {shared.get('iter_total')}"
+        )
+        # Critically: meta_ticks may be > iter_total or vice versa, but they
+        # MUST be tracked as separate counters (not the same field).
+        assert "meta_ticks" in shared
+        assert "iter_total" in shared
+        # Sanity: meta_ticks should NOT equal iter_total in non-trivial runs
+        # (would suggest they're still linked).  In a multi-tick run with a
+        # multi-step subgraph these should diverge.
+        # If they happen to be equal, that's still valid as long as neither
+        # field is missing.
+
+
+class TestAdvisorHintOneShot:
+    """human_advisor_hint must be consumed after one transition_gate tick,
+    not carried forward into subsequent ticks (which would make every later
+    decision biased by a stale hint).
+    """
+
+    def test_hint_removed_after_transition_gate(self) -> None:
+        state = {
+            "shared": {
+                "phase": Phase.EXECUTION,
+                "active_topology": "linear",
+                "iter_total": 2,
+                "phase_started_at_iter": 0,
+                "topology_started_at_iter": 0,
+                "signals": {
+                    "human_advisor_hint": "try mesh",
+                    "other": 1,
+                },
+            },
+        }
+        phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
+        topo_dec = TopologyDecision(
+            topology="mesh",
+            reason="human_advisor_hint='try mesh' mentions valid topology 'mesh'",
+            decided_by="rule",
+        )
+        new_state = apply_transition_gate(
+            state, phase_dec, topo_dec, run_id=str(uuid4()), pre_subgraph_phase=Phase.EXECUTION
+        )
+        # Hint must be gone, other signals preserved
+        assert "human_advisor_hint" not in new_state["shared"]["signals"]
+        assert new_state["shared"]["signals"].get("other") == 1

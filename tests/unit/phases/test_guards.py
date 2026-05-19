@@ -415,3 +415,73 @@ class TestGuardedRouter:
         assert "min_dwell" in decision.reason
         assert "cooldown" in decision.reason
         assert "max_per_run" in decision.reason
+
+
+# ===========================================================================
+# Regression tests for the cooldown semantics fix
+# ===========================================================================
+
+
+class TestCooldownReturnAfterSwitch:
+    """Regression: cooldown must block return to the most-recently-abandoned
+    topology.  Earlier revisions sliced history[:-1] which silently dropped
+    the last entry — making cooldown a no-op for the X→Y→X thrashing pattern.
+    apply_transition_gate appends the *outgoing* topology to topology_history,
+    so the post-switch state has history=[..., X] while active=Y; cooldown
+    must read the full history (including the last entry).
+    """
+
+    @pytest.mark.asyncio
+    async def test_blocks_immediate_return_to_just_left_topology(self) -> None:
+        """After linear→mesh, attempt mesh→linear within cooldown must be blocked."""
+        from atm.phases.guards import GuardedRouter, SwitchGuards
+
+        guards = SwitchGuards(min_dwell_iters=0, cooldown_iters=3, max_per_run=99, max_per_phase=99)
+        inner = _AlwaysSwitchRouter(target="linear")
+        router = GuardedRouter(inner=inner, guards=guards)
+
+        # State produced by apply_transition_gate after linear→mesh switch:
+        # active="mesh", history=["linear"] (linear was the outgoing one).
+        state = _make_state(active_topology="mesh", topology_history=["linear"])
+        decision: TopologyDecision = await router.decide(state)
+
+        assert decision.decided_by == "guard_override", (
+            f"Expected cooldown to block, got {decision.decided_by}: {decision.reason}"
+        )
+        assert decision.topology == "mesh"
+        assert "cooldown" in decision.reason
+        assert "linear" in decision.considered_alternatives
+
+    @pytest.mark.asyncio
+    async def test_cooldown_zero_window_disables_guard(self) -> None:
+        """cooldown_iters=0 must disable the guard entirely (corner case)."""
+        from atm.phases.guards import GuardedRouter, SwitchGuards
+
+        guards = SwitchGuards(min_dwell_iters=0, cooldown_iters=0, max_per_run=99, max_per_phase=99)
+        inner = _AlwaysSwitchRouter(target="linear")
+        router = GuardedRouter(inner=inner, guards=guards)
+
+        state = _make_state(active_topology="mesh", topology_history=["linear"])
+        decision: TopologyDecision = await router.decide(state)
+
+        assert decision.decided_by == "rule"
+        assert decision.topology == "linear"
+
+    @pytest.mark.asyncio
+    async def test_cooldown_window_respects_size(self) -> None:
+        """Only the last cooldown_iters entries of history are considered."""
+        from atm.phases.guards import GuardedRouter, SwitchGuards
+
+        guards = SwitchGuards(min_dwell_iters=0, cooldown_iters=2, max_per_run=99, max_per_phase=99)
+        inner = _AlwaysSwitchRouter(target="mesh")
+        router = GuardedRouter(inner=inner, guards=guards)
+
+        # mesh was abandoned 3 switches ago — outside cooldown window of 2.
+        state = _make_state(
+            active_topology="linear",
+            topology_history=["mesh", "debate", "supervisor"],
+        )
+        decision: TopologyDecision = await router.decide(state)
+
+        assert decision.decided_by == "rule"
+        assert decision.topology == "mesh"

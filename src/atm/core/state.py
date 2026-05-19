@@ -61,7 +61,14 @@ class SharedState(TypedDict, total=False):
 
     # --- Adaptive iteration counters ---
     iteration: int  # legacy/general (iterations within current subgraph)
-    iter_total: int  # absolute meta-graph tick (never reset)
+    iter_total: int  # cumulative count of sub-topology work ticks (chain retry,
+    # star coordinator cycle, mesh dispatch round, etc.).  Sub-topologies are
+    # the sole writers; adaptive's dispatch node does NOT increment it (would
+    # double-count vs static baselines).
+    meta_ticks: int  # number of adaptive meta-graph cycles
+    # (phase_router → topology_router → dispatch → transition_gate).
+    # Adaptive-only; static topologies never write this.  Used as a safety
+    # cap to prevent infinite meta-graph spin.
 
     # --- Communication/Mesh ---
     broadcast_bus: list[Message]  # for Mesh; cleared on any transition

@@ -20,6 +20,12 @@ services:
       - shared_buffers=1GB
       - -c
       - effective_cache_size=4GB
+      - -c
+      - max_wal_size=8GB
+      - -c
+      - min_wal_size=2GB
+      - -c
+      - checkpoint_completion_target=0.9
     ports:
       - "${PG_PORT:-5432}:5432"
     environment:

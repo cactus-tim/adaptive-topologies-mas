@@ -1,0 +1,73 @@
+# Confirmation E4 post-fix — cross-family validation on Cerebras Qwen3-235B
+# against the **corrected** adaptive implementation (PR #18).
+#
+# Purpose: validate the (revised) RQ4 verdict on a different worker family.
+# After PR #18, role-router shows **no lift** over fixed role (and possibly
+# slight degradation: prior pilot post-fix observations show rule −0.113, llm
+# −0.083 vs fixed).  The interpretation: cleaner phase boundaries remove the
+# apparent role-router benefit that was partially driven by phase-signal
+# contamination.  Cross-family confirmation is needed because the claim
+# «role-router does not help even on corrected implementation» is stronger
+# than the original RQ4-NOT-replicated; we want to ensure this is not a
+# gpt-oss-family artefact.
+#
+# Apples-to-apples with prior `confirmation_e4.yaml`:
+#   - Same sweep (3 role_router × 4 task × 15 shuffle × 3 seed = 540 cells)
+#   - Same worker (cerebras:qwen-3-235b-a22b-instruct-2507)
+#   - Same judge (openai:gpt-4.1-mini)
+#   - Same adaptive base config (topology_router=llm = E3 champion)
+#
+# Difference vs prior:
+#   - Includes e4_postfix_full.yaml (post-fix code semantics)
+#   - Lower parallelism for cascade safety on qwen
+
+include: e4_postfix_full.yaml
+
+name: confirmation_e4_postfix
+
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  # qwen-3-235b on Cerebras 400s on reasoning_effort.  Explicit nulls.
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+# qwen ~1.7× more expensive output than gpt-oss → bumped budgets.
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.65
+  per_experiment_usd: 100.0
+  warn_ratio: 0.85
+
+# Sweep keys mirror e4_postfix_full / e4_full exactly — apples-to-apples
+# replication.  Parallelism=6 (down from prior=8) for qwen+llm-router cascade
+# safety; per-task catchups can use even lower if needed.
+grid:
+  parallelism: 6
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    human.role_router:
+      - fixed
+      - rule
+      - llm
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

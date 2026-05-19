@@ -1,0 +1,126 @@
+# E3 thrashing stress — verify the cooldown + per-phase guard fixes do
+# meaningfully suppress topology oscillation.
+#
+# Before the fixes:
+#   - cooldown_iters silently dropped the just-left topology → no protection
+#     against X→Y→X immediate flip
+#   - max_per_phase fell back to len(topology_history) → conflated with
+#     max_per_run
+# After the fixes:
+#   - cooldown_iters=3 must block return to a topology for 3 subsequent
+#     switches
+#   - max_per_phase=2 must independently limit per-phase switches
+#
+# Design: provoke thrashing with stuck=True signals on a task where the
+# rule-based router would naturally bounce between linear and mesh.  We
+# compare two SwitchGuards configs:
+#   strict:  cooldown_iters=3, max_per_phase=2  → should see ≤2 switches per phase
+#   relaxed: cooldown_iters=0, max_per_phase=99 → free thrashing baseline
+#
+# Quality metric: secondary.  Primary observable is
+#   `topology_switch_count` per run (parquet field).
+#   With the fix:  strict cells should have notably fewer switches than relaxed.
+#   Without the fix: counts roughly equal between strict and relaxed cells.
+#
+# Grid: 2 guard configs × 1 task × 3 shuffles × 2 seeds = 12 cells.
+# Cheap: ~5 min on p=4, ~$0.50.
+
+name: e3_postfix_thrashing
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: rule
+      subgraph_max_iterations: 4
+      switch_guards: true
+      # ← swept below; defaults documented in arch.md §8bis.3
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 3
+        max_per_run: 99
+        max_per_phase: 2
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 1
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.30
+  per_experiment_usd: 2.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL off — isolate guard behaviour.
+human:
+  enabled: false
+
+# Sweep:
+#   switch_guards ∈ {false, true}  — false = thrashing baseline, true = strict
+#
+# This sweeps the top-level guards toggle (the Pydantic-modelled key).  For
+# finer cooldown/max_per_phase ablation, run this file multiple times with
+# CLI overrides:
+#   uv run atm grid -c conf/experiments/e3_postfix_thrashing.yaml \
+#     +topology.extra.adaptive.switch_guards_config.cooldown_iters=3 \
+#     +topology.extra.adaptive.switch_guards_config.max_per_phase=2
+# (The nested dict path can't be in `sweep:` because switch_guards_config is
+# typed dict[str, Any] in AdaptiveExtras, not a Pydantic sub-model.)
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    task.name: [humaneval]
+    task.shuffle_seed: [0, 1, 2]
+    topology.extra.adaptive.switch_guards: [false, true]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false

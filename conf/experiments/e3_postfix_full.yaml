@@ -1,0 +1,130 @@
+# E3 post-fix full — the head-to-head experiment for the diploma.
+#
+# This grid is the apples-to-apples comparison between adaptive and static
+# baselines after the router-correctness fixes.  Critically, cfg.max_iterations
+# is now consistent across topologies (= sub-graph work ticks), so the same
+# numerical budget applies to adaptive and chain/star/mesh.
+#
+# Hypothesis: adaptive should now be closer to the best static baseline per
+# task type.  If adaptive still loses, it's the architectural state-loss-on-
+# switch effect, not a measurement artefact.
+#
+# Grid layout:
+#   - 4 task types (humaneval, gsm8k, commongen, dabench)
+#   - 8 shuffles (matches e3_pilot's count, half of e3_full's)
+#   - 3 seeds
+#   - 4 topologies: chain, star, mesh, adaptive (rule router)
+#   - 1 HITL config (advisory reviewer — now actually consumed)
+#
+# Total: 4 × 8 × 3 × 4 = 384 cells.
+# ~3 h on p=12, ~$22 + judge ~$3.
+#
+# For an additional adaptive(llm) comparison, run e3_postfix_full_llm.yaml
+# (the same grid with adaptive.topology_router=llm).  Keeping these separate
+# avoids the cartesian-product dead cells (chain × topology_router is a no-op
+# since chain doesn't read that key).
+
+name: e3_postfix_full
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+# Default = adaptive.  Static baselines override topology.name in the sweep.
+topology:
+  name: adaptive
+  max_iterations: 12   # consistent budget across all topologies after the fix
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: rule
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 3
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 35.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# HITL advisory mode — hint NOW consumed by router (post-fix).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 600.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+  extra:
+    human_can_override_router: false
+
+# 4 tasks × 8 shuffles × 3 seeds × 4 topologies = 384 cells.
+# topology.extra.adaptive.topology_router fixed to "rule" — for llm variant
+# run e3_postfix_full_llm.yaml.
+grid:
+  parallelism: 12
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4, 5, 6, 7]
+    topology.name: [chain, star, mesh, adaptive]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  # Set use_historical: true once you have data/experiments with prior runs
+  # to use as priors.  Default to false so `atm estimate` doesn't need PG.
+  use_historical: false

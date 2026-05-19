@@ -1,0 +1,131 @@
+# E3 advisor HITL — verify the advisor hint consumption fix.
+#
+# Before the fix:
+#   signals['human_advisor_hint'] was written by adaptive's human_advisor_node
+#   in advisory mode but NEVER read by any topology router.  Advisory HITL
+#   was effectively a no-op for routing — runs with HITL Advisory produced
+#   the same routing trajectories as runs without HITL.
+# After the fix:
+#   RuleBasedTopologyRouter consumes the hint as Rule 0 (highest priority,
+#   subject to SwitchGuards).  LLMTopologyRouter includes the hint in its
+#   prompt.  The hint is single-use — consumed after one transition_gate tick.
+#
+# Comparison cells:
+#   HITL off              — baseline, no hints at all
+#   HITL advisory         — hints written, NOW consumed
+#   HITL override         — strongest: human directly mutates topo decision
+#
+# Primary observable: decided_by distribution in topology_transitions.
+#   HITL off:       decided_by ∈ {rule, guard_override}
+#   HITL advisory:  decided_by mostly rule, but reason should mention
+#                   "human_advisor_hint" — proves consumption
+#   HITL override:  decided_by includes human_override
+#
+# Grid: 3 hitl_modes × 1 task × 2 shuffles × 2 seeds = 12 cells.
+# ~5 min on p=4, ~$1.
+
+name: e3_postfix_advisor
+seed: 42
+
+task:
+  name: humaneval
+  split: test
+  limit: 1
+  shuffle_seed: 0
+
+agents:
+  set: canonical_4
+  scratchpad:
+    policy: window_with_summary
+    window_size: 3
+    context_token_budget: 12000
+
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: rule
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+model:
+  default: cerebras:gpt-oss-120b
+  by_role:
+    planner:    cerebras:gpt-oss-120b
+    executor:   cerebras:gpt-oss-120b
+    critic:     cerebras:gpt-oss-120b
+    researcher: cerebras:gpt-oss-120b
+  judge:      openai:gpt-4.1-mini
+  summarizer: cerebras:gpt-oss-120b
+  router:     cerebras:gpt-oss-120b
+  prompt_cache_scope: per_run
+  provider_opts:
+    cerebras:
+      reasoning_effort: low
+    cerebras_critic:
+      reasoning_effort: high
+
+evaluation:
+  judge_model: openai:gpt-4.1-mini
+  judge_self_consistency_n: 1
+
+budget:
+  per_call_usd: 0.05
+  per_run_usd: 0.40
+  per_experiment_usd: 3.0
+  warn_ratio: 0.85
+
+observability:
+  pg_dsn: "${oc.env:PG_DSN,postgresql+asyncpg://localhost/atm_main}"
+  parquet_dir: "data/experiments"
+  callback_sync: false
+
+# Default HITL: advisory mode with simulated human.
+# Sweep below toggles human.enabled and human.extra.human_can_override_router.
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 300.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+  extra:
+    human_can_override_router: false   # advisory mode
+
+# Sweep:
+#   human.enabled ∈ {false, true}  — off vs advisory mode (default override=false)
+#
+# To compare advisory vs override mode, run this file twice with a CLI
+# override:
+#   uv run atm grid -c conf/experiments/e3_postfix_advisor.yaml         \
+#     +human.extra.human_can_override_router=false        # advisory
+#   uv run atm grid -c conf/experiments/e3_postfix_advisor.yaml         \
+#     +human.extra.human_can_override_router=true         # override
+# (human.extra is dict[str, Any] so it can't be in `sweep:` directly.)
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43]
+  sweep:
+    task.name: [humaneval]
+    task.shuffle_seed: [0, 1]
+    human.enabled: [false, true]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 5  # advisor adds gateway call per meta-tick
+  use_historical: false

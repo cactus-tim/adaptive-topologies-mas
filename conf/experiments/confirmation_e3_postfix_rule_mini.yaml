@@ -1,0 +1,96 @@
+# Confirmation E3 post-fix — RULE router MINI-MEDIUM (60 cells),
+# cross-family validation matched to prior confirmation_e3 density.
+#
+# Size: 4 task × 5 shuffle × 3 seed = 60 cells (vs 180 for full).
+# ~1-1.5 h on p=4, ~$4.
+#
+# n=15 per task — SAME density as prior pre-fix confirmation_e3 used for
+# its «cross-family backing» analysis.  Bootstrap-CI on this n should be
+# informative for the principal RQ2 effects (LLM gsm8k/humaneval lifts,
+# ~0.4 magnitude on gpt-oss postfix).
+#
+# Loader supports single-level include only — that's why this config
+# inherits directly from e3_postfix_full.yaml and re-declares the
+# qwen-worker / HITL-fixed blocks here (mirrors the prior
+# confirmation_e3_rule.yaml pattern).
+#
+# Companion: confirmation_e3_postfix_llm_mini.yaml — same density, llm router.
+# Run sequentially (rule first) to keep TPM contention low.
+
+include: e3_postfix_full.yaml
+
+name: confirmation_e3_postfix_rule_mini
+
+# Cross-family worker — qwen3-235b.  Judge stays gpt-4.1-mini (constant).
+model:
+  default: cerebras:qwen-3-235b-a22b-instruct-2507
+  by_role:
+    planner:    cerebras:qwen-3-235b-a22b-instruct-2507
+    executor:   cerebras:qwen-3-235b-a22b-instruct-2507
+    critic:     cerebras:qwen-3-235b-a22b-instruct-2507
+    researcher: cerebras:qwen-3-235b-a22b-instruct-2507
+  judge:      openai:gpt-4.1-mini       # CONSTANT
+  summarizer: cerebras:qwen-3-235b-a22b-instruct-2507
+  router:     cerebras:qwen-3-235b-a22b-instruct-2507
+  prompt_cache_scope: per_run
+  # qwen-3-235b on Cerebras rejects reasoning_effort.
+  provider_opts:
+    cerebras: null
+    cerebras_critic: null
+
+# Pin rule router (apples-to-apples with confirmation_e3_rule).
+topology:
+  name: adaptive
+  max_iterations: 12
+  extra:
+    adaptive:
+      phase_router: rule
+      topology_router: rule
+      subgraph_max_iterations: 4
+      switch_guards: true
+      switch_guards_config:
+        min_dwell_iters: 1
+        cooldown_iters: 2
+        max_per_run: 6
+        max_per_phase: 3
+      planning_max_iter: 3
+      exec_max_iter: 5
+      verify_max_iter: 2
+    debate:
+      max_rounds: 2
+    hierarchical:
+      max_rounds: 2
+
+# Re-enable HITL with fixed reviewer (prior confirmation_e3 used HITL on).
+human:
+  enabled: true
+  gateway: llm_simulated
+  role: reviewer
+  timeout_s: 900.0
+  timeout_policy: llm_fallback
+  role_router: fixed
+
+# qwen ~1.7× more expensive output → bumped budgets.
+budget:
+  per_call_usd: 0.08
+  per_run_usd: 0.60
+  per_experiment_usd: 6.0
+  warn_ratio: 0.85
+
+grid:
+  parallelism: 4
+  fail_fast: false
+  seeds: [42, 43, 44]
+  sweep:
+    task.name:
+      - humaneval
+      - gsm8k
+      - commongen
+      - dabench
+    task.shuffle_seed: [0, 1, 2, 3, 4]
+    topology.name: [adaptive]
+
+estimate:
+  heuristic_tokens_per_call: 700
+  calls_per_iter: 4
+  use_historical: false
