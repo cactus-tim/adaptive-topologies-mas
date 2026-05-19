@@ -1,0 +1,153 @@
+{
+  "config_snapshot": {
+    "agents": {
+      "scratchpad": {
+        "context_token_budget": 12000,
+        "policy": "window_with_summary",
+        "summarizer_model": null,
+        "window_size": 3
+      },
+      "set": "canonical_4"
+    },
+    "budget": {
+      "per_call_usd": 0.05,
+      "per_experiment_usd": 2.0,
+      "per_run_usd": 0.5,
+      "warn_ratio": 0.85
+    },
+    "estimate": {
+      "calls_per_iter": 4,
+      "heuristic_tokens_per_call": 700,
+      "use_historical": false
+    },
+    "evaluation": {
+      "judge_model": "openai:gpt-4.1-mini",
+      "judge_self_consistency_n": 3
+    },
+    "grid": {
+      "fail_fast": false,
+      "parallelism": 4,
+      "seeds": [
+        42,
+        43,
+        44
+      ],
+      "sweep": {
+        "task.name": [
+          "humaneval",
+          "gsm8k"
+        ],
+        "task.shuffle_seed": [
+          0
+        ]
+      }
+    },
+    "human": {
+      "enabled": true,
+      "extra": null,
+      "gateway": "llm_simulated",
+      "model": null,
+      "role": "reviewer",
+      "role_router": "fixed",
+      "role_router_model": null,
+      "role_table": null,
+      "timeout_policy": "llm_fallback",
+      "timeout_s": 300.0
+    },
+    "model": {
+      "by_role": {
+        "critic": "cerebras:gpt-oss-120b",
+        "executor": "cerebras:gpt-oss-120b",
+        "planner": "cerebras:gpt-oss-120b",
+        "researcher": "cerebras:gpt-oss-120b"
+      },
+      "default": "cerebras:gpt-oss-120b",
+      "fake_fixtures": {},
+      "judge": "openai:gpt-4.1-mini",
+      "prompt_cache_scope": "per_run",
+      "provider_opts": {
+        "cerebras": {
+          "reasoning_effort": "low"
+        },
+        "cerebras_critic": {
+          "reasoning_effort": "high"
+        }
+      },
+      "router": "cerebras:gpt-oss-120b",
+      "summarizer": "cerebras:gpt-oss-120b"
+    },
+    "name": "e3_pilot_sanity",
+    "observability": {
+      "callback_sync": false,
+      "parquet_dir": "data/experiments",
+      "pg_dsn": "postgresql+asyncpg://atm:atm@localhost:5433/atm"
+    },
+    "seed": 44,
+    "task": {
+      "input": "",
+      "limit": 1,
+      "name": "humaneval",
+      "shuffle_seed": 0,
+      "split": "test"
+    },
+    "topology": {
+      "extra": {
+        "adaptive": {
+          "exec_max_iter": 3,
+          "phase_router": "rule",
+          "planning_max_iter": 3,
+          "run_id": null,
+          "subgraph_max_iterations": 4,
+          "switch_guards": true,
+          "switch_guards_config": {
+            "cooldown_iters": 2,
+            "max_per_phase": 3,
+            "max_per_run": 6,
+            "min_dwell_iters": 1
+          },
+          "topology_router": "rule",
+          "verify_max_iter": 2
+        },
+        "chain": {},
+        "debate": {
+          "debater_contra_id": null,
+          "debater_pro_id": null,
+          "judge_id": null,
+          "max_rounds": 2
+        },
+        "hierarchical": {
+          "final_answer_strategy": null,
+          "finalize_signal": "top_coord_finalize",
+          "max_rounds": 2,
+          "sub_teams": null
+        },
+        "mesh": {
+          "activation_policy": "round_robin",
+          "agent_order": [
+            "planner",
+            "researcher",
+            "executor",
+            "critic"
+          ],
+          "broadcast_bus_cap": 200,
+          "consensus_threshold": 3,
+          "max_rounds": 12
+        },
+        "star": {
+          "exec_max_iter": 5,
+          "planning_max_iter": 2,
+          "verify_max_iter": 3
+        }
+      },
+      "max_iterations": 6,
+      "name": "adaptive"
+    }
+  },
+  "finished_at": null,
+  "git_sha": "b7b2768",
+  "id": "59beceb4-d808-4c9d-ac84-05b74973c9b5",
+  "name": "e3_pilot_sanity",
+  "started_at": "2026-05-16T17:08:50.833536+00:00",
+  "status": "completed",
+  "total_cost_usd": 0.0
+}
