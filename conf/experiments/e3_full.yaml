@@ -1,6 +1,5 @@
 # E3 — Adaptive topology, simulated HITL (RQ2).
 #
-# Per arch/experiment_plan.md §4:
 #   - Topology = adaptive (L2 meta-graph, intra-phase + phase-bound switching)
 #   - 3 router modes: rule_based, llm_router, oracle (leave-one-out from E1)
 #   - Baseline: best static per task_type (from E1)

@@ -6,7 +6,7 @@ Public API:
 - ``DABenchLoader``                     — TaskLoader for InfiAgent-DABench (pinned SHA)
 - ``DABenchEvaluator``                  — Evaluator: regex template + numeric-exact compare
 
-Design rationale — arch/experiment_plan.md:12 ("numeric exact"):
+Design rationale ("numeric exact"):
     The DABench evaluator uses a regex template format ``@name[value]`` to encode
     expected numeric answers in ``TaskSpec.expected``.  For example:
         ``"@mean_fare[34.65] @survival_rate[0.63]"``
@@ -14,7 +14,7 @@ Design rationale — arch/experiment_plan.md:12 ("numeric exact"):
     matching ``@name[...]`` templates in the model's answer, and compares numerically
     using ``math.isclose(abs_tol=1e-2)`` (corresponding to "Round to 2 decimals").
 
-    LLM-judge is intentionally NOT used for DABench — per arch/experiment_plan.md §0.
+    LLM-judge is intentionally NOT used for DABench.
     Numeric answers are self-contained and do not require semantic judgement.
 
 Template format:
@@ -495,7 +495,7 @@ class DABenchEvaluator:
         DABench constraints.  Dynamic tolerance from ``constraints`` is M11+.
 
     LLM-judge:
-        NOT used — per arch/experiment_plan.md §0.
+        NOT used.
     """
 
     name: str = "dabench_numeric_exact"

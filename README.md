@@ -3,13 +3,17 @@
 Техническая часть дипломной работы: фреймворк для экспериментов с адаптивными
 топологиями мульти-агентных LLM-систем с human-in-the-loop.
 
-Подробный план работы — `dev/PLAN.md`. Архитектурные заметки — `dev/arch.md`.
+## Возможности
 
-## Статус
-
-M0 — bootstrap: скелет проекта, базовая инфраструктура (Postgres, Alembic,
-pytest, ruff, mypy). Реальные компоненты (агенты, топологии, LLM-обёртки)
-появятся в M1+.
+- Пять статических топологий (Star, Chain, Mesh, Debate, Hierarchical) и
+  адаптивная топология с переключением внутри и между фазами.
+- Канонический набор агентов (Planner, Researcher, Executor, Critic, Debater)
+  поверх единой обёртки над LLM с учётом бюджета.
+- Human-in-the-loop через сменные шлюзы: LLM-симулятор, CLI, Streamlit-интерфейс.
+- Задачи HumanEval, GSM8K, CommonGen, DABench с детерминированными и
+  LLM-оценщиками, метрики качества и NASA-TLX.
+- Запуск одиночных экспериментов и параллельных grid-sweep'ов с оценкой
+  стоимости, чекпоинтами, resume/replay и хранением результатов в Postgres и Parquet.
 
 ## Требования
 
@@ -35,11 +39,10 @@ docker compose up -d
 # ждём ~15 секунд, пока postgres станет healthy
 docker compose ps
 
-# 5. (Опционально на M0) применить миграции — сейчас noop, но проверка того,
-# что alembic корректно подключается к БД
+# 5. Применить миграции БД
 uv run alembic upgrade head
 
-# 6. Запустить smoke-тесты
+# 6. Запустить тесты
 uv run pytest
 
 # 7. Линт и проверка типов
@@ -68,8 +71,10 @@ src/atm/             # основной пакет (atm = adaptive topologies ma
 tests/               # unit / integration / fixtures
 conf/                # YAML-конфиги (topology, agents, task, model, experiment)
 alembic/             # миграции БД (async template)
+analysis/            # скрипты и результаты анализа экспериментов
+scripts/             # вспомогательные скрипты
 notebooks/           # jupyter-анализ
-dev/                 # план, arch-заметки, активные и завершённые задачи
+data/                # результаты экспериментов (Parquet-агрегаты)
 ```
 
 ## Полезные команды
@@ -82,7 +87,7 @@ dev/                 # план, arch-заметки, активные и зав
 | `uv run ruff format .` | автоформат |
 | `uv run mypy src/` | проверка типов |
 | `uv run alembic upgrade head` | применить миграции |
-| `uv run alembic revision -m "..."` | создать новую миграцию (M3+) |
+| `uv run alembic revision -m "..."` | создать новую миграцию |
 | `docker compose up -d` | поднять Postgres |
 | `docker compose down -v` | остановить и **удалить данные** Postgres |
 
@@ -213,10 +218,6 @@ uv run atm status --exp-name quick_sweep --json
 # <run_id> — UUID из вывода atm grid или atm status
 uv run atm replay <run_id> --mode deterministic
 ```
-
-## Дорожная карта milestone'ов
-
-См. `dev/PLAN.md §8` — подробный план M0...M13 с exit-criteria.
 
 ## Лицензия
 

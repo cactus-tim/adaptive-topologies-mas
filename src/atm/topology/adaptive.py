@@ -51,7 +51,6 @@ Key design decisions:
 
      # known-limitation: subgraph-level interrupt-resume (CLIGateway inside
      # subgraph with real interrupt/resume) is deferred to M9.2.
-     # See arch/PLAN.md §M9.1 exit criterion lines 560-561.
 
 TopologyConfig.extra defaults (under namespaced extras.adaptive):
   planning_max_iter: 3       — max iterations in planning phase (intentionally > star's 2)
@@ -678,7 +677,6 @@ class AdaptiveTopology:
 
             # known-limitation: subgraph-level interrupt-resume (CLIGateway inside
             # subgraph with real interrupt/resume) is deferred to M9.2.
-            # See arch/PLAN.md §M9.1 exit criterion lines 560-561.
             """
             assert _gateway is not None, "human_advisor_node called but _gateway is None"
 

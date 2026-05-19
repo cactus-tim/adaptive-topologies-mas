@@ -1,6 +1,5 @@
 # E4 — Adaptive topology + Adaptive role (RQ4).
 #
-# Per arch/experiment_plan.md §5:
 #   - Adaptive topology + Adaptive HumanRole (role changes per-phase)
 #   - 3 role_router strategies: fixed (baseline), rule, llm
 #   - 4 task_types × 15 tasks × 3 seeds × 3 role_router_modes = 540 cells

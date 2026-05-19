@@ -1,6 +1,5 @@
 # E1 — Baseline static, no human (RQ1).
 #
-# Per arch/experiment_plan.md §2:
 #   - 5 static topologies: Star, Chain, Mesh, Debate, Hierarchical
 #   - 4 task types: HumanEval, GSM8K, CommonGen, DABench
 #   - N = 15 tasks × 3 seeds (reduced from plan's 25 — see plan §11.5)

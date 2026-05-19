@@ -1,6 +1,5 @@
 # E2 — HITL-simulated baseline (RQ3).
 #
-# Per arch/experiment_plan.md §3 + smart-cuts §11.2:
 #   - top-3 topologies PER task_type from E1 (analysis/e1_top3.json)
 #   - 5 human roles: coordinator, reviewer, judge, peer, monitor
 #   - 4 task types × 15 tasks × 3 seeds
