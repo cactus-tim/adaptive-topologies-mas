@@ -221,4 +221,4 @@ uv run atm replay <run_id> --mode deterministic
 
 ## Лицензия
 
-Внутренний проект (дипломная работа), лицензия будет добавлена позже.
+[MIT](LICENSE) © 2026 Sosnin Timofei
