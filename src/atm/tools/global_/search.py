@@ -57,10 +57,6 @@ class DuckDuckGoSearchTool:
         self._max_results = max_results
         self._retry_policy = retry_policy
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _run_search(self, query: str) -> list[dict[str, Any]]:
         """Synchronous DDGS search — runs inside asyncio.to_thread."""
         raw: list[dict[str, Any]] = DDGS().text(query, max_results=self._max_results)
@@ -78,7 +74,6 @@ class DuckDuckGoSearchTool:
         if self._retry_policy is None:
             return await asyncio.to_thread(self._run_search, query)
 
-        # Inline retry: call _run_search via with_retry
         try:
             return await with_retry(
                 lambda: asyncio.to_thread(self._run_search, query),
@@ -88,10 +83,6 @@ class DuckDuckGoSearchTool:
             )
         except LLMError as exc:
             raise ToolError(tool_name=self.name, message=str(exc)) from exc
-
-    # ------------------------------------------------------------------
-    # Tool Protocol implementation
-    # ------------------------------------------------------------------
 
     async def ainvoke(self, args: dict[str, Any]) -> ToolResult:
         """Invoke DuckDuckGo search.

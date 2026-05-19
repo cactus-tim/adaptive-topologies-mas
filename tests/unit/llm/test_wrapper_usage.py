@@ -23,10 +23,6 @@ from atm.llm.budget import BudgetTracker
 from atm.llm.pricing import ModelPricing, Pricing
 from atm.llm.wrapper import LLMWrapper
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 
 def make_openai_ai_message(
     content: str = "hello",
@@ -125,11 +121,6 @@ def make_messages() -> list:
     return [Message(sender="user", kind=MessageKind.REQUEST, content="hello")]
 
 
-# ---------------------------------------------------------------------------
-# 1. OpenAI usage_metadata shape
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_openai_usage_parsed_correctly() -> None:
     """Wrapper parses OpenAI usage_metadata into correct TokenUsage + cost."""
@@ -153,7 +144,6 @@ async def test_openai_usage_parsed_correctly() -> None:
     assert result.text == "response text"
     assert result.model == "openai:gpt-4o-mini"
 
-    # Cost: 100 input @ 0.00015/1k + 50 output @ 0.0006/1k
     expected_cost = (100 * 0.00015 / 1000) + (50 * 0.0006 / 1000)
     assert abs(result.cost_usd - expected_cost) < 1e-10
 
@@ -175,14 +165,8 @@ async def test_openai_usage_with_cache_read() -> None:
     result = await wrapper.ainvoke(make_messages())
 
     assert result.usage.cached_input_tokens == 40
-    # Cost: 60 non-cached @ 0.00015/1k + 40 cached @ 0.000075/1k + 50 output @ 0.0006/1k
     expected_cost = (60 * 0.00015 / 1000) + (40 * 0.000075 / 1000) + (50 * 0.0006 / 1000)
     assert abs(result.cost_usd - expected_cost) < 1e-10
-
-
-# ---------------------------------------------------------------------------
-# 2. Anthropic response_metadata shape
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -210,16 +194,10 @@ async def test_anthropic_usage_parsed_correctly() -> None:
     assert result.usage.total_tokens == 150
     assert result.usage.cached_input_tokens == 10
 
-    # Cost: 85 plain @ 0.0008/1k + 10 read @ 0.00008/1k + 5 write @ 0.001/1k + 50 out @ 0.004/1k
     expected_cost = (
         (85 * 0.0008 / 1000) + (10 * 0.00008 / 1000) + (5 * 0.001 / 1000) + (50 * 0.004 / 1000)
     )
     assert abs(result.cost_usd - expected_cost) < 1e-10
-
-
-# ---------------------------------------------------------------------------
-# 3. LLMResponse fields populated correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -261,11 +239,6 @@ async def test_finish_reason_from_response_metadata() -> None:
     assert result.finish_reason == "length"
 
 
-# ---------------------------------------------------------------------------
-# 4. tool_calls passthrough
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_tool_calls_parsed_from_ai_message() -> None:
     """LLMResponse.tool_calls populated from AIMessage.tool_calls."""
@@ -293,11 +266,6 @@ async def test_tool_calls_parsed_from_ai_message() -> None:
     assert result.finish_reason == "tool_calls"
 
 
-# ---------------------------------------------------------------------------
-# 5. astream raises NotImplementedError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_astream_raises_not_implemented() -> None:
     """astream must raise NotImplementedError in M2."""
@@ -307,16 +275,11 @@ async def test_astream_raises_not_implemented() -> None:
         await wrapper.astream()
 
 
-# ---------------------------------------------------------------------------
-# 6. Budget-exceed-before-call: BudgetExceededError without calling _llm.ainvoke
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_budget_exceed_before_call_does_not_invoke_llm() -> None:
     """When budget is exceeded pre-call, _llm.ainvoke must NOT be called."""
     budget = BudgetTracker(
-        per_call_usd=0.000001,  # essentially zero
+        per_call_usd=0.000001,
         per_run_usd=10.0,
         per_experiment_usd=100.0,
     )
@@ -337,20 +300,14 @@ async def test_budget_exceed_before_call_does_not_invoke_llm() -> None:
         Message(
             sender="user",
             kind=MessageKind.REQUEST,
-            content="x" * 10000,  # ~2500 tokens estimate — will exceed $0.000001
+            content="x" * 10000,
         )
     ]
 
     with pytest.raises(BudgetExceededError):
         await wrapper.ainvoke(messages)
 
-    # CRITICAL: the underlying LLM must NOT have been invoked
     fake_llm.ainvoke.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# 7. Message list input types
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

@@ -45,16 +45,8 @@ from atm.storage.session import create_engine, create_session_factory, session_s
 from atm.topology.base import TopologyConfig
 from atm.topology.mesh import MeshTopology
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -189,11 +181,6 @@ def _make_vote_agent(agent_id: str, vote: str) -> Any:
     return _VoteAgent()
 
 
-# ---------------------------------------------------------------------------
-# Integration test: deterministic 2-round human-tips-consensus scenario
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     """Mesh HITL: 3 LLM peers vote "X" (round 1, threshold=4, no consensus),
@@ -223,18 +210,12 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
 
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
 
-        # Build the human gateway with the m91_mesh_human_vote fixture
         human_vote_fixture = FIXTURES_DIR / "m91_mesh_human_vote.yaml"
         if not human_vote_fixture.exists():
             pytest.skip(f"Fixture not found: {human_vote_fixture}")
 
         gateway_wrapper = _make_llm_wrapper("m91_mesh_human_vote.yaml")
 
-        # Build topology config:
-        # - 3 LLM agents: planner, researcher, executor — each votes "X"
-        # - consensus_threshold=4 (3 LLM votes not enough; human tips it)
-        # - max_rounds=6 (enough room for 2 full cycles)
-        # - activation_round=2 (human fires at round 2 after seeing pending)
         cfg = TopologyConfig(
             name="mesh",
             max_iterations=30,
@@ -247,7 +228,6 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
             },
         )
 
-        # Build HumanCfg-like config
         from types import SimpleNamespace
 
         from atm.core.types import HumanRole
@@ -261,7 +241,6 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
             extra={"activation_round": 2},
         )
 
-        # All 3 LLM agents vote "X" deterministically
         agents: dict[str, Any] = {
             "planner": _make_vote_agent("planner", "X"),
             "researcher": _make_vote_agent("researcher", "X"),
@@ -278,8 +257,6 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
 
         initial_state = _make_initial_state(run_id)
 
-        # Run the graph inside a RunnableLambda to get proper LangChain callback context
-        # (enables adispatch_custom_event → ExperimentCallbackHandler)
         async def _run_mesh(inputs: dict[str, Any]) -> dict[str, Any]:
             result = await graph.ainvoke(initial_state)
             return result
@@ -294,10 +271,8 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
             },
         )
 
-        # Allow async background operations to complete
         await asyncio.sleep(0.2)
 
-        # --- Assert graph result ---
         shared: dict[str, Any] = final_state.get("shared", {})
         signals: dict[str, Any] = shared.get("signals", {})
 
@@ -308,7 +283,6 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
             f"Expected final_answer='X', got {shared.get('final_answer')!r}"
         )
 
-        # --- Assert PG rows ---
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -321,7 +295,6 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
             f"Expected ≥ 1 row in human_interactions for run_id={run_id}, got {count}"
         )
 
-        # --- Assert row fields ---
         async with session_scope(factory) as session:
             row_result = await session.execute(
                 select(HumanInteraction).where(HumanInteraction.run_id == run_id).limit(1)
@@ -336,11 +309,6 @@ async def test_mesh_hitl_human_tips_consensus(ephemeral_pg_dsn: str, tmp_path: P
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Back-compat integration test: without HITL, mesh behaves identically to M7
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

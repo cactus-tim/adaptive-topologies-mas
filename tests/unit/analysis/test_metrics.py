@@ -17,10 +17,6 @@ import math
 import pandas as pd
 import pytest
 
-# ---------------------------------------------------------------------------
-# Fixtures — shared DataFrames
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def transitions_basic() -> pd.DataFrame:
@@ -71,15 +67,10 @@ def runs_basic() -> pd.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
-# compute_guard_override_rate
-# ---------------------------------------------------------------------------
-
-
 class TestComputeGuardOverrideRate:
     """Tests for compute_guard_override_rate.
 
-    The formula (experiment_plan.md §4) is:
+    The formula is:
         guard_override_rate = |guards_applied is non-empty| / |all decisions|
     """
 
@@ -120,11 +111,6 @@ class TestComputeGuardOverrideRate:
         assert math.isclose(rate, 3 / 4, rel_tol=1e-9)
 
 
-# ---------------------------------------------------------------------------
-# compute_router_cost_share
-# ---------------------------------------------------------------------------
-
-
 class TestComputeRouterCostShare:
     """Tests for compute_router_cost_share."""
 
@@ -158,11 +144,6 @@ class TestComputeRouterCostShare:
         assert compute_router_cost_share(transitions_basic, runs_zero) == 0.0
 
 
-# ---------------------------------------------------------------------------
-# compute_time_per_topology
-# ---------------------------------------------------------------------------
-
-
 class TestComputeTimePerTopology:
     """Tests for compute_time_per_topology."""
 
@@ -191,10 +172,8 @@ class TestComputeTimePerTopology:
         result = compute_time_per_topology(df)
         total = sum(result.values())
         assert math.isclose(total, 1.0, rel_tol=1e-9), f"fractions must sum to 1.0, got {total}"
-        # linear: 60s / 180s = 1/3; mesh: 120s / 180s = 2/3
         assert math.isclose(result["linear"], 60 / 180, rel_tol=1e-6)
         assert math.isclose(result["mesh"], 120 / 180, rel_tol=1e-6)
-        # debate is the last row — no successor → not counted
         assert "debate" not in result
 
     def test_empty_returns_empty_dict(self) -> None:
@@ -228,9 +207,9 @@ class TestComputeTimePerTopology:
                 "at": pd.to_datetime(
                     [
                         "2024-01-01 10:00:00+00:00",
-                        "2024-01-01 10:01:00+00:00",  # r1: linear 60s
+                        "2024-01-01 10:01:00+00:00",
                         "2024-01-02 10:00:00+00:00",
-                        "2024-01-02 10:02:00+00:00",  # r2: mesh 120s
+                        "2024-01-02 10:02:00+00:00",
                     ]
                 ),
             }
@@ -238,14 +217,8 @@ class TestComputeTimePerTopology:
         result = compute_time_per_topology(df)
         total = sum(result.values())
         assert math.isclose(total, 1.0, rel_tol=1e-9)
-        # linear: 60s; mesh: 120s → linear share = 60/180 = 1/3
         assert math.isclose(result["linear"], 60 / 180, rel_tol=1e-6)
         assert math.isclose(result["mesh"], 120 / 180, rel_tol=1e-6)
-
-
-# ---------------------------------------------------------------------------
-# compute_oracle_gap_loo
-# ---------------------------------------------------------------------------
 
 
 class TestComputeOracleGapLoo:
@@ -307,21 +280,14 @@ class TestComputeOracleGapLoo:
         )
         oracle = self._make_oracle(
             {
-                "HumanEval/0": "mesh",  # oracle_quality = 0.90
-                "HumanEval/1": "linear",  # oracle_quality = 0.70
+                "HumanEval/0": "mesh",
+                "HumanEval/1": "linear",
             }
         )
         gaps = compute_oracle_gap_loo(runs, oracle)
 
-        # HumanEval/0: oracle=0.90, router_mean=(0.90+0.50)/2=0.70 → gap=0.20
         assert math.isclose(gaps["HumanEval/0"], 0.20, rel_tol=1e-9)
-        # HumanEval/1: oracle=0.70, router_mean=(0.70+0.40)/2=0.55 → gap=0.15
         assert math.isclose(gaps["HumanEval/1"], 0.15, rel_tol=1e-9)
-
-
-# ---------------------------------------------------------------------------
-# compute_oracle_gap_manual
-# ---------------------------------------------------------------------------
 
 
 class TestComputeOracleGapManual:
@@ -343,7 +309,6 @@ class TestComputeOracleGapManual:
         gaps = compute_oracle_gap_manual(runs_basic, oracle)
 
         assert "HumanEval/0" in gaps.index
-        # oracle quality = 0.80, router_mean = 0.70 → gap = 0.10
         assert math.isclose(gaps["HumanEval/0"], 0.10, rel_tol=1e-9)
 
     def test_fallback_to_task_type(self) -> None:
@@ -357,11 +322,9 @@ class TestComputeOracleGapManual:
                 "quality_score": [0.80, 0.60],
             }
         )
-        # by_task_id is empty, but by_task_type has programming → mesh
         oracle = self._make_oracle(by_task_id={}, by_task_type={"programming": "mesh"})
         gaps = compute_oracle_gap_manual(runs, oracle)
 
-        # oracle_quality = 0.80 (mesh), router_mean = 0.70 → gap = 0.10
         assert math.isclose(gaps["HumanEval/0"], 0.10, rel_tol=1e-9)
 
     def test_missing_oracle_gives_nan(self, runs_basic: pd.DataFrame) -> None:
@@ -371,7 +334,6 @@ class TestComputeOracleGapManual:
         oracle = self._make_oracle(by_task_id={}, by_task_type={})
         gaps = compute_oracle_gap_manual(runs_basic, oracle)
 
-        # No oracle for any task → all NaN
         assert all(math.isnan(v) for v in gaps.values)
 
     def test_empty_runs_returns_empty_series(self) -> None:
@@ -382,11 +344,6 @@ class TestComputeOracleGapManual:
         result = compute_oracle_gap_manual(pd.DataFrame(), oracle)
         assert isinstance(result, pd.Series)
         assert result.empty
-
-
-# ---------------------------------------------------------------------------
-# compute_hurt_rate
-# ---------------------------------------------------------------------------
 
 
 class TestComputeHurtRate:
@@ -470,20 +427,13 @@ class TestComputeHurtRate:
                 "quality_score": [0.3, 0.9, 0.5],
             }
         )
-        # Only t1 and t2 have a best_static entry; t3 should be skipped
         best_static = pd.DataFrame(
             {
                 "task_id": ["t1", "t2"],
                 "quality_score": [0.8, 0.5],
             }
         )
-        # t1 is hurt (0.3 < 0.8), t2 is not (0.9 > 0.5), t3 skipped
         assert math.isclose(compute_hurt_rate(adaptive, best_static), 0.5, rel_tol=1e-9)
-
-
-# ---------------------------------------------------------------------------
-# compute_topology_switch_counts
-# ---------------------------------------------------------------------------
 
 
 class TestComputeTopologySwitchCounts:
@@ -534,8 +484,6 @@ class TestComputeTopologySwitchCounts:
             }
         )
         counts = compute_topology_switch_counts(df)
-        # linear→mesh, mesh→debate, debate→linear = 3 switches
-        # last row: linear→linear = no switch
         assert counts["r1"] == 3
 
     def test_initial_row_not_counted(self) -> None:
@@ -566,7 +514,6 @@ class TestComputeTopologySwitchCounts:
             }
         )
         counts = compute_topology_switch_counts(df)
-        # r1: no switch (linear→linear); r2: no switch (mesh→mesh)
         assert "r1" in counts.index
         assert "r2" in counts.index
         assert counts["r1"] == 0

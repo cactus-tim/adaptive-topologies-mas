@@ -28,10 +28,6 @@ from atm.experiment.config import HumanCfg
 from atm.topology.base import TopologyConfig
 from atm.topology.hierarchical import HierarchicalTopology, _build_human_sub_reviewer_node
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(
     *,
@@ -59,7 +55,7 @@ def _make_human_cfg(
         enabled=True,
         gateway=gateway,
         role=role,
-        timeout_s=None,  # disable timeout for unit tests
+        timeout_s=None,
         extra={"scope": scope},
     )
 
@@ -128,11 +124,6 @@ def _make_state(
     }
 
 
-# ---------------------------------------------------------------------------
-# Test 1: Back-compat — without human_cfg graph is identical to M7
-# ---------------------------------------------------------------------------
-
-
 class TestBackcompat:
     """Without human_cfg.enabled, graph behaves exactly as pre-M9.1."""
 
@@ -150,7 +141,6 @@ class TestBackcompat:
         assert "human_top_reviewer" not in node_names, (
             f"human_top_reviewer should NOT be in graph without human_cfg; got: {node_names}"
         )
-        # Standard nodes must be present
         for expected in ("top_coord", "team_a", "team_b", "hierarchical_finalize"):
             assert expected in node_names, f"Expected node '{expected}' in graph; got: {node_names}"
 
@@ -165,11 +155,6 @@ class TestBackcompat:
 
         node_names = set(compiled.get_graph().nodes.keys())
         assert "human_top_reviewer" not in node_names
-
-
-# ---------------------------------------------------------------------------
-# Test 2: scope="top" inserts human_top_reviewer node in top-level graph
-# ---------------------------------------------------------------------------
 
 
 class TestScopeTopGraphStructure:
@@ -208,7 +193,6 @@ class TestScopeTopGraphStructure:
                 agents, cfg, human_cfg=human_cfg, human_gateway_llm=MagicMock()
             )
 
-        # All standard nodes should still be present
         node_names = set(compiled.get_graph().nodes.keys())
         for expected in (
             "top_coord",
@@ -220,11 +204,6 @@ class TestScopeTopGraphStructure:
             assert expected in node_names, (
                 f"Expected '{expected}' in graph nodes; got: {node_names}"
             )
-
-
-# ---------------------------------------------------------------------------
-# Test 3: scope="sub_team" inserts human reviewers inside subgraphs
-# ---------------------------------------------------------------------------
 
 
 class TestScopeSubTeamGraphStructure:
@@ -244,12 +223,10 @@ class TestScopeSubTeamGraphStructure:
             )
 
         top_node_names = set(compiled.get_graph().nodes.keys())
-        # Top-level graph should NOT have human_top_reviewer
         assert "human_top_reviewer" not in top_node_names, (
             f"human_top_reviewer should not be in top-level graph for scope='sub_team'; "
             f"got: {top_node_names}"
         )
-        # Standard nodes must still be present
         for expected in ("top_coord", "team_a", "team_b", "hierarchical_finalize"):
             assert expected in top_node_names, (
                 f"Expected '{expected}' in top-level nodes; got: {top_node_names}"
@@ -269,15 +246,9 @@ class TestScopeSubTeamGraphStructure:
             ) as mock_build:
                 topology.build(agents, cfg, human_cfg=human_cfg, human_gateway_llm=MagicMock())
 
-        # Called twice: once for team_a, once for team_b
         assert mock_build.call_count == 2, (
             f"Expected _build_subgraph_with_human called 2 times, got {mock_build.call_count}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 4: scope="top" dispatch order — reviewer before finalize
-# ---------------------------------------------------------------------------
 
 
 class TestScopeTopDispatchOrder:
@@ -316,20 +287,13 @@ class TestScopeTopDispatchOrder:
         initial_state = _make_state(run_id=run_id)
         final_state = await compiled.ainvoke(initial_state)
 
-        # Human should have been called exactly once (top scope, finalize path)
         assert len(call_log) >= 1, f"Expected at least 1 human_request call, got {call_log}"
         assert any("hierarchical:top:" in entry for entry in call_log), (
             f"Expected hierarchical:top: prefix in request_id, got: {call_log}"
         )
 
-        # finalize should have set final_answer
         shared = final_state.get("shared", {})
         assert shared.get("final_answer") is not None, "final_answer should be set"
-
-
-# ---------------------------------------------------------------------------
-# Test 5: scope="top" approve sets human_approved in state
-# ---------------------------------------------------------------------------
 
 
 class TestScopeTopApprove:
@@ -371,11 +335,6 @@ class TestScopeTopApprove:
         )
 
 
-# ---------------------------------------------------------------------------
-# Test 6: scope="sub_team" — gateway called once per team
-# ---------------------------------------------------------------------------
-
-
 class TestScopeSubTeamReviewerCalls:
     """With scope='sub_team', the gateway is called once per team sub-run."""
 
@@ -412,7 +371,6 @@ class TestScopeSubTeamReviewerCalls:
         initial_state = _make_state(run_id=run_id)
         await compiled.ainvoke(initial_state)
 
-        # team_a and team_b should each have triggered the human reviewer
         team_ids_seen = set()
         for rid in call_log:
             if "team_a" in rid:
@@ -426,11 +384,6 @@ class TestScopeSubTeamReviewerCalls:
         assert "team_b" in team_ids_seen, (
             f"Expected team_b to appear in request_ids; got: {call_log}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 7: WARNING docstring present on _build_subgraph_with_human
-# ---------------------------------------------------------------------------
 
 
 class TestWarningDocstring:
@@ -455,17 +408,11 @@ class TestWarningDocstring:
 
     def test_build_subgraph_with_human_uses_warning_docstring(self) -> None:
         """_build_human_sub_reviewer_node also has a WARNING docstring."""
-        # The node-builder function should also document the CLIGateway limitation
         docstring = _build_human_sub_reviewer_node.__doc__ or ""
         assert "WARNING" in docstring, (
             f"Expected 'WARNING' in _build_human_sub_reviewer_node docstring; "
             f"got: {docstring[:200]!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 8: default scope is "top" when extra is missing or no scope key
-# ---------------------------------------------------------------------------
 
 
 class TestDefaultScope:
@@ -477,7 +424,6 @@ class TestDefaultScope:
         cfg = _make_cfg()
         agents = _make_agents()
 
-        # HumanCfg with extra=None — should default to scope='top'
         human_cfg = HumanCfg(enabled=True, gateway="llm_simulated", extra=None)
 
         with patch("atm.topology.hierarchical.LLMSimulatedGateway") as mock_gw:
@@ -486,7 +432,6 @@ class TestDefaultScope:
                 agents, cfg, human_cfg=human_cfg, human_gateway_llm=MagicMock()
             )
 
-        # With default scope='top', human_top_reviewer should be in the graph
         node_names = set(compiled.get_graph().nodes.keys())
         assert "human_top_reviewer" in node_names, (
             f"Expected human_top_reviewer with default scope='top'; got: {node_names}"
@@ -508,11 +453,6 @@ class TestDefaultScope:
 
         node_names = set(compiled.get_graph().nodes.keys())
         assert "human_top_reviewer" in node_names
-
-
-# ---------------------------------------------------------------------------
-# Test group: role_router integration — back-compat + dynamic for top + sub_team
-# ---------------------------------------------------------------------------
 
 
 class TestHierarchicalRoleRouter:
@@ -567,8 +507,8 @@ class TestHierarchicalRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),  # back-compat
-            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),  # dynamic
+            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),
+            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),
         ],
         ids=["back_compat", "dynamic"],
     )
@@ -638,8 +578,8 @@ class TestHierarchicalRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),  # back-compat
-            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),  # dynamic
+            (False, HumanRole.REVIEWER, HumanRole.REVIEWER),
+            (True, HumanRole.REVIEWER, HumanRole.COORDINATOR),
         ],
         ids=["back_compat", "dynamic"],
     )
@@ -655,11 +595,9 @@ class TestHierarchicalRoleRouter:
         router = FixedRoleRouter(role=HumanRole.COORDINATOR) if use_router else None
         roles = self._capture_sub_reviewer_roles(cfg_role=cfg_role, role_router=router)
 
-        # Two teams → at least 2 calls
         assert len(roles) >= 2, (
             f"Expected at least 2 sub-reviewer calls (one per team), got: {roles}"
         )
-        # All calls should use the expected role
         for i, role in enumerate(roles):
             assert role == expected_role, (
                 f"scope=sub_team call[{i}]: Expected role={expected_role!r}, got {role!r}"

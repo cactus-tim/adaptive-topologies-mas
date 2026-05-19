@@ -34,10 +34,6 @@ from atm.experiment.config import (
 )
 from atm.experiment.runner import _build_initial_state, _pre_stage_workspace
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(**overrides: Any) -> ExperimentConfig:
     """Build a minimal ExperimentConfig for testing."""
@@ -109,7 +105,6 @@ def _patch_run_one(
     mock_csf.return_value = MagicMock()
     mock_pw_cls.return_value = mock_pw
 
-    # Registry returns a class whose instance is topo_instance
     mock_topo_cls = Mock(return_value=topo_instance)
     mock_reg.get.return_value = mock_topo_cls
 
@@ -121,11 +116,6 @@ def _patch_run_one(
 
     mock_cp_scope.return_value.__aenter__ = _cp_aenter
     mock_cp_scope.return_value.__aexit__ = _cp_aexit
-
-
-# ---------------------------------------------------------------------------
-# Test 1 — run_id present in initial_state["shared"]
-# ---------------------------------------------------------------------------
 
 
 def test_build_initial_state_contains_run_id() -> None:
@@ -142,15 +132,10 @@ def test_build_initial_state_contains_run_id() -> None:
     assert shared["run_id"] == run_id, f"Expected run_id={run_id}, got {shared['run_id']}"
 
 
-# ---------------------------------------------------------------------------
-# Test 2 — cfg.human=None (default) propagates None to topology.build
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_run_one_human_cfg_none_passes_none_to_build() -> None:
     """When cfg.human is None, topology.build receives human_cfg=None without errors."""
-    cfg = _make_cfg()  # human is None by default
+    cfg = _make_cfg()
     assert cfg.human is None
 
     final_state = _make_final_state(final_answer="fib(10) = 55")
@@ -208,11 +193,6 @@ async def test_run_one_human_cfg_none_passes_none_to_build() -> None:
     assert received_kwargs["human_cfg"] is None, (
         f"human_cfg must be None when cfg.human is None; got: {received_kwargs['human_cfg']}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 3 — cfg.human=HumanCfg(enabled=True) propagates to topology.build
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -283,14 +263,8 @@ async def test_run_one_human_cfg_enabled_propagates_to_build() -> None:
     assert received_human.gateway == "llm_simulated"
 
 
-# ---------------------------------------------------------------------------
-# Test 4 — DABench metadata is appended to task_input (fix-dabench-task 3.1)
-# ---------------------------------------------------------------------------
-
-
 def test_build_initial_state_augments_dabench_metadata() -> None:
     """_build_initial_state must append [Task metadata] block for DABench specs."""
-    # Arrange
     dabench_spec = TaskSpec(
         id="dabench/example",
         type="reasoning",
@@ -306,10 +280,8 @@ def test_build_initial_state_augments_dabench_metadata() -> None:
     cfg = _make_cfg(task=TaskCfg(name="dabench", input=""))
 
     with patch("atm.experiment.runner.resolve_spec", return_value=dabench_spec):
-        # Act
         state = _build_initial_state(cfg, run_id=uuid.uuid4())
 
-    # Assert
     task_input: str = state["shared"]["task_input"]
     assert "[Task metadata]" in task_input, (
         f"Expected '[Task metadata]' block in task_input; got: {task_input!r}"
@@ -326,14 +298,8 @@ def test_build_initial_state_augments_dabench_metadata() -> None:
     assert "@mean[1.0]" in task_input, f"Expected '@mean[1.0]' in task_input; got: {task_input!r}"
 
 
-# ---------------------------------------------------------------------------
-# Test 5 — Empty metadata leaves task_input unchanged (fix-dabench-task 3.1)
-# ---------------------------------------------------------------------------
-
-
 def test_build_initial_state_no_metadata_unchanged() -> None:
     """_build_initial_state must NOT augment task_input when metadata is empty."""
-    # Arrange
     plain_spec = TaskSpec(
         id="dabench/example",
         type="reasoning",
@@ -345,10 +311,8 @@ def test_build_initial_state_no_metadata_unchanged() -> None:
     cfg = _make_cfg(task=TaskCfg(name="dabench", input=""))
 
     with patch("atm.experiment.runner.resolve_spec", return_value=plain_spec):
-        # Act
         state = _build_initial_state(cfg, run_id=uuid.uuid4())
 
-    # Assert
     task_input: str = state["shared"]["task_input"]
     assert task_input == "Solve fibonacci", (
         f"Expected task_input to equal 'Solve fibonacci' exactly; got: {task_input!r}"
@@ -358,15 +322,8 @@ def test_build_initial_state_no_metadata_unchanged() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 6 — Irrelevant (non-DABench) metadata leaves task_input unchanged
-#           (fix-dabench-task 3.1)
-# ---------------------------------------------------------------------------
-
-
 def test_build_initial_state_irrelevant_metadata_unchanged() -> None:
     """_build_initial_state must NOT augment task_input for non-DABench metadata."""
-    # Arrange — HumanEval-style spec: has metadata but no 'format' or 'file_name'
     humaneval_spec = TaskSpec(
         id="humaneval/HumanEval/0",
         type="programming",
@@ -378,10 +335,8 @@ def test_build_initial_state_irrelevant_metadata_unchanged() -> None:
     cfg = _make_cfg(task=TaskCfg(name="humaneval", input=""))
 
     with patch("atm.experiment.runner.resolve_spec", return_value=humaneval_spec):
-        # Act
         state = _build_initial_state(cfg, run_id=uuid.uuid4())
 
-    # Assert
     task_input: str = state["shared"]["task_input"]
     assert "[Task metadata]" not in task_input, (
         f"Expected no '[Task metadata]' block for HumanEval spec; got: {task_input!r}"
@@ -391,14 +346,8 @@ def test_build_initial_state_irrelevant_metadata_unchanged() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 7 — _pre_stage_workspace calls stage_workspace_for (fix-dabench-task 3.1)
-# ---------------------------------------------------------------------------
-
-
 def test_pre_stage_workspace_invoked_on_resume_path(tmp_path: Path) -> None:
     """_pre_stage_workspace must delegate to stage_workspace_for with correct args."""
-    # Arrange
     dabench_spec = TaskSpec(
         id="dabench/titanic/0",
         type="reasoning",
@@ -421,10 +370,8 @@ def test_pre_stage_workspace_invoked_on_resume_path(tmp_path: Path) -> None:
         patch("atm.experiment.runner.resolve_spec", return_value=dabench_spec),
         patch("atm.experiment.runner.stage_workspace_for", mock_stage),
     ):
-        # Act
         result = _pre_stage_workspace(cfg, run_id, tmp_path)
 
-    # Assert — the mock was called exactly once with the resolved spec and workspace path
     mock_stage.assert_called_once_with(dabench_spec, tmp_path)
     assert result == [staged_file], (
         f"Expected _pre_stage_workspace to return the staged file list; got: {result!r}"

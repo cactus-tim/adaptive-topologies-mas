@@ -92,10 +92,6 @@ def _write_long_fixtures(tmp_path: Path, n_iterations: int = 30) -> tuple[Path, 
     )
 
 
-# ---------------------------------------------------------------------------
-# Subprocess child program
-# ---------------------------------------------------------------------------
-
 _CHILD_PROGRAM = """
 import asyncio
 import os
@@ -129,8 +125,6 @@ async def _main() -> None:
     ]
     cfg = load_config(smoke_yaml, overrides=overrides)
     result = await run_one(cfg)
-    # Print run_id to stdout so the parent can read it — but in SIGKILL flow
-    # we never reach this print.
     print(f"RUN_ID={result.run_id}")
 
 
@@ -158,10 +152,8 @@ async def test_resume_after_sigkill_completes_run(
     parquet_dir = tmp_path / "parquet"
     parquet_dir.mkdir(exist_ok=True)
 
-    # Write long fixtures so the chain runs long enough to be killed on fast CI.
     planner_fx, executor_fx, critic_fx = _write_long_fixtures(tmp_path)
 
-    # 1) Spawn worker.
     env = os.environ.copy()
     env["ATM_PG_DSN"] = ephemeral_pg_dsn
     env["ATM_PARQUET_DIR"] = str(parquet_dir)
@@ -170,7 +162,6 @@ async def test_resume_after_sigkill_completes_run(
     env["ATM_PLANNER_FX"] = str(planner_fx)
     env["ATM_EXECUTOR_FX"] = str(executor_fx)
     env["ATM_CRITIC_FX"] = str(critic_fx)
-    # Disable structlog bootstrap noise from the child.
     env["ATM_DISABLE_STRUCTLOG_BOOTSTRAP"] = "1"
 
     proc = subprocess.Popen(
@@ -180,7 +171,6 @@ async def test_resume_after_sigkill_completes_run(
         stderr=subprocess.PIPE,
     )
 
-    # 2) Poll for a running row with pid=proc.pid.
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     target_run_id = None
     deadline = time.monotonic() + 30.0
@@ -208,13 +198,11 @@ async def test_resume_after_sigkill_completes_run(
             time.sleep(0.25)
     finally:
         if proc.poll() is None:
-            # 3) SIGKILL the worker.
             proc.send_signal(signal.SIGKILL)
             proc.wait(timeout=5)
 
     assert target_run_id is not None, "did not see running row before timeout"
 
-    # 4) Resume.
     resumed = await resume_one(target_run_id, force=True)
 
     assert resumed.run_id == target_run_id
@@ -222,7 +210,6 @@ async def test_resume_after_sigkill_completes_run(
         f"unexpected status: {resumed.status}"
     )
 
-    # 5) Sanity-check: the runs row is no longer 'running'.
     try:
         async with engine.connect() as conn:
             status_row = (

@@ -60,10 +60,6 @@ from atm.storage.models import Base, Experiment, HumanInteraction, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
@@ -71,15 +67,7 @@ PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.ya
 
 _FIXTURE_NAME = "m9_2_star_role_router.yaml"
 
-# Phases to simulate (in order) — maps to 3 distinct roles via DEFAULT_ROLE_TABLE:
-#   planning   -> coordinator
-#   execution  -> peer
-#   verification -> reviewer
 _SIMULATION_PHASES: list[Phase] = [Phase.PLANNING, Phase.EXECUTION, Phase.VERIFICATION]
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -153,7 +141,6 @@ async def _insert_experiment_and_run(
                 models_by_role_json={},
                 model_version_snapshot={},
                 status="running",
-                # Initial static role from cfg (will be overwritten by dynamic finalization)
                 human_role="reviewer",
             )
         )
@@ -189,7 +176,6 @@ async def _finalize_run(
     dynamic_human_role: str | None = None
     dynamic_cog_proxy: float | None = None
 
-    # Step 12a-i: fetch last role from human_interactions (DESC requested_at)
     try:
         async with session_scope(session_factory) as session:
             last_role_result = await session.execute(
@@ -205,14 +191,12 @@ async def _finalize_run(
     except Exception as exc:  # pragma: no cover
         pytest.fail(f"Failed to query last human_interactions.role: {exc}")
 
-    # Step 12a-ii: compute cognitive_load_proxy
     try:
         async with session_scope(session_factory) as session:
             dynamic_cog_proxy = await human_sim_cognitive_load_proxy(session, run_id)
     except Exception as exc:  # pragma: no cover
         pytest.fail(f"Failed to compute cognitive_load_proxy: {exc}")
 
-    # Persist both fields to runs row
     update_values: dict[str, object] = {
         "status": "completed",
         "finish_reason": "success",
@@ -225,11 +209,6 @@ async def _finalize_run(
         await session.execute(sa.update(Run).where(Run.id == run_id).values(**update_values))
 
     return dynamic_human_role, dynamic_cog_proxy
-
-
-# ---------------------------------------------------------------------------
-# Main integration test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.requires_postgres
@@ -276,14 +255,11 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
 
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
 
-        # Build RuleBasedRoleRouter with DEFAULT_ROLE_TABLE (no custom table)
         role_router = RuleBasedRoleRouter()
 
-        # Build LLMSimulatedGateway backed by scripted fixture
         gateway_wrapper = _make_llm_wrapper(_FIXTURE_NAME)
         gateway = LLMSimulatedGateway(llm=gateway_wrapper)
 
-        # Shared state prototype (mirrors runner._build_initial_state)
         _shared_proto: dict[str, Any] = {
             "run_id": run_id,
             "task_id": "role-router-star-e2e-task",
@@ -304,10 +280,8 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
             "human_responses": [],
         }
 
-        # Collect (phase, role, request_id, ctx, response) for all 3 interactions
         interactions: list[tuple[Phase, HumanRole, str, HumanContext, Any]] = []
         for i, phase in enumerate(_SIMULATION_PHASES):
-            # RuleBasedRoleRouter.decide() — real call, not mocked
             phase_shared = dict(_shared_proto)
             phase_shared["phase"] = phase.value
             phase_shared["iter_total"] = i
@@ -316,24 +290,17 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
             request_id = f"star:{run_id}:{i}:reviewer"
             ctx = _make_human_context(run_id, active_role, phase, iter_total=i)
 
-            # Gateway call — uses scripted fixture entries sequentially
             response = await gateway.request(ctx, request_id=request_id)
 
             interactions.append((phase, active_role, request_id, ctx, response))
-
-        # --- Build async dispatch function ---
-        # Dispatches all 3 human_request+response pairs inside a single RunnableLambda
-        # so ExperimentCallbackHandler's callback context is active.
 
         async def _dispatch_all(inputs: dict[str, Any]) -> dict[str, Any]:
             """Dispatch human_request + human_response for each simulated phase."""
             for i, (_phase, active_role, req_id, ctx, resp) in enumerate(interactions):
                 _requested_at = datetime.now(UTC)
-                # Small sleep to ensure ascending requested_at for ORDER BY DESC check
                 if i > 0:
                     await asyncio.sleep(0.01)
 
-                # human_request event
                 await adispatch_custom_event(
                     "human_request",
                     {
@@ -349,7 +316,6 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
 
                 _answered_at = datetime.now(UTC)
 
-                # human_response event
                 await adispatch_custom_event(
                     "human_response",
                     {
@@ -375,10 +341,8 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
             },
         )
 
-        # Allow async background DB writes to complete
         await asyncio.sleep(0.3)
 
-        # ── Fetch human_interactions ordered by requested_at ASC ─────────────
         async with session_scope(factory) as session:
             hi_result = await session.execute(
                 select(HumanInteraction.role, HumanInteraction.requested_at)
@@ -389,17 +353,14 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
 
         roles = [row.role for row in hi_rows]
 
-        # ── Finalize: replicate runner.py step-12a ────────────────────────────
         _dynamic_human_role, _dynamic_cog_proxy = await _finalize_run(factory, run_id)
 
-        # ── Fetch updated run row ─────────────────────────────────────────────
         async with session_scope(factory) as session:
             run_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_result.scalar_one_or_none()
 
         assert run_row is not None, f"No run row found for run_id={run_id}"
 
-        # ── Assertion 1: >=2 distinct roles in human_interactions ─────────────
         assert len(roles) >= 3, (
             f"Expected at least 3 human_interactions rows for run_id={run_id}, got {len(roles)}. "
             f"roles={roles}"
@@ -410,13 +371,11 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
             f"execution->peer, verification->reviewer."
         )
 
-        # ── Assertion 2: runs.human_role == last interaction role ─────────────
         assert run_row.human_role == roles[-1], (
             f"runs.human_role={run_row.human_role!r} != last human_interactions.role={roles[-1]!r}. "
             f"Dynamic finalization should write the last role from human_interactions."
         )
 
-        # ── Assertion 3: cognitive_load_proxy > 0.0 ──────────────────────────
         assert run_row.cognitive_load_proxy is not None, (
             f"runs.cognitive_load_proxy is None for run_id={run_id}. "
             f"Expected a positive float (3 HITL interactions => alpha*3 + ... > 0)."
@@ -426,8 +385,6 @@ async def test_rule_based_role_router_multi_phase_writes_distinct_roles(
             f"Expected positive value for 3 HITL interactions."
         )
 
-        # ── Extra diagnostic: verify expected role sequence ───────────────────
-        # DEFAULT_ROLE_TABLE: planning->coordinator, execution->peer, verification->reviewer
         expected_roles = ["coordinator", "peer", "reviewer"]
         assert roles == expected_roles, (
             f"Expected roles={expected_roles} (planning/execution/verification), "

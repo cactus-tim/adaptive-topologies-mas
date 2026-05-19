@@ -39,19 +39,11 @@ from atm.storage.session import create_engine, create_session_factory, session_s
 from atm.topology.base import TopologyConfig
 from atm.topology.hierarchical import HierarchicalTopology
 
-# ---------------------------------------------------------------------------
-# Skip / DSN setup
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -156,11 +148,6 @@ def _make_agents() -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Scenario A — scope="top": human reviewer fires once at top level
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_hierarchical_scope_top_writes_one_row(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     """Scenario A: scope='top' — exactly 1 human_interactions row is written.
@@ -184,11 +171,9 @@ async def test_hierarchical_scope_top_writes_one_row(ephemeral_pg_dsn: str, tmp_
 
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
 
-        # Build LLM wrapper for LLMSimulatedGateway (reviewer fixture)
         reviewer_wrapper = _make_llm_wrapper("m91_hierarchical_reviewer_approve.yaml")
         gateway = LLMSimulatedGateway(reviewer_wrapper)
 
-        # Build topology with scope="top"
         human_cfg = HumanCfg(
             enabled=True,
             gateway="llm_simulated",
@@ -238,10 +223,8 @@ async def test_hierarchical_scope_top_writes_one_row(ephemeral_pg_dsn: str, tmp_
             },
         )
 
-        # Allow async DB operations to complete
         await asyncio.sleep(0.2)
 
-        # Assert: exactly 1 row in human_interactions
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -254,7 +237,6 @@ async def test_hierarchical_scope_top_writes_one_row(ephemeral_pg_dsn: str, tmp_
             f"Scenario A (scope=top): Expected exactly 1 human_interactions row, got {count}"
         )
 
-        # Assert: request_id has 'hierarchical:top:' prefix
         async with session_scope(factory) as session:
             rows_result = await session.execute(
                 select(HumanInteraction).where(HumanInteraction.run_id == run_id)
@@ -268,7 +250,6 @@ async def test_hierarchical_scope_top_writes_one_row(ephemeral_pg_dsn: str, tmp_
         )
         assert row.role == "reviewer", f"Expected role='reviewer', got {row.role!r}"
 
-        # Assert: runs.human_role = 'reviewer'
         async with session_scope(factory) as session:
             run_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_result.scalar_one_or_none()
@@ -282,11 +263,6 @@ async def test_hierarchical_scope_top_writes_one_row(ephemeral_pg_dsn: str, tmp_
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Scenario B — scope="sub_team": 2 rows from subgraph callbacks (one per team)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -316,12 +292,9 @@ async def test_hierarchical_scope_sub_team_writes_two_rows_with_team_ids(
 
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
 
-        # Build LLM wrapper for LLMSimulatedGateway (reviewer fixture with 2+ entries)
         reviewer_wrapper = _make_llm_wrapper("m91_hierarchical_reviewer_approve.yaml")
-        # Create 2 gateway instances (one per team — shared LLM fixture has enough entries)
         gateway = LLMSimulatedGateway(reviewer_wrapper)
 
-        # Build topology with scope="sub_team"
         human_cfg = HumanCfg(
             enabled=True,
             gateway="llm_simulated",
@@ -371,10 +344,8 @@ async def test_hierarchical_scope_sub_team_writes_two_rows_with_team_ids(
             },
         )
 
-        # Allow async DB operations to complete
         await asyncio.sleep(0.3)
 
-        # Assert: exactly 2 rows (one per team) in human_interactions
         async with session_scope(factory) as session:
             rows_result = await session.execute(
                 select(HumanInteraction).where(HumanInteraction.run_id == run_id)
@@ -388,7 +359,6 @@ async def test_hierarchical_scope_sub_team_writes_two_rows_with_team_ids(
             "This proves callback propagation from inside compiled subgraphs."
         )
 
-        # Assert: request_ids contain "team_a" and "team_b"
         request_ids = {r.request_id for r in rows}
         team_a_rows = [r for r in rows if "team_a" in r.request_id]
         team_b_rows = [r for r in rows if "team_b" in r.request_id]
@@ -400,13 +370,11 @@ async def test_hierarchical_scope_sub_team_writes_two_rows_with_team_ids(
             f"Expected at least 1 row with 'team_b' in request_id; got request_ids: {request_ids}"
         )
 
-        # Assert: roles are correct
         for row in rows:
             assert row.role == "reviewer", (
                 f"Expected role='reviewer', got {row.role!r} for request_id={row.request_id!r}"
             )
 
-        # Assert: runs.human_role = 'reviewer'
         async with session_scope(factory) as session:
             run_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_result.scalar_one_or_none()

@@ -22,13 +22,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from atm.core.types import HumanRole
 
-# ---------------------------------------------------------------------------
-# Sub-schemas
-# ---------------------------------------------------------------------------
-
 
 class BudgetCfg(BaseModel):
-    """Per-call, per-run, and per-experiment budget limits (arch.md §12.1)."""
+    """Per-call, per-run, and per-experiment budget limits."""
 
     per_call_usd: float = 0.10
     per_run_usd: float = 0.50
@@ -37,7 +33,7 @@ class BudgetCfg(BaseModel):
 
 
 class ModelCfg(BaseModel):
-    """Per-role model assignment (arch.md §12.1).
+    """Per-role model assignment.
 
     Resolution: get_model_for(role) -> by_role.get(role) or default.
 
@@ -70,7 +66,7 @@ class ModelCfg(BaseModel):
 
 
 class ScratchpadCfg(BaseModel):
-    """Scratchpad memory policy configuration (arch.md §12.1)."""
+    """Scratchpad memory policy configuration."""
 
     policy: Literal["window_with_summary", "window_only", "full"] = "window_with_summary"
     window_size: int = 3
@@ -79,47 +75,30 @@ class ScratchpadCfg(BaseModel):
 
 
 class AgentSetCfg(BaseModel):
-    """Agent set selection + scratchpad policy (arch.md §12.1)."""
+    """Agent set selection + scratchpad policy."""
 
-    set: str  # e.g. "canonical_4", "debate", "hier"
+    set: str
     scratchpad: ScratchpadCfg = Field(default_factory=ScratchpadCfg)
 
 
-# ---------------------------------------------------------------------------
-# Topology extras sub-schemas
-# ---------------------------------------------------------------------------
-
-# Canonical set of topology names; used by both TopologyExtras and the
-# bw-compat remapper to determine whether an extras dict is namespaced.
 _TOPOLOGY_EXTRA_NAMES: frozenset[str] = frozenset(
     {"star", "chain", "debate", "hierarchical", "mesh", "adaptive"}
 )
 
-# Flat extra keys that are remapped to a specific namespace on detection.
-# Any flat key that is NOT in this mapping raises ValidationError after
-# remapping (because TopologyExtras has extra="forbid").
 _FLAT_TO_NAMESPACE: dict[str, tuple[str, str]] = {
-    # shared round-counters → debate + hierarchical only (NOT mesh, NOT adaptive)
-    # (handled separately because they scatter to two namespaces)
-    # "max_rounds": handled inline in _remap_flat_extras
-    # star-specific phase limits
     "planning_max_iter": ("star", "planning_max_iter"),
     "exec_max_iter": ("star", "exec_max_iter"),
     "verify_max_iter": ("star", "verify_max_iter"),
-    # mesh-specific (aliased key in legacy form)
     "mesh_max_rounds": ("mesh", "max_rounds"),
     "consensus_threshold": ("mesh", "consensus_threshold"),
     "broadcast_bus_cap": ("mesh", "broadcast_bus_cap"),
     "activation_policy": ("mesh", "activation_policy"),
     "agent_order": ("mesh", "agent_order"),
-    # debate-specific
     "debater_pro_id": ("debate", "debater_pro_id"),
     "debater_contra_id": ("debate", "debater_contra_id"),
     "judge_id": ("debate", "judge_id"),
-    # hierarchical-specific
     "sub_teams": ("hierarchical", "sub_teams"),
     "final_answer_strategy": ("hierarchical", "final_answer_strategy"),
-    # adaptive-specific
     "phase_router": ("adaptive", "phase_router"),
     "topology_router": ("adaptive", "topology_router"),
     "subgraph_max_iterations": ("adaptive", "subgraph_max_iterations"),
@@ -232,26 +211,8 @@ class AdaptiveExtras(BaseModel):
     switch_guards: bool = True
     switch_guards_config: dict[str, Any] | None = None
     run_id: str | None = None
-    phase_router: str = "rule"  # NOTE: parsed but NOT consumed by builder
-    topology_router: str = "rule"  # NOTE: parsed but NOT consumed by builder
-
-
-# ---------------------------------------------------------------------------
-# TopologyExtras — schema rationale
-#
-# Single source of truth: default values in each sub-model below mirror the
-# ``_DEFAULT_*`` constants defined in the corresponding topology module.  Any
-# drift between schema defaults and module constants is caught immediately by
-# the schema-vs-source parity guard test in tests/unit/experiment/test_config.py.
-#
-# Dotpath access in sweep configs follows the namespaced shape:
-#   topology.extra.mesh.max_rounds: 12
-#   topology.extra.debate.max_rounds: 4
-#   topology.extra.star.planning_max_iter: 3
-# Flat (legacy) extras are auto-remapped by the bw-compat pre-validator on
-# ``TopologyCfg``; see ``_remap_flat_extras`` and the ``@model_validator``
-# below for the full scattering rules.
-# ---------------------------------------------------------------------------
+    phase_router: str = "rule"
+    topology_router: str = "rule"
 
 
 class TopologyExtras(BaseModel):
@@ -306,8 +267,6 @@ def _remap_flat_extras(flat: dict[str, Any]) -> dict[str, Any]:
             unknown_keys.append(key)
 
     if unknown_keys:
-        # Include unknown keys verbatim at top-level so TopologyExtras'
-        # extra="forbid" produces an informative ValidationError.
         for key in unknown_keys:
             namespaced[key] = flat[key]
 
@@ -315,7 +274,7 @@ def _remap_flat_extras(flat: dict[str, Any]) -> dict[str, Any]:
 
 
 class TopologyCfg(BaseModel):
-    """Topology selection and stopping parameters (arch.md §12.1).
+    """Topology selection and stopping parameters.
 
     ``extra`` is a typed, namespaced container (``TopologyExtras``).  Each
     topology reads only its own sub-namespace, eliminating shared-key
@@ -350,12 +309,9 @@ class TopologyCfg(BaseModel):
         if not isinstance(raw_extra, dict) or not raw_extra:
             return values
 
-        # Check if all keys are known topology names (namespaced form).
         if raw_extra.keys() <= _TOPOLOGY_EXTRA_NAMES:
-            # Already namespaced — pass through without warning.
             return values
 
-        # Flat (legacy) form detected.
         warnings.warn(
             "flat topology.extra keys are deprecated; use namespaced form "
             "(e.g. topology.extra.mesh.max_rounds)",
@@ -368,20 +324,20 @@ class TopologyCfg(BaseModel):
 
 
 class TaskCfg(BaseModel):
-    """Task specification (arch.md §12.1, M6 simplified)."""
+    """Task specification (M6 simplified)."""
 
     name: str
-    input: str = ""  # direct task input string (M6 smoke: inline prompt)
+    input: str = ""
     split: str = "test"
     limit: int | None = None
     shuffle_seed: int = 0
 
 
 class ObservabilityCfg(BaseModel):
-    """Storage/observability configuration (arch.md §12.1)."""
+    """Storage/observability configuration."""
 
     parquet_dir: str = "data/experiments"
-    pg_dsn: str  # required; supports ${oc.env:PG_DSN,...} interpolation
+    pg_dsn: str
     callback_sync: bool = False
 
 
@@ -405,7 +361,7 @@ class EvaluationCfg(BaseModel):
 
 
 class HumanCfg(BaseModel):
-    """HITL gateway configuration (arch.md M9/M9.1/M9.2).
+    """HITL gateway configuration (M9/M9.1/M9.2).
 
     Controls whether human-in-the-loop is active, which gateway to use,
     which role the human plays, and how timeouts are handled.
@@ -461,14 +417,8 @@ def _resolve_dotpath(path: str) -> None:
     """
     segments = path.split(".")
 
-    # We need ExperimentConfig to be defined — defer to a late-binding approach
-    # via _EXPERIMENT_CONFIG_REF.  GridCfg validators run at instance
-    # construction time (after the module finishes loading), so the ref is
-    # always populated by then.
     cfg_cls = _EXPERIMENT_CONFIG_REF.get()
     if cfg_cls is None:
-        # ExperimentConfig not yet defined — skip validation (happens only
-        # during module load before the class body finishes).
         return
 
     fields = cfg_cls.model_fields
@@ -482,13 +432,9 @@ def _resolve_dotpath(path: str) -> None:
         field_info = fields[segment]
         annotation = field_info.annotation
 
-        # Strip Optional / X | None wrappers to get the inner type
         inner = _unwrap_optional(annotation)
 
-        # If this is the last segment — it must be a scalar (not a BaseModel
-        # or an untyped dict).
         if i == len(segments) - 1:
-            # Reject untyped dict leaves (e.g. topology.extra, human.extra)
             origin = get_origin(inner)
             if origin is dict or inner is dict:
                 raise ValueError(
@@ -498,7 +444,6 @@ def _resolve_dotpath(path: str) -> None:
             # Allow scalar types (str, int, float, bool, Literal, etc.)
             return
 
-        # Descend into sub-model
         if isinstance(inner, type) and issubclass(inner, BaseModel):
             fields = inner.model_fields
         else:
@@ -521,7 +466,6 @@ def _unwrap_optional(annotation: Any) -> Any:
         args = tuple(a for a in get_args(annotation) if a is not type(None))
         if len(args) == 1:
             return args[0]
-        # union of multiple non-None types — not unwrappable, return as-is
         return annotation
     return annotation
 
@@ -540,11 +484,6 @@ class _ExperimentConfigRef:
 
 
 _EXPERIMENT_CONFIG_REF = _ExperimentConfigRef()
-
-
-# ---------------------------------------------------------------------------
-# M12: New sub-schemas
-# ---------------------------------------------------------------------------
 
 
 class GridCfg(BaseModel):
@@ -597,7 +536,7 @@ class EstimateCfg(BaseModel):
 
 
 class ExperimentConfig(BaseModel):
-    """Top-level experiment configuration schema (arch.md §12.1).
+    """Top-level experiment configuration schema.
 
     M12 additions: optional ``grid`` for sweep runs; ``estimate`` for
     pre-run cost estimation.
@@ -623,12 +562,6 @@ class ExperimentConfig(BaseModel):
         return self
 
 
-# Register ExperimentConfig so _resolve_dotpath can walk its fields.
 _EXPERIMENT_CONFIG_REF.set(ExperimentConfig)
-
-
-# ---------------------------------------------------------------------------
-# Back-compat re-export: loader functions live in atm.experiment.loader
-# ---------------------------------------------------------------------------
 
 from atm.experiment.loader import load_config as load_config  # noqa: E402

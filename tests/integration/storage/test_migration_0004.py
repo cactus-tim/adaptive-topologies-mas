@@ -26,21 +26,12 @@ from sqlalchemy import text
 
 from atm.storage.session import create_engine
 
-# ---------------------------------------------------------------------------
-# Guard: skip immediately if PG integration flag is not set
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 
 
 def _pg_dsn() -> str:
     return os.environ.get("ATM_PG_DSN", _DEFAULT_DSN)
-
-
-# ---------------------------------------------------------------------------
-# Helper: run alembic subcommand with PG_DSN forwarded
-# ---------------------------------------------------------------------------
 
 
 def _alembic(cmd: list[str], pg_dsn: str) -> None:
@@ -52,11 +43,6 @@ def _alembic(cmd: list[str], pg_dsn: str) -> None:
         check=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Helpers: introspect DB schema via synchronous-friendly async calls
-# ---------------------------------------------------------------------------
 
 
 async def _columns_of_runs(pg_dsn: str) -> set[str]:
@@ -178,11 +164,6 @@ async def _index_columns(pg_dsn: str, index_name: str) -> str | None:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Test: migration 0004 upgrade / downgrade round-trip
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.requires_postgres
 @pytest.mark.integration
 async def test_migration_0004_round_trip() -> None:
@@ -195,11 +176,6 @@ async def test_migration_0004_round_trip() -> None:
 
     pg_dsn = _pg_dsn()
 
-    # -----------------------------------------------------------------------
-    # Phase 0: ensure we start from a clean slate at 0003
-    # -----------------------------------------------------------------------
-    # Reset schema, then upgrade to 0003 so we have the baseline the test
-    # requires (this mirrors how conftest.py resets before session-scoped runs).
     reset_engine = create_engine(pg_dsn, echo=False)
     async with reset_engine.begin() as conn:
         await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
@@ -208,9 +184,6 @@ async def test_migration_0004_round_trip() -> None:
 
     _alembic(["upgrade", "0003"], pg_dsn)
 
-    # -----------------------------------------------------------------------
-    # Phase 1: introspect at 0003 — confirm 0004 columns are ABSENT
-    # -----------------------------------------------------------------------
     cols_at_0003 = await _columns_of_runs(pg_dsn)
     assert "replay_of" not in cols_at_0003, "replay_of should not exist at revision 0003"
     assert "host" not in cols_at_0003, "host should not exist at revision 0003"
@@ -222,15 +195,10 @@ async def test_migration_0004_round_trip() -> None:
         "Index runs_exp_status_idx should not exist at revision 0003"
     )
 
-    # -----------------------------------------------------------------------
-    # Phase 2: upgrade head → should land at 0004
-    # -----------------------------------------------------------------------
     _alembic(["upgrade", "head"], pg_dsn)
 
-    # --- Columns exist and are nullable ---
     replay_of_info = await _column_info(pg_dsn, "replay_of")
     assert replay_of_info is not None, "Column 'replay_of' must exist after upgrade to 0004"
-    # PostgreSQL reports UUID as 'uuid'
     assert replay_of_info["data_type"] == "uuid", (
         f"replay_of data_type should be 'uuid', got {replay_of_info['data_type']!r}"
     )
@@ -240,7 +208,6 @@ async def test_migration_0004_round_trip() -> None:
 
     host_info = await _column_info(pg_dsn, "host")
     assert host_info is not None, "Column 'host' must exist after upgrade to 0004"
-    # character varying
     assert (
         "character varying" in host_info["data_type"]
         or host_info["data_type"] == "character varying"
@@ -258,7 +225,6 @@ async def test_migration_0004_round_trip() -> None:
         f"process_pid should be nullable, got is_nullable={pid_info['is_nullable']!r}"
     )
 
-    # --- FK exists with confdeltype = 'n' (SET NULL) ---
     assert await _fk_exists(pg_dsn, "fk_runs_replay_of_runs"), (
         "FK fk_runs_replay_of_runs must exist after upgrade to 0004"
     )
@@ -267,7 +233,6 @@ async def test_migration_0004_round_trip() -> None:
         f"FK fk_runs_replay_of_runs confdeltype should be 'n' (SET NULL), got {confdeltype!r}"
     )
 
-    # --- Index exists and covers (exp_id, status) ---
     assert await _index_exists(pg_dsn, "runs_exp_status_idx"), (
         "Index runs_exp_status_idx must exist after upgrade to 0004"
     )
@@ -277,12 +242,8 @@ async def test_migration_0004_round_trip() -> None:
         f"Index runs_exp_status_idx should cover (exp_id, status), got: {indexdef!r}"
     )
 
-    # -----------------------------------------------------------------------
-    # Phase 3: downgrade -1 → back to 0003
-    # -----------------------------------------------------------------------
     _alembic(["downgrade", "-1"], pg_dsn)
 
-    # --- 0004 columns are gone ---
     cols_after_downgrade = await _columns_of_runs(pg_dsn)
     assert "replay_of" not in cols_after_downgrade, (
         "replay_of must be dropped after downgrade to 0003"
@@ -292,7 +253,6 @@ async def test_migration_0004_round_trip() -> None:
         "process_pid must be dropped after downgrade to 0003"
     )
 
-    # --- FK and index are gone ---
     assert not await _fk_exists(pg_dsn, "fk_runs_replay_of_runs"), (
         "FK fk_runs_replay_of_runs must be dropped after downgrade to 0003"
     )
@@ -300,7 +260,4 @@ async def test_migration_0004_round_trip() -> None:
         "Index runs_exp_status_idx must be dropped after downgrade to 0003"
     )
 
-    # -----------------------------------------------------------------------
-    # Phase 4: restore to head — leave DB in expected state for other tests
-    # -----------------------------------------------------------------------
     _alembic(["upgrade", "head"], pg_dsn)

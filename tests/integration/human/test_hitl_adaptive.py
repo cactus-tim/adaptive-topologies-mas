@@ -64,18 +64,10 @@ from atm.storage.models import Base, Experiment, HumanInteraction, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 
-# ---------------------------------------------------------------------------
-# Environment / PG availability
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Shared helpers (mirrored from test_m9_hitl.py)
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -164,11 +156,6 @@ def _build_handler(
     )
 
 
-# ---------------------------------------------------------------------------
-# Scenario A — Advisory mode: topology_transitions has NO human_override rows
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_advisory_mode_no_human_override_transitions(
     ephemeral_pg_dsn: str, tmp_path: Path
@@ -205,7 +192,6 @@ async def test_advisory_mode_no_human_override_transitions(
         response = await gateway.request(ctx, request_id=request_id)
         assert response.action == "advise"
 
-        # Build a non-override topology_transition (decided_by='rule')
         topo_transition = TopologyTransition(
             run_id=run_id,
             from_topology="linear",
@@ -218,7 +204,6 @@ async def test_advisory_mode_no_human_override_transitions(
         )
 
         async def _dispatch_advisory_scenario(inputs: dict[str, Any]) -> dict[str, Any]:
-            # human_request
             await adispatch_custom_event(
                 "human_request",
                 {
@@ -242,7 +227,6 @@ async def test_advisory_mode_no_human_override_transitions(
                     "latency_s": 0.05,
                 },
             )
-            # topology_transition with rule-based decided_by
             await adispatch_custom_event("topology_transition", topo_transition)
             return inputs
 
@@ -259,7 +243,6 @@ async def test_advisory_mode_no_human_override_transitions(
         )
         await asyncio.sleep(0.2)
 
-        # Assert: at least 1 row in human_interactions
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -272,7 +255,6 @@ async def test_advisory_mode_no_human_override_transitions(
             f"Expected >= 1 row in human_interactions for run_id={run_id}, got {count}"
         )
 
-        # Assert: no topology_transition with decided_by='human_override'
         from atm.storage.models import TopologyTransition as TopologyTransitionRow
 
         async with session_scope(factory) as session:
@@ -290,7 +272,6 @@ async def test_advisory_mode_no_human_override_transitions(
             f"Advisory mode should not write 'human_override' transitions; got {override_count}"
         )
 
-        # Assert: runs.human_role is set
         async with session_scope(factory) as session:
             run_row_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_row_result.scalar_one_or_none()
@@ -304,11 +285,6 @@ async def test_advisory_mode_no_human_override_transitions(
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Scenario B — Override mode: topology_transitions contains human_override row
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -347,7 +323,6 @@ async def test_override_mode_writes_human_override_transition(
         response = await gateway.request(ctx, request_id=request_id)
         assert response.action == "switch_topology"
 
-        # Build a human_override topology_transition
         override_transition = TopologyTransition(
             run_id=run_id,
             from_topology="linear",
@@ -361,7 +336,6 @@ async def test_override_mode_writes_human_override_transition(
         )
 
         async def _dispatch_override_scenario(inputs: dict[str, Any]) -> dict[str, Any]:
-            # human_request
             await adispatch_custom_event(
                 "human_request",
                 {
@@ -385,7 +359,6 @@ async def test_override_mode_writes_human_override_transition(
                     "latency_s": 0.05,
                 },
             )
-            # topology_transition with human_override decided_by
             await adispatch_custom_event("topology_transition", override_transition)
             return inputs
 
@@ -402,7 +375,6 @@ async def test_override_mode_writes_human_override_transition(
         )
         await asyncio.sleep(0.2)
 
-        # Assert: at least 1 row in human_interactions
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -415,7 +387,6 @@ async def test_override_mode_writes_human_override_transition(
             f"Expected >= 1 row in human_interactions for run_id={run_id}, got {count}"
         )
 
-        # Assert: at least 1 topology_transition with decided_by='human_override'
         from atm.storage.models import TopologyTransition as TopologyTransitionRow
 
         async with session_scope(factory) as session:
@@ -434,7 +405,6 @@ async def test_override_mode_writes_human_override_transition(
             f"got {override_count}. Override path did not write the transition."
         )
 
-        # Assert: to_topology is 'mesh' (the override target)
         async with session_scope(factory) as session:
             from atm.storage.models import TopologyTransition as TopologyTransitionRow
 
@@ -452,7 +422,6 @@ async def test_override_mode_writes_human_override_transition(
             f"Expected from_topology='linear', got {row.from_topology!r}"
         )
 
-        # Assert: runs.human_role is set
         async with session_scope(factory) as session:
             run_row_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_row_result.scalar_one_or_none()

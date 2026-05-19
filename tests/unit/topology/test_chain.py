@@ -23,7 +23,6 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# Side-effect import: triggers @TopologyRegistry.register("chain")
 import atm.topology.chain  # noqa: F401
 from atm.core.types import Message, MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry
@@ -33,10 +32,6 @@ from atm.topology.chain import (
     _critic_postprocess,
     _route_from_critic,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers — minimal GraphState factories
-# ---------------------------------------------------------------------------
 
 
 def _make_shared(
@@ -120,23 +115,10 @@ def _make_cfg(*, max_iterations: int = 10) -> TopologyConfig:
     return TopologyConfig(name="chain", max_iterations=max_iterations)
 
 
-# ---------------------------------------------------------------------------
-# Fixture — ensure ChainTopology is registered before each test.
-# test_base.py clears the TopologyRegistry between tests (setup_method/teardown_method).
-# Since Python caches module imports, re-importing atm.topology.chain does NOT
-# re-run the @TopologyRegistry.register("chain") decorator. We restore it manually.
-# ---------------------------------------------------------------------------
-
-
 def _ensure_chain_registered() -> None:
     """Re-register ChainTopology if the registry was cleared by another test suite."""
     if "chain" not in TopologyRegistry.list_names():
         TopologyRegistry.register("chain")(ChainTopology)
-
-
-# ---------------------------------------------------------------------------
-# Test group 1: Registry registration
-# ---------------------------------------------------------------------------
 
 
 class TestChainRegistration:
@@ -165,11 +147,6 @@ class TestChainRegistration:
 
         topology = ChainTopology()
         assert isinstance(topology, Topology)
-
-
-# ---------------------------------------------------------------------------
-# Test group 2: _critic_postprocess — approved paths
-# ---------------------------------------------------------------------------
 
 
 class TestCriticPostprocessApproved:
@@ -206,7 +183,7 @@ class TestCriticPostprocessApproved:
         """final_answer == '<incomplete>' when no executor DRAFT message exists."""
         state = _make_state(
             critic_outbox=[_make_decision_msg(approved=True)],
-            executor_outbox=[],  # no DRAFT messages
+            executor_outbox=[],
         )
         delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["final_answer"] == "<incomplete>"
@@ -231,11 +208,6 @@ class TestCriticPostprocessApproved:
         delta = asyncio.run(_critic_postprocess(state))
         assert delta["shared"]["signals"]["critic_approved"] is True
         assert delta["shared"]["final_answer"] == "result_55"
-
-
-# ---------------------------------------------------------------------------
-# Test group 3: _critic_postprocess — rejected/malformed paths
-# ---------------------------------------------------------------------------
 
 
 class TestCriticPostprocessRejected:
@@ -283,11 +255,6 @@ class TestCriticPostprocessRejected:
         assert delta["shared"]["signals"]["critic_approved"] is False
 
 
-# ---------------------------------------------------------------------------
-# Test group 4: _route_from_critic counter increments and routing
-# ---------------------------------------------------------------------------
-
-
 class TestRouteFromCritic:
     """_route_from_critic increments counters and returns correct routing string."""
 
@@ -328,16 +295,10 @@ class TestRouteFromCritic:
 
     def test_stop_reason_max_iter_returns_end(self) -> None:
         """After increment, iter_total==max_iterations → CHAIN_END."""
-        # After increment: iter_total=10 >= max_iterations=10 → stop
         state = _make_state(iter_total=9, critic_approved=False)
         cfg = _make_cfg(max_iterations=10)
         result = _route_from_critic(state, cfg)
         assert result == CHAIN_END
-
-
-# ---------------------------------------------------------------------------
-# Test group 5: build() — graph compilation with mocked StateGraph
-# ---------------------------------------------------------------------------
 
 
 class TestChainBuild:
@@ -394,5 +355,4 @@ class TestChainBuild:
             compiled = topology.build(agents, cfg, checkpointer=mock_checkpointer)
 
         assert compiled is not None
-        # compile() should have been called with the checkpointer
         mock_graph.compile.assert_called_once_with(checkpointer=mock_checkpointer)

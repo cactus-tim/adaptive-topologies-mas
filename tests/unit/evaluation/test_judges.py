@@ -17,28 +17,16 @@ from atm.evaluation.judges import (
 )
 from atm.llm.fake import FakeLLM
 
-# ---------------------------------------------------------------------------
-# Fixture paths
-# ---------------------------------------------------------------------------
-
 _FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _PAIRWISE_AB = _FIXTURES / "m11_judge_pairwise_ab.yaml"
 _PAIRWISE_DISAGREE = _FIXTURES / "m11_judge_pairwise_swap_disagree.yaml"
 _SELF_CONSISTENCY = _FIXTURES / "m11_judge_self_consistency.yaml"
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _SPEC_INPUT = "Explain the concept of recursion."
 _RUBRIC = "Correctness\nClarity\nExamples"
 _ANSWER_A = "Recursion is a function that calls itself."
 _ANSWER_B = "Recursion is a loop."
-
-
-# ---------------------------------------------------------------------------
-# _to_answer_relative (4 tests)
-# ---------------------------------------------------------------------------
 
 
 def test_to_answer_relative_not_swapped_a() -> None:
@@ -62,23 +50,15 @@ def test_to_answer_relative_tie() -> None:
     assert _to_answer_relative("tie", swapped=True) == "tie"
 
 
-# ---------------------------------------------------------------------------
-# RubricJudge (2 tests)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_rubric_judge_score_ok() -> None:
     """RubricJudge returns normalised score in [0,1] from scripted LLM."""
-    # Use echo mode: returns the prompt itself, which is not valid JSON → score=0.
-    # Use scripted mode for a controlled response.
     llm = FakeLLM(
         mode="scripted",
         fixture=str(_SELF_CONSISTENCY),
     )
     judge = RubricJudge()
     score, reasoning, error = await judge.score(_SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm)
-    # Fixture step 0 returns score=8 → normalised 0.8
     assert error is None
     assert math.isclose(score, 0.8, rel_tol=1e-6)
     assert "Strong answer" in reasoning
@@ -92,11 +72,6 @@ async def test_rubric_judge_error_on_bad_response() -> None:
     score, _reasoning, error = await judge.score(_SPEC_INPUT, _RUBRIC, _ANSWER_A, judge_llm=llm)
     assert error is not None
     assert score == 0.0
-
-
-# ---------------------------------------------------------------------------
-# PairwiseJudge (3 tests)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -136,11 +111,6 @@ async def test_pairwise_result_is_frozen() -> None:
     )
     with pytest.raises(ValidationError):
         result.winner = "a"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# SelfConsistentJudge (1 test)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

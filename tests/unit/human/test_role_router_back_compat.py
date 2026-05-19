@@ -42,10 +42,6 @@ from atm.topology.hierarchical import HierarchicalTopology
 from atm.topology.mesh import MeshTopology
 from atm.topology.star import StarTopology
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _default_human_cfg() -> HumanCfg:
     """Return a HumanCfg with all defaults — role_router must equal 'fixed'."""
@@ -79,11 +75,6 @@ def _make_compiled_graph_mock() -> tuple[MagicMock, MagicMock]:
     mock_graph = MagicMock()
     mock_graph.compile.return_value = mock_compiled
     return mock_compiled, mock_graph
-
-
-# ---------------------------------------------------------------------------
-# 1-3: _build_role_router returns None for "fixed" strategy
-# ---------------------------------------------------------------------------
 
 
 class TestBuildRoleRouterFixed:
@@ -130,11 +121,6 @@ class TestBuildRoleRouterFixed:
         result = _build_role_router(cfg, llm_factory=stub_factory)
         assert result is None
         stub_factory.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# 4: Chain topology — role_router=None propagated to node builder
-# ---------------------------------------------------------------------------
 
 
 class TestChainBackCompat:
@@ -220,11 +206,6 @@ class TestChainBackCompat:
         )
 
 
-# ---------------------------------------------------------------------------
-# 5: Star topology — role_router=None propagated to build_human_node_factory
-# ---------------------------------------------------------------------------
-
-
 class TestStarBackCompat:
     """StarTopology: role_router=None is forwarded to build_human_node_factory."""
 
@@ -268,11 +249,6 @@ class TestStarBackCompat:
         )
 
 
-# ---------------------------------------------------------------------------
-# 6: Mesh topology — role_router=None → human_peer_node uses human_cfg.role
-# ---------------------------------------------------------------------------
-
-
 class TestMeshBackCompat:
     """MeshTopology: role_router=None → human peer node uses human_cfg.role."""
 
@@ -293,15 +269,9 @@ class TestMeshBackCompat:
             patch("atm.topology.mesh.StateGraph", return_value=mock_graph),
             patch("atm.topology.mesh.LLMSimulatedGateway", return_value=MagicMock()),
         ):
-            # Must not raise
             result = MeshTopology().build(agents, cfg, human_cfg=human_cfg, role_router=None)
 
         assert result is mock_graph.compile.return_value
-
-
-# ---------------------------------------------------------------------------
-# 7: Debate topology — role_router=None propagated to judge node builder
-# ---------------------------------------------------------------------------
 
 
 class TestDebateBackCompat:
@@ -327,7 +297,6 @@ class TestDebateBackCompat:
                 "judge_id": "judge",
             },
         )
-        # extra={"judge": "human"} triggers the HITL judge path
         human_cfg = HumanCfg(
             enabled=True,
             role=HumanRole.JUDGE,
@@ -357,17 +326,11 @@ class TestDebateBackCompat:
         ):
             DebateTopology().build(agents, cfg, human_cfg=human_cfg, role_router=None)
 
-        # _build_human_judge_node must have been called once (human judge mode)
         assert len(captured_role_routers) >= 1, "Expected at least one _build_human_judge_node call"
         for idx, rr in enumerate(captured_role_routers):
             assert rr is None, (
                 f"_build_human_judge_node call #{idx} received role_router={rr!r}, expected None"
             )
-
-
-# ---------------------------------------------------------------------------
-# 8: Hierarchical topology — role_router=None propagated to top reviewer node
-# ---------------------------------------------------------------------------
 
 
 class TestHierarchicalBackCompat:
@@ -409,11 +372,6 @@ class TestHierarchicalBackCompat:
                 f"_build_human_top_reviewer_node call #{idx} received "
                 f"role_router={rr!r}, expected None"
             )
-
-
-# ---------------------------------------------------------------------------
-# 9: Adaptive topology — role_router=None → no router.decide() called
-# ---------------------------------------------------------------------------
 
 
 class TestAdaptiveBackCompat:

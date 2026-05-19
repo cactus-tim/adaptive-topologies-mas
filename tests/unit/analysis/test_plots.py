@@ -32,11 +32,6 @@ def close_all_figures() -> None:  # type: ignore[return]
     plt.close("all")
 
 
-# ---------------------------------------------------------------------------
-# Fixtures — shared DataFrames
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def runs_df() -> pd.DataFrame:
     """Minimal runs DataFrame for plot_pareto and plot_topology_task_heatmap."""
@@ -79,11 +74,6 @@ def phases_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ---------------------------------------------------------------------------
-# test_plot_pareto — RQ1 smoke test
-# ---------------------------------------------------------------------------
-
-
 class TestPlotPareto:
     """plot_pareto returns a valid Figure with one Axes."""
 
@@ -124,7 +114,6 @@ class TestPlotPareto:
         from atm.analysis.plots import plot_pareto
 
         df = pd.DataFrame({"topology": ["linear", "mesh"], "quality_score": [0.5, 0.7]})
-        # budget_spent_usd is missing — should not raise, just return a figure
         fig = plot_pareto(df)
         assert isinstance(fig, matplotlib.figure.Figure)
 
@@ -152,7 +141,6 @@ class TestPlotPareto:
         """Ensure no warnings are raised (filterwarnings=error is active in pytest)."""
         from atm.analysis.plots import plot_pareto
 
-        # If warnings.catch_warnings doesn't raise, no warnings occurred
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             fig = plot_pareto(runs_df)
@@ -176,11 +164,6 @@ class TestPlotPareto:
         assert "adaptive" in legend_texts
 
 
-# ---------------------------------------------------------------------------
-# test_plot_topology_task_heatmap — RQ1 smoke test
-# ---------------------------------------------------------------------------
-
-
 class TestPlotTopologyTaskHeatmap:
     """plot_topology_task_heatmap returns a valid Figure with one Axes."""
 
@@ -194,7 +177,6 @@ class TestPlotTopologyTaskHeatmap:
         from atm.analysis.plots import plot_topology_task_heatmap
 
         fig = plot_topology_task_heatmap(runs_df)
-        # seaborn heatmap may add a colorbar Axes — at least 1 Axes exists
         assert len(fig.axes) >= 1
 
     def test_heatmap_title_set(self, runs_df: pd.DataFrame) -> None:
@@ -217,7 +199,6 @@ class TestPlotTopologyTaskHeatmap:
         from atm.analysis.plots import plot_topology_task_heatmap
 
         df = pd.DataFrame(columns=["topology", "task_type", "quality_score"])
-        # pivot_table on empty df may raise or return empty — we just want no crash
         try:
             fig = plot_topology_task_heatmap(df)
             assert isinstance(fig, matplotlib.figure.Figure)
@@ -231,11 +212,6 @@ class TestPlotTopologyTaskHeatmap:
             warnings.simplefilter("error")
             fig = plot_topology_task_heatmap(runs_df)
         assert isinstance(fig, matplotlib.figure.Figure)
-
-
-# ---------------------------------------------------------------------------
-# test_plot_phase_timeline — RQ1 smoke test
-# ---------------------------------------------------------------------------
 
 
 class TestPlotPhaseTimeline:
@@ -265,7 +241,6 @@ class TestPlotPhaseTimeline:
 
         fig = plot_phase_timeline(phases_df, run_id="nonexistent-run")
         assert isinstance(fig, matplotlib.figure.Figure)
-        # Title should indicate no data was found
         ax = fig.axes[0]
         title = ax.get_title()
         assert "nonexistent-run" in title or "No phases" in title
@@ -301,11 +276,6 @@ class TestPlotPhaseTimeline:
         assert ax.get_xlabel() != ""
 
 
-# ---------------------------------------------------------------------------
-# Module-level import smoke test
-# ---------------------------------------------------------------------------
-
-
 class TestPlotsModuleImport:
     """plots.py imports cleanly and exposes all public symbols."""
 
@@ -330,11 +300,6 @@ class TestPlotsModuleImport:
         import atm.analysis.plots  # noqa: F401
 
         assert matplotlib.get_backend().lower() == "agg"
-
-
-# ---------------------------------------------------------------------------
-# RQ2 / G11 fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -421,11 +386,6 @@ def oracle_gap_series() -> pd.Series:
     )
 
 
-# ---------------------------------------------------------------------------
-# test_plot_transition_timeline_quality — RQ2/G11 smoke tests
-# ---------------------------------------------------------------------------
-
-
 class TestPlotTransitionTimelineQualityRq2:
     """plot_transition_timeline_quality returns a valid Figure. [rq2]"""
 
@@ -477,11 +437,6 @@ class TestPlotTransitionTimelineQualityRq2:
         assert isinstance(fig, matplotlib.figure.Figure)
 
 
-# ---------------------------------------------------------------------------
-# test_plot_guard_override_rate — RQ2/G11 smoke tests
-# ---------------------------------------------------------------------------
-
-
 class TestPlotGuardOverrideRateRq2:
     """plot_guard_override_rate returns a valid Figure. [rq2]"""
 
@@ -531,13 +486,7 @@ class TestPlotGuardOverrideRateRq2:
 
         fig = plot_guard_override_rate(transitions_df)
         ax = fig.axes[0]
-        # At least one axis label should be non-empty
         assert ax.get_xlabel() != "" or ax.get_ylabel() != ""
-
-
-# ---------------------------------------------------------------------------
-# test_plot_router_cost_share — RQ2/G11 smoke tests
-# ---------------------------------------------------------------------------
 
 
 class TestPlotRouterCostShareRq2:
@@ -591,11 +540,6 @@ class TestPlotRouterCostShareRq2:
             warnings.simplefilter("error")
             fig = plot_router_cost_share(runs_df_rq2, llm_calls_df)
         assert isinstance(fig, matplotlib.figure.Figure)
-
-
-# ---------------------------------------------------------------------------
-# test_plot_time_per_topology — RQ2/G11 smoke tests
-# ---------------------------------------------------------------------------
 
 
 class TestPlotTimePerTopologyRq2:
@@ -653,15 +597,8 @@ class TestPlotTimePerTopologyRq2:
         """plot_time_per_topology also accepts transitions_df with 'at' + 'to_topology'."""
         from atm.analysis.plots import plot_time_per_topology
 
-        # Using transitions_df (which has run_id, to_topology, at) but no duration_seconds —
-        # should still render gracefully or fall back to count-based display.
         fig = plot_time_per_topology(transitions_df)
         assert isinstance(fig, matplotlib.figure.Figure)
-
-
-# ---------------------------------------------------------------------------
-# test_plot_oracle_gap_loo — RQ2/G11 smoke tests
-# ---------------------------------------------------------------------------
 
 
 class TestPlotOracleGapLooRq2:
@@ -727,7 +664,6 @@ class TestPlotOracleGapLooRq2:
 
         fig = plot_oracle_gap_loo(runs_df_rq2, oracle_gap_series)
         ax = fig.axes[0]
-        # Check the axes exists and has content (vline is present for non-empty data)
         assert isinstance(fig, matplotlib.figure.Figure)
         assert ax is not None
 
@@ -737,11 +673,6 @@ class TestPlotOracleGapLooRq2:
         s = pd.Series({"task-0": float("nan"), "task-1": float("nan")}, name="oracle_gap_loo")
         fig = plot_oracle_gap_loo(runs_df_rq2, s)
         assert isinstance(fig, matplotlib.figure.Figure)
-
-
-# ---------------------------------------------------------------------------
-# RQ2 symbols exported check — g11
-# ---------------------------------------------------------------------------
 
 
 class TestRq2SymbolsExportedG11:
@@ -771,11 +702,6 @@ class TestRq2SymbolsExportedG11:
         from atm.analysis.plots import __all__
 
         assert "plot_oracle_gap_loo" in __all__
-
-
-# ---------------------------------------------------------------------------
-# RQ3/RQ4 fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -809,11 +735,6 @@ def runs_df_cognitive() -> pd.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
-# test_plot_cognitive_load_boxplot — RQ3/RQ4 smoke tests
-# ---------------------------------------------------------------------------
-
-
 class TestPlotCognitiveLoadBoxplot:
     """plot_cognitive_load_boxplot returns a valid Figure with 2 Axes."""
 
@@ -839,7 +760,6 @@ class TestPlotCognitiveLoadBoxplot:
         from atm.analysis.plots import plot_cognitive_load_boxplot
 
         fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df)
-        # At least one axes should have a title
         titles = [ax.get_title() for ax in fig.axes]
         assert any(t != "" for t in titles)
 
@@ -870,7 +790,6 @@ class TestPlotCognitiveLoadBoxplot:
     ) -> None:
         from atm.analysis.plots import plot_cognitive_load_boxplot
 
-        # Non-existent role — should produce graceful figure, not crash
         fig = plot_cognitive_load_boxplot(runs_df_cognitive, human_interactions_df, role="reviewer")
         assert isinstance(fig, matplotlib.figure.Figure)
 

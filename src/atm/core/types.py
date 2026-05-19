@@ -1,8 +1,4 @@
-"""Core Pydantic v2 data models and enums for the ATM framework.
-
-All 17 classes/enums defined here are used throughout the framework.
-LangChain integration (Message.to_lc / from_lc) is stubbed — implemented in M2.
-"""
+"""Core Pydantic v2 data models and enums for the ATM framework."""
 
 from __future__ import annotations
 
@@ -19,19 +15,9 @@ if TYPE_CHECKING:
     )
 
 
-# ---------------------------------------------------------------------------
-# Helper — use this in default_factory to avoid deprecated datetime.utcnow()
-# ---------------------------------------------------------------------------
-
-
 def _utcnow() -> _dt.datetime:
     """Return current UTC time as a timezone-aware datetime (not deprecated)."""
     return _dt.datetime.now(_dt.UTC)
-
-
-# ---------------------------------------------------------------------------
-# Enums — StrEnum subclasses for Postgres/JSON compatibility
-# ---------------------------------------------------------------------------
 
 
 class AgentRole(StrEnum):
@@ -42,7 +28,7 @@ class AgentRole(StrEnum):
     EXECUTOR = "executor"
     CRITIC = "critic"
     DEBATER = "debater"
-    COORDINATOR = "coordinator"  # for Hierarchical topology
+    COORDINATOR = "coordinator"
 
 
 class HumanRole(StrEnum):
@@ -67,17 +53,12 @@ class Phase(StrEnum):
 class MessageKind(StrEnum):
     """Semantic type of an inter-agent message."""
 
-    REQUEST = "request"  # addressed: agent → agent
-    BROADCAST = "broadcast"  # to shared bus (Mesh)
+    REQUEST = "request"
+    BROADCAST = "broadcast"
     DRAFT = "draft"
     CRITIQUE = "critique"
-    DECISION = "decision"  # Coordinator → final answer
-    PHASE_EMIT = "phase_emit"  # agent requests phase transition
-
-
-# ---------------------------------------------------------------------------
-# Core domain models
-# ---------------------------------------------------------------------------
+    DECISION = "decision"
+    PHASE_EMIT = "phase_emit"
 
 
 class Message(BaseModel):
@@ -91,23 +72,16 @@ class Message(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: UUID = Field(default_factory=uuid4)
-    sender: str  # agent_id
-    recipients: tuple[str, ...] = ()  # empty = broadcast
+    sender: str
+    recipients: tuple[str, ...] = ()
     kind: MessageKind
     content: str
     payload: dict[str, Any] = Field(default_factory=dict)
-    refs: tuple[UUID, ...] = ()  # reply-to chain
+    refs: tuple[UUID, ...] = ()
     created_at: _dt.datetime = Field(default_factory=_utcnow)
 
     def to_lc(self) -> BaseMessage:
-        """Adapter to LangChain BaseMessage for LLM invocation.
-
-        Mapping kind → LC-type:
-          request/draft/critique → HumanMessage (role = sender)
-          decision               → AIMessage
-          broadcast              → HumanMessage with metadata={'channel':'broadcast'}
-          phase_emit             → SystemMessage (meta-event)
-        """
+        """Adapter to LangChain BaseMessage for LLM invocation."""
         from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
         if self.kind in (
@@ -129,7 +103,6 @@ class Message(BaseModel):
         if self.kind == MessageKind.PHASE_EMIT:
             return SystemMessage(content=self.content)
 
-        # Fallback: treat unknown kinds as HumanMessage
         return HumanMessage(content=self.content)  # pragma: no cover
 
     @classmethod
@@ -142,15 +115,11 @@ class Message(BaseModel):
     ) -> Message:
         """Reverse adapter from LangChain BaseMessage.
 
-        Contract: LC-specific fields (tool_calls, additional_kwargs) go into
-        `payload` under key '_lc'. Callers are responsible for extracting them
-        if needed (they are not first-class Message attributes).
+        LC-specific fields go into ``payload['_lc']``.
         """
-        # Extract text content — content may be str or list of blocks
         if isinstance(lc_msg.content, str):
             content = lc_msg.content
         else:
-            # List of content blocks: concatenate text blocks
             parts: list[str] = []
             for block in lc_msg.content:
                 if isinstance(block, dict) and block.get("type") == "text":
@@ -159,12 +128,10 @@ class Message(BaseModel):
                     parts.append(block)
             content = "".join(parts)
 
-        # Collect LC-specific extras into payload['_lc']
         lc_extras: dict[str, Any] = {}
         if lc_msg.additional_kwargs:
             lc_extras["additional_kwargs"] = dict(lc_msg.additional_kwargs)
 
-        # Handle tool_calls (present on AIMessage)
         tool_calls = getattr(lc_msg, "tool_calls", None)
         if tool_calls:
             lc_extras["tool_calls"] = list(tool_calls)
@@ -187,7 +154,7 @@ class ToolCall(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tool_name: str
     args: dict[str, Any]
-    issued_by: str  # agent_id
+    issued_by: str
     issued_at: _dt.datetime = Field(default_factory=_utcnow)
 
 
@@ -212,7 +179,7 @@ class TokenUsage(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     cached_input_tokens: int = 0
-    total_tokens: int  # invariant: prompt + completion (cached is a subset of prompt)
+    total_tokens: int
 
 
 class LLMResponse(BaseModel):
@@ -229,7 +196,7 @@ class LLMResponse(BaseModel):
     latency_ms: int
     finish_reason: Literal["stop", "tool_calls", "length", "content_filter", "error"]
     started_at: _dt.datetime = Field(default_factory=_utcnow)
-    raw: dict[str, Any] = Field(default_factory=dict)  # for debug; not fully written to Parquet
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class HumanContext(BaseModel):
@@ -241,8 +208,8 @@ class HumanContext(BaseModel):
     role: HumanRole
     question: str
     recent_messages: tuple[Message, ...]
-    artifacts: dict[str, Any] = Field(default_factory=dict)  # draft, tests, diffs, etc.
-    allowed_actions: tuple[str, ...]  # e.g. ("approve","reject","revise")
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+    allowed_actions: tuple[str, ...]
     deadline_s: int | None = None
 
 
@@ -251,12 +218,12 @@ class HumanResponse(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    action: str  # one of allowed_actions OR 'timeout'/'cancelled'
+    action: str
     comment: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)  # structured edits
+    payload: dict[str, Any] = Field(default_factory=dict)
     answered_at: _dt.datetime = Field(default_factory=_utcnow)
-    tlx_scores: dict[str, int] | None = None  # 6 NASA-TLX scales, 0..100
-    timed_out: bool = False  # True if gateway returned timeout-response
+    tlx_scores: dict[str, int] | None = None
+    timed_out: bool = False
     source: Literal["human", "llm_sim", "fallback", "timeout"] = "human"
 
 
@@ -265,12 +232,12 @@ class TaskSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    id: str  # "humaneval/HumanEval/0"
+    id: str
     type: Literal["programming", "reasoning", "creative", "decision"]
     input: str
     expected: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    evaluator_key: str  # key in EvaluatorRegistry
+    evaluator_key: str
 
 
 class TaskResult(BaseModel):
@@ -280,7 +247,7 @@ class TaskResult(BaseModel):
 
     task_id: str
     final_answer: str
-    artifacts: dict[str, Any] = Field(default_factory=dict)  # code, tests, diffs
+    artifacts: dict[str, Any] = Field(default_factory=dict)
     iterations_used: int
     budget_spent_usd: float
     wall_time_s: float
@@ -295,7 +262,7 @@ class RunResult(BaseModel):
     status: Literal["completed", "failed", "budget_exceeded", "cancelled"]
     task_result: TaskResult | None
     error: str | None = None
-    metrics: dict[str, float] = Field(default_factory=dict)  # filled by Evaluator
+    metrics: dict[str, float] = Field(default_factory=dict)
 
 
 class PhaseTransition(BaseModel):
@@ -308,10 +275,10 @@ class PhaseTransition(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     run_id: UUID
-    from_phase: Phase | None  # None only on initial init
+    from_phase: Phase | None
     to_phase: Phase
     entry_reason: str
-    iter_total: int  # absolute meta-graph tick counter
+    iter_total: int
     decided_by: Literal["rule", "llm_router", "agent_emit", "initial"]
     at: _dt.datetime = Field(default_factory=_utcnow)
 
@@ -326,19 +293,19 @@ class TopologyTransition(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     run_id: UUID
-    from_topology: str | None  # None only on the initial decision
-    to_topology: str  # == from_topology if no-change
+    from_topology: str | None
+    to_topology: str
     phase_at_decision: Phase
     iter_within_phase: int
-    iter_within_topology: int  # 0 if this is a switch (new topology)
+    iter_within_topology: int
     decided_by: Literal[
         "rule", "llm_router", "oracle", "guard_override", "initial", "human_override"
     ]
     reason: str
     considered_alternatives: tuple[str, ...] = ()
-    guards_applied: tuple[str, ...] = ()  # names of guards that fired
+    guards_applied: tuple[str, ...] = ()
     signals_snapshot: dict[str, Any] = Field(default_factory=dict)
-    router_cost_usd: float = 0.0  # >0 only for llm_router
+    router_cost_usd: float = 0.0
     at: _dt.datetime = Field(default_factory=_utcnow)
 
 
@@ -356,21 +323,17 @@ class BudgetEvent(BaseModel):
 
 
 class TopologyDecision(BaseModel):
-    """Decision produced by TopologyRouter on each meta-graph tick.
-
-    Frozen to ensure immutability of router decisions after creation.
-    router_cost_usd > 0 only for llm_router decisions; rule/oracle/etc. cost 0.
-    """
+    """Decision produced by TopologyRouter on each meta-graph tick."""
 
     model_config = ConfigDict(frozen=True)
 
-    topology: str  # one of the 5 registered topologies
+    topology: str
     reason: str
     decided_by: Literal[
         "rule", "llm_router", "oracle", "guard_override", "initial", "human_override"
     ]
     considered_alternatives: tuple[str, ...] = ()
-    router_cost_usd: float = 0.0  # >0 only for llm_router
+    router_cost_usd: float = 0.0
 
     @field_validator("router_cost_usd")
     @classmethod
@@ -383,12 +346,11 @@ class TopologyDecision(BaseModel):
 class PhaseDecision(BaseModel):
     """Decision produced by PhaseRouter on each meta-graph tick.
 
-    next_phase must be monotonic: >= current phase (enforced in TransitionGate).
-    Frozen to ensure immutability of router decisions after creation.
+    ``next_phase`` must be monotonic (>= current phase), enforced in TransitionGate.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    next_phase: Phase  # monotonic: >= current_phase
+    next_phase: Phase
     reason: str
     decided_by: Literal["rule", "llm_router", "agent_emit", "initial"]

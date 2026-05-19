@@ -43,10 +43,6 @@ from atm.core.types import Message, MessageKind, Phase, PhaseDecision, TopologyD
 from atm.topology.adaptive import AdaptiveTopology, apply_transition_gate, build_adaptive_graph
 from atm.topology.base import TopologyConfig
 
-# ---------------------------------------------------------------------------
-# Mock agent helpers
-# ---------------------------------------------------------------------------
-
 
 class _StuckExecutor:
     """Mock executor that emits stuck=True signal on first call, then approves."""
@@ -61,10 +57,8 @@ class _StuckExecutor:
         signals = dict(shared.get("signals") or {})
 
         if self._call_count == 1:
-            # First call: stuck signal
             signals["stuck"] = True
         else:
-            # Subsequent calls: ready for verification
             signals["ready_for_verification"] = True
             signals["stuck"] = False
 
@@ -175,11 +169,6 @@ class _PassthroughAgent:
         return {}
 
 
-# ---------------------------------------------------------------------------
-# Initial state helper
-# ---------------------------------------------------------------------------
-
-
 def _make_initial_state(*, task_input: str = "Write a fibonacci function.") -> dict[str, Any]:
     return {
         "shared": {
@@ -206,11 +195,6 @@ def _make_initial_state(*, task_input: str = "Write a fibonacci function.") -> d
         "budget_events": [],
         "topology_transitions": [],
     }
-
-
-# ---------------------------------------------------------------------------
-# Test 1: apply_transition_gate pure function
-# ---------------------------------------------------------------------------
 
 
 class TestApplyTransitionGate:
@@ -252,12 +236,10 @@ class TestApplyTransitionGate:
         topo_dec = TopologyDecision(topology="linear", reason="keep linear", decided_by="rule")
         new_state = apply_transition_gate(state, phase_dec, topo_dec, run_id=str(uuid4()))
 
-        assert new_state["shared"]["iteration"] == 4  # was 3, incremented
+        assert new_state["shared"]["iteration"] == 4
         assert new_state["shared"]["phase"] == Phase.EXECUTION
         assert new_state["shared"]["active_topology"] == "linear"
-        # broadcast_bus preserved (no change)
         assert new_state["shared"]["broadcast_bus"] == [{"msg": "old"}]
-        # topology_transitions got one new record
         assert len(new_state["topology_transitions"]) == 1
         assert new_state["topology_transitions"][0].decided_by == "rule"
         assert new_state["topology_transitions"][0].to_topology == "linear"
@@ -273,17 +255,13 @@ class TestApplyTransitionGate:
         assert new_state["shared"]["active_topology"] == "mesh"
         assert new_state["shared"]["topology_switch_count"] == 1
         assert "linear" in new_state["shared"]["topology_history"]
-        # broadcast_bus cleared on topology switch
         assert new_state["shared"]["broadcast_bus"] == []
-        # stuck signal should be cleared (consumed by router reason "stuck")
         assert "stuck" not in new_state["shared"]["signals"]
-        # other signal preserved
         assert new_state["shared"]["signals"].get("some_other") == 42
 
     def test_phase_advance_clears_signals_and_inboxes(self) -> None:
         """Phase advance → guard signal cleared, other signals preserved, agent inbox/outbox cleared."""
         state = self._base_state(phase=Phase.PLANNING)
-        # Add signals: ready_for_execution (guard signal) + another signal
         shared = dict(state["shared"])
         shared["signals"] = {"stuck": True, "some_other": 42, "ready_for_execution": True}
         state = dict(state)
@@ -294,14 +272,10 @@ class TestApplyTransitionGate:
         )
         topo_dec = TopologyDecision(topology="chain", reason="no rule fired", decided_by="rule")
         new_state = apply_transition_gate(state, phase_dec, topo_dec, run_id=str(uuid4()))
-
         assert new_state["shared"]["phase"] == Phase.EXECUTION
-        # Only the guard signal for the old phase (ready_for_execution) is cleared
         assert "ready_for_execution" not in new_state["shared"]["signals"]
-        # Other signals are preserved (not wiped on phase change)
         assert new_state["shared"]["signals"].get("some_other") == 42
         assert new_state["shared"]["iteration"] == 0
-        # agent inbox/outbox cleared
         planner_state = new_state["agents"]["planner"]
         assert planner_state["inbox"] == []
         assert planner_state["outbox"] == []
@@ -312,7 +286,6 @@ class TestApplyTransitionGate:
         phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
         topo_dec = TopologyDecision(topology="linear", reason="keep", decided_by="rule")
 
-        # Seed one existing transition
         from atm.core.types import TopologyTransition
 
         existing = TopologyTransition(
@@ -330,11 +303,6 @@ class TestApplyTransitionGate:
         new_state = apply_transition_gate(state, phase_dec, topo_dec, run_id=str(uuid4()))
         assert len(new_state["topology_transitions"]) == 2
         assert new_state["topology_transitions"][1].to_topology == "linear"
-
-
-# ---------------------------------------------------------------------------
-# Test 2: AdaptiveTopology builds a compilable meta-graph
-# ---------------------------------------------------------------------------
 
 
 class TestAdaptiveTopologyBuild:
@@ -367,20 +335,14 @@ class TestAdaptiveTopologyBuild:
         Explicitly import adaptive module first to ensure registration,
         since some unit test fixtures may clear TopologyRegistry._registry.
         """
-        import atm.topology.adaptive as _adap_mod  # ensure registration side-effect
+        import atm.topology.adaptive as _adap_mod
         from atm.topology.base import TopologyRegistry
 
-        # Re-register if cleared by prior test fixture
         if "adaptive" not in TopologyRegistry.list_names():
             TopologyRegistry._registry["adaptive"] = _adap_mod.AdaptiveTopology
 
         cls = TopologyRegistry.get("adaptive")
         assert cls is AdaptiveTopology
-
-
-# ---------------------------------------------------------------------------
-# Test 3: Full adaptive run with topology switches
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -406,7 +368,6 @@ async def test_adaptive_topology_switches() -> None:
     """
     ticks: list[dict[str, Any]] = []
 
-    # Shared mutable tick counter (incremented by mock subgraphs)
     tick_box: list[int] = [0]
 
     async def _make_mock_subgraph(tick_signals: list[dict[str, Any]]) -> Any:
@@ -431,7 +392,6 @@ async def test_adaptive_topology_switches() -> None:
                 shared["signals"] = signals
                 new_state["shared"] = shared
 
-                # Emit a message to test dedup
                 msg = Message(
                     sender="mock",
                     kind=MessageKind.DRAFT,
@@ -443,25 +403,14 @@ async def test_adaptive_topology_switches() -> None:
 
         return _MockGraph()
 
-    # Pre-build the mock subgraph (same instance for all topology names)
     tick_signals_script = [
-        # tick 0 (PLANNING phase): signal readiness for execution
         {"ready_for_execution": True},
-        # tick 1 (EXECUTION, linear): get stuck
         {"stuck": True},
-        # tick 2 (EXECUTION, mesh after switch): ready for verification
         {"ready_for_verification": True},
-        # tick 3 (VERIFICATION): approve
         {"critic_approved": True},
     ]
     mock_sub = await _make_mock_subgraph(tick_signals_script)
 
-    # Build adaptive topology with mock subgraphs.
-    # We construct the meta-graph directly using the same node functions as
-    # AdaptiveTopology, but with _get_subgraph replaced by mock_sub.
-
-    # Override by directly constructing the meta-graph using the same pattern
-    # as AdaptiveTopology.build(), but replacing the subgraph with mock_sub.
     import uuid
 
     from langgraph.graph import END as LEND
@@ -504,7 +453,6 @@ async def test_adaptive_topology_switches() -> None:
         shared = dict(state.get("shared") or {})
         iter_total = int(shared.get("iter_total", 0)) + 1
         shared["iter_total"] = iter_total
-        # Do NOT update active_topology here — TransitionGate is responsible for that.
 
         if iter_total > 20:
             return {"shared": shared}
@@ -569,7 +517,6 @@ async def test_adaptive_topology_switches() -> None:
 
     transitions = final_state.get("topology_transitions", [])
 
-    # --- Assertion 1: ≥1 real switch (from_topology != to_topology, not initial) ---
     real_switches = [
         t for t in transitions if t.from_topology is not None and t.from_topology != t.to_topology
     ]
@@ -579,7 +526,6 @@ async def test_adaptive_topology_switches() -> None:
         f"ticks: {ticks}"
     )
 
-    # --- Assertion 2: phase monotonicity ---
     phase_order = {Phase.PLANNING: 0, Phase.EXECUTION: 1, Phase.VERIFICATION: 2, Phase.DONE: 3}
     prev_phase_ord = -1
     for t in transitions:
@@ -591,23 +537,16 @@ async def test_adaptive_topology_switches() -> None:
         if phase_ord > prev_phase_ord:
             prev_phase_ord = phase_ord
 
-    # --- Assertion 3: no duplicate message ids ---
     messages = final_state.get("messages", [])
     message_ids = [getattr(m, "id", None) or getattr(m, "message_id", None) for m in messages]
     message_ids_clean = [mid for mid in message_ids if mid is not None]
     assert len(message_ids_clean) == len(set(message_ids_clean)), "Duplicate message ids found"
 
-    # --- Assertion 4: final phase is DONE (or max_iterations hit) ---
     final_phase = final_state.get("shared", {}).get("phase")
     assert final_phase is not None, "shared.phase should be set in final state"
     assert (
         str(final_phase) in {"done", "Phase.DONE"} or final_state["shared"]["iter_total"] >= 20
     ), f"Expected DONE phase, got {final_phase}"
-
-
-# ---------------------------------------------------------------------------
-# Test 4: guard_override provocation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -621,11 +560,8 @@ async def test_guard_override_provoked() -> None:
     from atm.phases.topology_router import RuleBasedTopologyRouter
 
     inner = RuleBasedTopologyRouter()
-    # Very strict guards: need 10 ticks before switch
     guards = GuardedRouter(inner=inner, guards=SwitchGuards(min_dwell_iters=10))
 
-    # State: currently at linear, iter_total=1, topology_started_at_iter=0
-    # → dwell = 1 < 10 → min_dwell should fire
     state: dict[str, Any] = {
         "phase": Phase.EXECUTION,
         "active_topology": "linear",
@@ -633,21 +569,15 @@ async def test_guard_override_provoked() -> None:
         "topology_started_at_iter": 0,
         "topology_switch_count": 0,
         "topology_history": [],
-        "signals": {"stuck": True},  # rule would want to switch to mesh
+        "signals": {"stuck": True},
     }
 
     decision = await guards.decide(state)  # type: ignore[arg-type]
 
-    # Should be guard_override because dwell=1 < min_dwell_iters=10
     assert decision.decided_by == "guard_override", (
         f"Expected guard_override, got {decision.decided_by}: {decision.reason}"
     )
-    assert decision.topology == "linear"  # stayed with current
-
-
-# ---------------------------------------------------------------------------
-# Test 5: topology_transitions dedup
-# ---------------------------------------------------------------------------
+    assert decision.topology == "linear"
 
 
 def test_topology_transitions_dedup_reducer() -> None:
@@ -680,17 +610,12 @@ def test_topology_transitions_dedup_reducer() -> None:
     )
 
     existing = [t1]
-    update = [t1, t2]  # t1 is a duplicate
+    update = [t1, t2]
 
     result = reducer(existing, update)
     unique_ids = {str(r.id) for r in result}
     assert len(result) == len(unique_ids), "Dedup reducer should remove duplicate transitions"
     assert len(result) == 2, f"Expected 2 unique transitions, got {len(result)}"
-
-
-# ---------------------------------------------------------------------------
-# Regression tests for the correctness fixes (fix/adaptive-router-correctness)
-# ---------------------------------------------------------------------------
 
 
 class TestPhaseSwitchCountTracking:
@@ -762,9 +687,7 @@ class TestPhaseSwitchCountTracking:
         new_state = apply_transition_gate(
             state, phase_dec, topo_dec, run_id=str(uuid4()), pre_subgraph_phase=Phase.EXECUTION
         )
-        # phase advanced → counter reset to 0
         assert new_state["shared"]["signals"]["phase_switch_count"] == 0
-        # phase guard signal consumed
         assert "ready_for_verification" not in new_state["shared"]["signals"]
 
 
@@ -777,8 +700,6 @@ class TestPreSubgraphPhaseDetection:
     """
 
     def test_subgraph_advanced_phase_is_detected_as_phase_change(self) -> None:
-        # Simulate state observed AFTER a subgraph (e.g. star coordinator)
-        # advanced planning→execution internally:
         state = {
             "shared": {
                 "phase": Phase.EXECUTION,  # post-subgraph
@@ -798,23 +719,17 @@ class TestPreSubgraphPhaseDetection:
         phase_dec = PhaseDecision(
             next_phase=Phase.PLANNING, reason="router slow", decided_by="rule"
         )
-        # Note: phase_decision says PLANNING but subgraph already moved to
-        # EXECUTION; the monotonic-max keeps EXECUTION.
         topo_dec = TopologyDecision(topology="linear", reason="stay", decided_by="rule")
         new_state = apply_transition_gate(
             state,
             phase_dec,
             topo_dec,
             run_id=str(uuid4()),
-            pre_subgraph_phase=Phase.PLANNING,  # ← critical: pre-dispatch phase
+            pre_subgraph_phase=Phase.PLANNING,
         )
-        # Phase advance must have been detected
         assert new_state["shared"]["phase"] == Phase.EXECUTION
-        # ready_for_execution must have been consumed
         assert "ready_for_execution" not in new_state["shared"]["signals"]
-        # Other signals preserved
         assert new_state["shared"]["signals"].get("some_other") == 42
-        # Agent inbox/outbox cleared
         assert new_state["agents"]["planner"]["inbox"] == []
         assert new_state["agents"]["planner"]["outbox"] == []
 
@@ -833,7 +748,6 @@ class TestPreSubgraphPhaseDetection:
         phase_dec = PhaseDecision(next_phase=Phase.EXECUTION, reason="stay", decided_by="rule")
         topo_dec = TopologyDecision(topology="linear", reason="stay", decided_by="rule")
         new_state = apply_transition_gate(state, phase_dec, topo_dec, run_id=str(uuid4()))
-        # Legacy: phase_changed=False, ready_for_execution NOT consumed
         assert new_state["shared"]["signals"].get("ready_for_execution") is True
 
 
@@ -872,27 +786,15 @@ class TestIterTotalSingleSource:
         final = await graph.ainvoke(initial_state, config={"recursion_limit": 100})
         shared = final["shared"]
 
-        # meta_ticks must be present and >= 1 (dispatch wrote it).
         assert shared.get("meta_ticks", 0) >= 1, (
             f"meta_ticks should reflect dispatch count, got {shared.get('meta_ticks')}"
         )
-        # iter_total contribution comes from sub-graph internal loops.  We
-        # allow modest over-run (subgraph can complete its current tick after
-        # the guard fires on next dispatch), but iter_total must NOT be
-        # roughly 2x max_iterations as it was under the double-increment bug.
         assert shared.get("iter_total", 0) <= 8, (
             f"iter_total far exceeded cfg.max_iterations (double-increment regression), "
             f"got {shared.get('iter_total')}"
         )
-        # Critically: meta_ticks may be > iter_total or vice versa, but they
-        # MUST be tracked as separate counters (not the same field).
         assert "meta_ticks" in shared
         assert "iter_total" in shared
-        # Sanity: meta_ticks should NOT equal iter_total in non-trivial runs
-        # (would suggest they're still linked).  In a multi-tick run with a
-        # multi-step subgraph these should diverge.
-        # If they happen to be equal, that's still valid as long as neither
-        # field is missing.
 
 
 class TestAdvisorHintOneShot:
@@ -924,6 +826,5 @@ class TestAdvisorHintOneShot:
         new_state = apply_transition_gate(
             state, phase_dec, topo_dec, run_id=str(uuid4()), pre_subgraph_phase=Phase.EXECUTION
         )
-        # Hint must be gone, other signals preserved
         assert "human_advisor_hint" not in new_state["shared"]["signals"]
         assert new_state["shared"]["signals"].get("other") == 1

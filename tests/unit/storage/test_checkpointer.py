@@ -17,10 +17,6 @@ import pytest
 
 from atm.storage.checkpointer import _to_psycopg_dsn, build_checkpointer, checkpointer_scope
 
-# ---------------------------------------------------------------------------
-# DSN conversion tests
-# ---------------------------------------------------------------------------
-
 
 def test_to_psycopg_dsn_asyncpg_to_plain() -> None:
     """postgresql+asyncpg scheme is replaced with postgresql."""
@@ -39,10 +35,6 @@ def test_to_psycopg_dsn_with_query() -> None:
     result = _to_psycopg_dsn("postgresql+asyncpg://a@h/d?sslmode=require")
     assert result == "postgresql://a@h/d?sslmode=require"
 
-
-# ---------------------------------------------------------------------------
-# Mock-based lifecycle tests
-# ---------------------------------------------------------------------------
 
 DSN = "postgresql+asyncpg://user:pwd@localhost:5432/testdb"
 PLAIN_DSN = "postgresql://user:pwd@localhost:5432/testdb"
@@ -68,7 +60,6 @@ async def test_checkpointer_scope_lifecycle() -> None:
         async with checkpointer_scope(DSN) as saver:
             assert saver is mock_saver
 
-    # Verify call order
     mock_pool_cls.assert_called_once_with(
         conninfo=PLAIN_DSN,
         min_size=1,
@@ -140,11 +131,6 @@ async def test_build_checkpointer_returns_tuple() -> None:
     assert pool is mock_pool
     mock_pool.open.assert_awaited_once()
     mock_saver.setup.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# Import test
-# ---------------------------------------------------------------------------
 
 
 def test_import() -> None:

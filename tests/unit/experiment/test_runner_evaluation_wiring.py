@@ -28,10 +28,6 @@ from atm.experiment.config import (
 )
 from atm.experiment.runner import run_one
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(**overrides: Any) -> ExperimentConfig:
     """Minimal ExperimentConfig with fake:echo judge model for wiring tests."""
@@ -120,11 +116,6 @@ def _common_patches(
     mock_cp_scope.return_value.__aexit__ = _aexit
 
 
-# ---------------------------------------------------------------------------
-# Test 1: inline-prompt task → compute_quality NOT called; quality_score == 0.0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_inline_prompt_short_circuits_to_zero() -> None:
     """run_one() with an unregistered task skips compute_quality; score is 0.0.
@@ -173,16 +164,9 @@ async def test_inline_prompt_short_circuits_to_zero() -> None:
         )
         result = await run_one(cfg)
 
-    # compute_quality must NOT have been called (inline-prompt short-circuit)
     mock_cq.assert_not_called()
-    # quality_score must be 0.0
     assert result.metrics["quality_score"] == 0.0
     assert result.status == "completed"
-
-
-# ---------------------------------------------------------------------------
-# Test 2: registered task → compute_quality IS called; score propagated
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -247,14 +231,11 @@ async def test_registered_task_calls_compute_quality() -> None:
         )
         result = await run_one(cfg)
 
-    # resolve_spec must have been called with cfg.task
     mock_rs.assert_called_once_with(cfg.task)
-    # compute_quality must have been called once with the fake spec
     mock_cq.assert_called_once()
     call_args = mock_cq.call_args
-    assert call_args[0][0] is fake_spec  # first positional arg is spec
-    assert call_args[0][1] == "some answer"  # second positional arg is answer
-    assert call_args[1]["run_seed"] == 42  # cfg.seed
-    # quality_score must be what compute_quality returned
+    assert call_args[0][0] is fake_spec
+    assert call_args[0][1] == "some answer"
+    assert call_args[1]["run_seed"] == 42
     assert result.metrics["quality_score"] == 0.75
     assert result.status == "completed"

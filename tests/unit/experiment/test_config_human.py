@@ -33,7 +33,6 @@ from pydantic import ValidationError
 from atm.core.types import HumanRole
 from atm.experiment.config import HumanCfg, load_config
 
-# Absolute path to project root (two levels up from this file's directory)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 CONF_HUMAN = PROJECT_ROOT / "conf" / "human"
 FIXTURE_MINIMAL = (
@@ -41,21 +40,11 @@ FIXTURE_MINIMAL = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helper: load a stand-alone conf/human/*.yaml as HumanCfg
-# ---------------------------------------------------------------------------
-
-
 def _load_human_cfg(yaml_path: Path) -> HumanCfg:
     """Load a conf/human YAML file directly into a HumanCfg instance."""
     raw = OmegaConf.load(yaml_path)
     data = OmegaConf.to_container(raw, resolve=True)
     return HumanCfg.model_validate(data)
-
-
-# ---------------------------------------------------------------------------
-# 1. Default values
-# ---------------------------------------------------------------------------
 
 
 def test_human_cfg_defaults() -> None:
@@ -69,20 +58,10 @@ def test_human_cfg_defaults() -> None:
     assert h.extra is None
 
 
-# ---------------------------------------------------------------------------
-# 2. Frozen — mutation raises
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_is_frozen() -> None:
     h = HumanCfg()
     with pytest.raises((TypeError, ValidationError)):
         h.enabled = True  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# 3. Invalid gateway value
-# ---------------------------------------------------------------------------
 
 
 def test_human_cfg_invalid_gateway() -> None:
@@ -90,29 +69,14 @@ def test_human_cfg_invalid_gateway() -> None:
         HumanCfg.model_validate({"gateway": "streamlit"})
 
 
-# ---------------------------------------------------------------------------
-# 4. Invalid timeout_policy value
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_invalid_timeout_policy() -> None:
     with pytest.raises(ValidationError, match="timeout_policy"):
         HumanCfg.model_validate({"timeout_policy": "ignore"})
 
 
-# ---------------------------------------------------------------------------
-# 5. Invalid role value
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_invalid_role() -> None:
     with pytest.raises(ValidationError):
         HumanCfg.model_validate({"role": "superhero"})
-
-
-# ---------------------------------------------------------------------------
-# 6. Round-trip: conf/human/llm_simulated.yaml
-# ---------------------------------------------------------------------------
 
 
 def test_human_cfg_llm_simulated_yaml() -> None:
@@ -125,11 +89,6 @@ def test_human_cfg_llm_simulated_yaml() -> None:
     assert h.model == "cerebras:gpt-oss-120b"
 
 
-# ---------------------------------------------------------------------------
-# 7. Round-trip: conf/human/cli.yaml
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_cli_yaml() -> None:
     h = _load_human_cfg(CONF_HUMAN / "cli.yaml")
     assert h.enabled is True
@@ -140,19 +99,9 @@ def test_human_cfg_cli_yaml() -> None:
     assert h.model is None
 
 
-# ---------------------------------------------------------------------------
-# 8. ExperimentConfig without human section — back-compat
-# ---------------------------------------------------------------------------
-
-
 def test_experiment_config_human_none_by_default() -> None:
     cfg = load_config(str(FIXTURE_MINIMAL))
     assert cfg.human is None
-
-
-# ---------------------------------------------------------------------------
-# 9. ExperimentConfig with inline human section
-# ---------------------------------------------------------------------------
 
 
 def test_experiment_config_with_human_inline(tmp_path: Path) -> None:
@@ -189,23 +138,12 @@ human:
     assert cfg.human.model == "openai:gpt-4o"
 
 
-# ---------------------------------------------------------------------------
-# 10. ExperimentConfig.human=None does not affect other fields
-# ---------------------------------------------------------------------------
-
-
 def test_experiment_config_other_fields_unaffected_when_human_none() -> None:
     cfg = load_config(str(FIXTURE_MINIMAL))
-    # Existing fields remain intact
     assert cfg.name == "test_minimal"
     assert cfg.topology.name == "chain"
     assert cfg.agents.set == "canonical_4"
     assert cfg.human is None
-
-
-# ---------------------------------------------------------------------------
-# 11. HumanCfg with cli gateway and llm_fallback policy is valid
-# ---------------------------------------------------------------------------
 
 
 def test_human_cfg_cli_with_llm_fallback_is_valid() -> None:
@@ -217,19 +155,9 @@ def test_human_cfg_cli_with_llm_fallback_is_valid() -> None:
     assert h.timeout_policy == "llm_fallback"
 
 
-# ---------------------------------------------------------------------------
-# 12. HumanCfg model field accepts None explicitly
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_model_none_explicit() -> None:
     h = HumanCfg.model_validate({"model": None})
     assert h.model is None
-
-
-# ---------------------------------------------------------------------------
-# 13. HumanCfg all HumanRole variants are accepted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -247,25 +175,10 @@ def test_human_cfg_all_roles_accepted(role_str: str, expected: HumanRole) -> Non
     assert h.role == expected
 
 
-# ===========================================================================
-# M9.1 extra field tests
-# ===========================================================================
-
-
-# ---------------------------------------------------------------------------
-# 14. extra=None by default
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_extra_none_by_default() -> None:
     """HumanCfg.extra is None when not provided (backwards-compatible default)."""
     h = HumanCfg()
     assert h.extra is None
-
-
-# ---------------------------------------------------------------------------
-# 15. extra={...} validates and passes through unchanged
-# ---------------------------------------------------------------------------
 
 
 def test_human_cfg_extra_dict_passthrough() -> None:
@@ -275,11 +188,6 @@ def test_human_cfg_extra_dict_passthrough() -> None:
     assert h.extra == extra_data
 
 
-# ---------------------------------------------------------------------------
-# 16. extra={"judge": "human"} is valid — no error raised
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_extra_judge_human() -> None:
     """Debate judge mode passthrough via extra."""
     h = HumanCfg(enabled=True, extra={"judge": "human"})
@@ -287,21 +195,11 @@ def test_human_cfg_extra_judge_human() -> None:
     assert h.extra["judge"] == "human"
 
 
-# ---------------------------------------------------------------------------
-# 17. frozen — extra field is also immutable
-# ---------------------------------------------------------------------------
-
-
 def test_human_cfg_extra_field_is_immutable() -> None:
     """Cannot mutate extra after construction (frozen model)."""
     h = HumanCfg(extra={"key": "value"})
     with pytest.raises((TypeError, ValidationError)):
         h.extra = {"other": "value"}  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# 18. ExperimentConfig with human.extra in YAML round-trips correctly
-# ---------------------------------------------------------------------------
 
 
 def test_experiment_config_human_extra_yaml_roundtrip(tmp_path: Path) -> None:

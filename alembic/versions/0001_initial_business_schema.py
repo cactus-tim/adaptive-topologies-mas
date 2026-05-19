@@ -11,7 +11,6 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-# revision identifiers, used by Alembic.
 revision = "0001"
 down_revision = "bc5f66dd0897"
 branch_labels = None
@@ -21,7 +20,6 @@ depends_on = None
 def upgrade() -> None:
     """Create 6 business tables in FK-safe order."""
 
-    # 1. experiments (root — no FK dependencies)
     op.create_table(
         "experiments",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -45,7 +43,6 @@ def upgrade() -> None:
     )
     op.create_index("experiments_started_at_idx", "experiments", ["started_at"])
 
-    # 2. runs (FK → experiments)
     op.create_table(
         "runs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -91,7 +88,6 @@ def upgrade() -> None:
     op.create_index("runs_status_idx", "runs", ["status"])
     op.create_index("runs_started_idx", "runs", ["started_at"])
 
-    # 3. phases (FK → runs)
     op.create_table(
         "phases",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -107,7 +103,6 @@ def upgrade() -> None:
     )
     op.create_index("phases_run_id_idx", "phases", ["run_id"])
 
-    # 4. human_interactions (FK → runs)
     op.create_table(
         "human_interactions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -128,7 +123,6 @@ def upgrade() -> None:
     )
     op.create_index("human_interactions_run_id_idx", "human_interactions", ["run_id"])
 
-    # 5. budget_events (FK → runs)
     op.create_table(
         "budget_events",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -142,7 +136,6 @@ def upgrade() -> None:
     )
     op.create_index("budget_events_run_id_idx", "budget_events", ["run_id"])
 
-    # 6. topology_transitions (FK → runs)
     op.create_table(
         "topology_transitions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),

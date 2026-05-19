@@ -64,11 +64,6 @@ class GridEstimate:
     per_topology: dict[str, float] = field(default_factory=dict)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 async def _load_historical_avgs(
     session: AsyncSession,
     pairs: Iterable[tuple[str, str]],
@@ -88,8 +83,6 @@ async def _load_historical_avgs(
     topologies = sorted({t for t, _ in unique_pairs})
     tasks = sorted({k for _, k in unique_pairs})
 
-    # Single query for the cartesian superset; we filter to the requested
-    # pairs in Python so the SQL stays simple and uses bound parameters only.
     from sqlalchemy import func
 
     stmt = (
@@ -136,15 +129,8 @@ def _heuristic_cell(
             completion_tokens=est_output,
         )
     except Exception:
-        # Unknown model in pricing table — fall back to zero rather than
-        # crashing the whole estimate (mirrors `_load_pricing` fallback).
         cost = 0.0
     return est_input, est_output, cost
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 async def estimate_grid(
@@ -179,18 +165,12 @@ async def estimate_grid(
             per_topology={},
         )
 
-    # ------------------------------------------------------------------
-    # Phase 1: load historical averages (one round-trip).
-    # ------------------------------------------------------------------
     historical: dict[tuple[str, str], tuple[float, float]] = {}
     if cfg.use_historical and session_factory is not None:
         pairs = [(c.topology.name, c.task.name) for c in configs]
         async with session_factory() as session:
             historical = await _load_historical_avgs(session, pairs)
 
-    # ------------------------------------------------------------------
-    # Phase 2: walk cells, classify, compute.
-    # ------------------------------------------------------------------
     cells: list[CellEstimate] = []
     per_topology: dict[str, float] = defaultdict(float)
     total_in = 0
@@ -201,8 +181,6 @@ async def estimate_grid(
         key = (c.topology.name, c.task.name)
         if key in historical:
             avg_cost, avg_iters = historical[key]
-            # Synthetic token counts for the display table (rough — historical
-            # cost is what we actually report).
             iters_for_tokens = avg_iters if avg_iters > 0 else float(c.topology.max_iterations)
             est_input = int(cfg.calls_per_iter * cfg.heuristic_tokens_per_call * iters_for_tokens)
             est_output = est_input // 3

@@ -30,11 +30,6 @@ FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
 
 
-# ---------------------------------------------------------------------------
-# Helpers: fake tools
-# ---------------------------------------------------------------------------
-
-
 class FakeCodeRunSuccess:
     """Stub code_run tool that always returns ok=True."""
 
@@ -91,11 +86,6 @@ class FakeCodeRunFail:
         )
 
 
-# ---------------------------------------------------------------------------
-# Helpers: LLM + config
-# ---------------------------------------------------------------------------
-
-
 def _make_pricing() -> Pricing:
     if PRICING_PATH.exists():
         return Pricing.from_yaml(PRICING_PATH)
@@ -147,17 +137,11 @@ def _make_state(
     }
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 class TestExecutorSignalEmission:
     """Executor.step() must emit correct signals based on code_run results."""
 
     async def test_executor_success_sets_ready_for_verification(self) -> None:
         """Successful code_run → signals['ready_for_verification'] == True."""
-        # m5_executor_exit fixture: calls code_run once; success
         llm = _make_llm("m5_executor_exit.yaml")
         registry = ToolRegistry()
         registry.register(FakeCodeRunSuccess())
@@ -178,18 +162,9 @@ class TestExecutorSignalEmission:
         We simulate 3 steps, each with a failure, by building a streak in
         the scratchpad between calls.
         """
-        # m6_chain_executor: calls code_run (step 0) then emits final answer (step 1)
-        # We run 3 steps with failures to trigger stuck
         registry = ToolRegistry()
         registry.register(FakeCodeRunFail())
 
-        # For three steps, we need 3 x (tool_call + stop) iterations.
-        # We use the multi-step fixture that has a code_run on step 0.
-        # But the scripted fixture has only limited entries.  Instead, use
-        # m5_executor_exit which also calls code_run once, then gives a stop.
-        # We run step() three times, threading state through.
-
-        # Build a fresh LLM each time (scripted fixtures are stateful/sequential)
         state = _make_state()
 
         for _step_num in range(3):
@@ -197,12 +172,10 @@ class TestExecutorSignalEmission:
             executor = Executor(agent_id="e1", cfg=_make_cfg(), llm=llm, tools=registry)
             delta = await executor.step(state)
 
-            # Thread the shared state forward (merge signals)
             new_shared: dict[str, Any] = dict(state["shared"])
             if "shared" in delta:
                 new_shared.update(delta["shared"])
 
-            # Thread the scratchpad forward so _read_fail_streak works
             existing_scratchpad: list[dict[str, Any]] = list(
                 state.get("agents", {}).get("e1", {}).get("scratchpad") or []
             )

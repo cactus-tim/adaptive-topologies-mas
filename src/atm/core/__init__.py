@@ -1,21 +1,4 @@
-"""Public API for atm.core — M1/M2/M8 scope.
-
-This module re-exports all public types, enums, reducers, and errors
-defined in the atm.core submodules. Downstream modules (M2+) should
-import exclusively from here rather than from submodules directly.
-
-M1/M2 scope includes:
-  - Enums: AgentRole, HumanRole, Phase, MessageKind
-  - Pydantic models: Message, ToolCall, ToolResult, TokenUsage, LLMResponse,
-      HumanContext, HumanResponse, TaskSpec, TaskResult, RunResult,
-      PhaseTransition, TopologyTransition, BudgetEvent
-  - TypedDicts: AgentState, SharedState, GraphState
-  - Reducers: merge_agent_states, dedup_by_id_reducer
-  - Errors: AtmError, BudgetExceededError, PhaseError, ToolError, LLMError
-
-M8 additions:
-  - Pydantic models: TopologyDecision, PhaseDecision
-"""
+"""Public API for atm.core — re-exports all public types, enums, reducers, and errors."""
 
 from __future__ import annotations
 

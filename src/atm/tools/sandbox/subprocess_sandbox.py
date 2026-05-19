@@ -113,11 +113,6 @@ class SubprocessSandbox:
             work = Path(tmpdir)
             main_filename = _LANG_FILENAME[lang]
 
-            # Stage workspace contents into the per-call tmpdir so user code
-            # can read staged data files (e.g. dabench's insurance.csv). The
-            # main entry-point name is reserved — never let workspace clobber
-            # it. Failures are swallowed: a staging hiccup must not break the
-            # sandbox, the user code can still run.
             if self._workspace is not None and self._workspace.exists():
                 for item in self._workspace.iterdir():
                     if item.name == main_filename or item.name.startswith("."):
@@ -131,16 +126,12 @@ class SubprocessSandbox:
                     except OSError:
                         continue
 
-            # Write the main entry-point file (after staging so we never
-            # overwrite user-supplied code with an unrelated workspace file).
             (work / main_filename).write_text(code, encoding="utf-8")
 
-            # Write any extra files
             if files:
                 for filename, content in files.items():
                     (work / filename).write_text(content, encoding="utf-8")
 
-            # Resolve the interpreter command
             if lang == "python":
                 cmd = [sys.executable, main_filename]
             else:  # node
@@ -149,7 +140,6 @@ class SubprocessSandbox:
                     raise RuntimeError("node is not installed or not on PATH")
                 cmd = [node_bin, main_filename]
 
-            # Minimal env: pass only PATH so the subprocess can find shared libs
             env = {"PATH": os.environ.get("PATH", "")}
 
             proc = await asyncio.create_subprocess_exec(
@@ -173,13 +163,11 @@ class SubprocessSandbox:
                 exit_code = proc.returncode if proc.returncode is not None else -1
             except asyncio.TimeoutError:
                 timed_out = True
-                # Kill the process and its entire process group
                 try:
                     proc.kill()
                 except ProcessLookupError:
                     pass
                 try:
-                    # Drain remaining output to avoid pipe buffer deadlocks
                     stdout_bytes, stderr_bytes = await asyncio.wait_for(
                         proc.communicate(),
                         timeout=5.0,
@@ -201,7 +189,6 @@ class SubprocessSandbox:
             )
 
         finally:
-            # Always remove the temp directory, even on error
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 

@@ -29,11 +29,6 @@ def build_openai(model_id: str, opts: dict[str, Any]) -> BaseChatModel:
     """
     _, bare_model = model_id.split(":", 1)
     kwargs = dict(opts)
-    # Resolution order for api_key:
-    #   1. explicit `api_key` in opts (caller wins)
-    #   2. OPENAI_API_KEY env var (production)
-    #   3. dummy "EMPTY" so construction does not raise in unit tests where
-    #      no env var is set
     if "api_key" not in kwargs:
         kwargs["api_key"] = os.environ.get("OPENAI_API_KEY") or "EMPTY"
     return ChatOpenAI(model=bare_model, **kwargs)

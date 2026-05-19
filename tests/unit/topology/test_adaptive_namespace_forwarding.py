@@ -28,10 +28,6 @@ import atm.topology.adaptive
 from atm.topology.adaptive import AdaptiveTopology
 from atm.topology.base import TopologyConfig, get_topology_extras
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_agents() -> dict[str, Any]:
     mock_agent = MagicMock()
@@ -77,19 +73,12 @@ def _build_and_capture_sub_cfg(
 
     captured: list[TopologyConfig] = []
 
-    # We need to intercept TopologyRegistry.get so we can capture the sub_cfg
-    # when the registry-resolved class's build() is called.
-
     def fake_registry_get(cls: Any, name: str) -> Any:
-        # NB: not delegating to the real registry here — we only want to capture
-        # the sub_cfg that adaptive passes to a sub-topology, not actually
-        # build a real subgraph (which would need real agents/wiring).
         class CapturingWrapper:
             """Wraps the real topology class to intercept build() calls."""
 
             def build(self, agents_arg: Any, sub_cfg: TopologyConfig, **kw: Any) -> Any:
                 captured.append(sub_cfg)
-                # Return a minimal mock compiled graph so adaptive doesn't crash.
                 mock_graph = MagicMock()
                 mock_graph.ainvoke = MagicMock(return_value={})
                 return mock_graph
@@ -109,21 +98,7 @@ def _build_and_capture_sub_cfg(
     ):
         AdaptiveTopology().build(agents, cfg)
 
-    # _get_subgraph is lazy — trigger it by reaching into the compiled graph's
-    # internals is too complex; instead we call build() again on an instance
-    # whose _get_subgraph is exposed.  The simpler approach: build the topology
-    # and directly call the inner _get_subgraph via the closure.  But since
-    # _get_subgraph is a closure-local function not accessible externally, we
-    # use a different approach: monkey-patch TopologyRegistry.get BEFORE build()
-    # and then trigger the subgraph call by patching dispatch_topology_node's
-    # internal call path.
-    # The capture list may be empty if _get_subgraph was never triggered.
-    # That is fine — the real test is: when _get_subgraph IS called, what cfg
-    # does it pass?  We force that by calling _build_force_subgraph below.
-
     if not captured:
-        # Fallback: directly construct the sub_cfg as _get_subgraph would.
-        # This exercises the same logic without LangGraph involvement.
         sub_cfg = _build_sub_cfg_directly(topology_name, adaptive_extra)
         return sub_cfg
 
@@ -146,11 +121,6 @@ def _build_sub_cfg_directly(
         max_iterations=subgraph_max_iter,
         extra=dict(adaptive_extra),
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestSubgraphNamespaceForwarding:
@@ -199,7 +169,6 @@ class TestSubgraphNamespaceForwarding:
         adaptive_extra = _namespaced_extra(
             mesh={"max_rounds": 12},
         )
-        # Simulate what the runner produces: adaptive bucket also present
         adaptive_extra["adaptive"] = {
             "switch_guards": False,
             "planning_max_iter": 3,
@@ -210,7 +179,6 @@ class TestSubgraphNamespaceForwarding:
         sub_cfg = _build_sub_cfg_directly("mesh", adaptive_extra)
         mesh_bucket = get_topology_extras(sub_cfg, "mesh")
 
-        # Adaptive-specific keys must NOT appear in the mesh bucket
         adaptive_specific_keys = {
             "phase_router",
             "topology_router",
@@ -234,7 +202,6 @@ class TestSubgraphNamespaceForwarding:
         adaptive_extra = _namespaced_extra(
             star={"planning_max_iter": 5, "exec_max_iter": 15, "verify_max_iter": 6},
         )
-        # "supervisor" → "star" is the registry_name after alias resolution
         sub_cfg = _build_sub_cfg_directly("star", adaptive_extra)
 
         star_bucket = get_topology_extras(sub_cfg, "star")
@@ -259,7 +226,6 @@ class TestSubgraphNamespaceForwarding:
         sub_cfg = _build_sub_cfg_directly("mesh", adaptive_extra)
 
         top_level_keys = set(sub_cfg.extra.keys())
-        # Every top-level key must be a recognised topology name
         unknown_keys = top_level_keys - _TOPOLOGY_NAMES
         assert not unknown_keys, f"sub_cfg.extra has unexpected top-level keys: {unknown_keys}"
 
@@ -271,12 +237,8 @@ class TestSubgraphNamespaceForwarding:
         ``max_iterations==5``.
         """
         adaptive_extra = _namespaced_extra(mesh={"max_rounds": 12})
-        # subgraph_max_iterations is in the adaptive namespace
         adaptive_extra["adaptive"] = {"switch_guards": False, "subgraph_max_iterations": 5}
 
-        # Simulate what the adaptive builder would compute:
-        # extras = get_topology_extras(cfg, "adaptive") → {"switch_guards": False, ...}
-        # subgraph_max_iter = int(extras.get("subgraph_max_iterations", 10))  → 5
         adaptive_bucket = get_topology_extras(
             TopologyConfig(name="adaptive", extra=adaptive_extra),
             "adaptive",

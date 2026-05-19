@@ -16,20 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from atm.storage.session import create_engine, create_session_factory, session_scope
 
-# ---------------------------------------------------------------------------
-# Test 1: create_engine returns AsyncEngine without connecting
-# ---------------------------------------------------------------------------
-
 
 def test_create_engine_returns_async_engine() -> None:
     """create_engine builds an AsyncEngine without opening any real connection."""
     engine = create_engine("postgresql+asyncpg://fake/db", pool_pre_ping=False)
     assert isinstance(engine, AsyncEngine)
-
-
-# ---------------------------------------------------------------------------
-# Test 2: create_session_factory sets expire_on_commit=False
-# ---------------------------------------------------------------------------
 
 
 def test_create_session_factory_expire_on_commit_false() -> None:
@@ -38,11 +29,6 @@ def test_create_session_factory_expire_on_commit_false() -> None:
     factory = create_session_factory(engine)
     assert isinstance(factory, async_sessionmaker)
     assert factory.kw["expire_on_commit"] is False
-
-
-# ---------------------------------------------------------------------------
-# Test 3: session_scope is an async context manager
-# ---------------------------------------------------------------------------
 
 
 def test_session_scope_is_async_context_manager() -> None:
@@ -54,17 +40,11 @@ def test_session_scope_is_async_context_manager() -> None:
     assert hasattr(cm, "__aexit__")
 
 
-# ---------------------------------------------------------------------------
-# Test 4: session_scope calls rollback on exception
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_session_scope_rollback_on_exception() -> None:
     """On exception inside session_scope, session.rollback() is awaited."""
     mock_session = AsyncMock(spec=AsyncSession)
 
-    # Build a mock factory whose async-context-manager yields mock_session
     mock_factory = MagicMock(spec=async_sessionmaker)
     mock_cm = AsyncMock()
     mock_cm.__aenter__.return_value = mock_session

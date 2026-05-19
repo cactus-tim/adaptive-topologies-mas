@@ -23,15 +23,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from langgraph.graph.state import CompiledStateGraph
 
-# Side-effect import: triggers @TopologyRegistry.register("hierarchical")
 import atm.topology.hierarchical  # noqa: F401
 from atm.core.types import Message, MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry
 from atm.topology.hierarchical import HierarchicalTopology
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_cfg(
@@ -101,11 +96,6 @@ def _make_agents() -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Test 1: test_build_creates_two_subgraphs_via_compile_call
-# ---------------------------------------------------------------------------
-
-
 class TestBuildCreatesSubgraphs:
     """build() compiles two subgraphs and returns a CompiledStateGraph."""
 
@@ -121,15 +111,9 @@ class TestBuildCreatesSubgraphs:
             f"Expected CompiledStateGraph, got {type(compiled)}"
         )
 
-        # Check that the graph has the team nodes
         node_names = set(compiled.get_graph().nodes.keys())
         assert "team_a" in node_names, f"Expected 'team_a' node, got nodes: {node_names}"
         assert "team_b" in node_names, f"Expected 'team_b' node, got nodes: {node_names}"
-
-
-# ---------------------------------------------------------------------------
-# Test 2: test_top_coord_route_to_subgraphs_on_first_iter
-# ---------------------------------------------------------------------------
 
 
 class TestTopCoordRouting:
@@ -141,22 +125,14 @@ class TestTopCoordRouting:
         cfg = _make_cfg()
         agents = _make_agents()
 
-        # Build the graph
         compiled = topology.build(agents, cfg)
 
         initial_state = _make_state(iter_total=0)
 
-        # Run the graph with a simple task
         final_state = await compiled.ainvoke(initial_state)
 
-        # Check iter_total was incremented (graph ran)
         shared = final_state.get("shared", {})
         assert shared.get("iter_total", 0) > 0, "iter_total should be incremented"
-
-
-# ---------------------------------------------------------------------------
-# Test 3: test_top_coord_finalize_signal_sets_signals_and_routes_end
-# ---------------------------------------------------------------------------
 
 
 class TestTopCoordFinalizeSignal:
@@ -170,25 +146,17 @@ class TestTopCoordFinalizeSignal:
 
         compiled = topology.build(agents, cfg)
 
-        # Run with normal state — workers should produce drafts, coordinator should finalize
         initial_state = _make_state(iter_total=0)
         final_state = await compiled.ainvoke(initial_state)
 
         shared = final_state.get("shared", {})
         signals = shared.get("signals", {})
 
-        # top_coord_finalize should have been set by finalize node
         assert signals.get("top_coord_finalize") is True, (
             f"Expected top_coord_finalize=True in signals, got: {signals}"
         )
 
-        # final_answer should be set
         assert shared.get("final_answer") is not None, "final_answer should be set"
-
-
-# ---------------------------------------------------------------------------
-# Test 4: test_top_coord_max_rounds_reached_routes_end_with_topology_max
-# ---------------------------------------------------------------------------
 
 
 class TestTopCoordMaxRounds:
@@ -197,7 +165,6 @@ class TestTopCoordMaxRounds:
     async def test_top_coord_max_rounds_reached_routes_end_with_topology_max(self) -> None:
         """Graph should terminate when max_rounds is reached."""
         topology = HierarchicalTopology()
-        # Set max_rounds = 1 so it exits quickly
         cfg = _make_cfg(max_rounds=1, max_iterations=20)
         agents = _make_agents()
 
@@ -207,13 +174,7 @@ class TestTopCoordMaxRounds:
         final_state = await compiled.ainvoke(initial_state)
 
         shared = final_state.get("shared", {})
-        # iter_total should be bounded by max_rounds or max_iterations
         assert shared.get("iter_total", 0) > 0, "iter_total should be > 0"
-
-
-# ---------------------------------------------------------------------------
-# Test 5: test_global_max_iterations_overrides_topology_max
-# ---------------------------------------------------------------------------
 
 
 class TestGlobalMaxIterations:
@@ -221,11 +182,9 @@ class TestGlobalMaxIterations:
 
     async def test_global_max_iterations_overrides_topology_max(self) -> None:
         """Graph must stop at max_iterations regardless of max_rounds."""
-        # max_iterations = 2 should limit even with max_rounds = 10
         topology = HierarchicalTopology()
         cfg = _make_cfg(max_iterations=2, max_rounds=10)
 
-        # Use agents that don't produce drafts so finalize doesn't trigger
         no_draft_agents: dict[str, Any] = {}
         for agent_id in ["executor_a1", "executor_a2", "executor_b1", "executor_b2"]:
             agent = MagicMock()
@@ -245,17 +204,10 @@ class TestGlobalMaxIterations:
         shared = final_state.get("shared", {})
         iter_total = shared.get("iter_total", 0)
 
-        # iter_total should not exceed max_iterations significantly
         assert iter_total >= 1, "Should have run at least once"
-        # With max_iterations=2, the graph should have terminated
         assert iter_total <= cfg.max_iterations + 5, (
             f"iter_total {iter_total} exceeded max_iterations {cfg.max_iterations}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 6: test_subgraph_runs_workers_in_order
-# ---------------------------------------------------------------------------
 
 
 class TestSubgraphWorkerOrder:
@@ -297,21 +249,14 @@ class TestSubgraphWorkerOrder:
         initial_state = _make_state(iter_total=0)
         await compiled.ainvoke(initial_state)
 
-        # Both a1 and a2 should have been called
         assert "executor_a1" in call_order, f"executor_a1 not called; order={call_order}"
         assert "executor_a2" in call_order, f"executor_a2 not called; order={call_order}"
 
-        # a1 should come before a2 (sequential in subgraph)
         idx_a1 = next(i for i, x in enumerate(call_order) if x == "executor_a1")
         idx_a2 = next(i for i, x in enumerate(call_order) if x == "executor_a2")
         assert idx_a1 < idx_a2, (
             f"executor_a1 (idx={idx_a1}) should run before executor_a2 (idx={idx_a2})"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 7: test_register_under_name_hierarchical
-# ---------------------------------------------------------------------------
 
 
 class TestRegistration:
@@ -329,11 +274,6 @@ class TestRegistration:
     def test_hierarchical_name_attribute(self) -> None:
         """HierarchicalTopology.name should be 'hierarchical'."""
         assert HierarchicalTopology.name == "hierarchical"
-
-
-# ---------------------------------------------------------------------------
-# Test 8: test_strict_two_levels_invariant
-# ---------------------------------------------------------------------------
 
 
 class TestStrictTwoLevels:
@@ -360,11 +300,6 @@ class TestStrictTwoLevels:
             topology.build(agents, cfg)
 
 
-# ---------------------------------------------------------------------------
-# Test 9: test_no_compiled_subgraph_in_workers (MC-1)
-# ---------------------------------------------------------------------------
-
-
 class TestNoCompiledSubgraphInWorkers:
     """Workers are plain Agent nodes, not compiled subgraphs (MC-1)."""
 
@@ -374,20 +309,13 @@ class TestNoCompiledSubgraphInWorkers:
         cfg = _make_cfg()
         agents = _make_agents()
 
-        # Verify that worker agents are NOT CompiledStateGraph instances
         for agent_id, agent in agents.items():
             assert not isinstance(agent, CompiledStateGraph), (
                 f"Worker {agent_id!r} should not be a CompiledStateGraph"
             )
 
-        # build() should succeed with plain agents
         compiled = topology.build(agents, cfg)
         assert isinstance(compiled, CompiledStateGraph)
-
-
-# ---------------------------------------------------------------------------
-# Test 10: test_final_answer_json_concat_format (MC-6)
-# ---------------------------------------------------------------------------
 
 
 class TestFinalAnswerJsonConcat:
@@ -408,7 +336,6 @@ class TestFinalAnswerJsonConcat:
 
         assert final_answer is not None, "final_answer should not be None"
 
-        # Validate JSON format
         parsed = json.loads(final_answer)
         assert isinstance(parsed, dict), f"final_answer should parse to dict, got {type(parsed)}"
         assert "team_a" in parsed, (
@@ -417,17 +344,6 @@ class TestFinalAnswerJsonConcat:
         assert "team_b" in parsed, (
             f"Expected 'team_b' key in final_answer, got keys: {list(parsed.keys())}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Regression: hierarchical_finalize_node task-aware artifact preference (port
-# of chain d585bbb). When a sub-team worker calls file_write to solution.py
-# on a NON-CODE task, the finalize node must skip the artifact path and use
-# json_concat with team drafts, because executor.yaml unconditionally
-# instructs the model to dump "programming tasks" to solution.py — for
-# gsm8k/commongen/dabench that file holds Python intermediates, not the
-# human-readable answer.
-# ---------------------------------------------------------------------------
 
 
 def _make_mock_worker_with_file_write(
@@ -503,8 +419,6 @@ class TestFinalizeTaskAware:
         final_state = await compiled.ainvoke(self._state_with_task_id("humaneval"))
         final_answer = final_state["shared"]["final_answer"]
         assert final_answer is not None
-        # One of the worker file_writes wins — value depends on traversal order,
-        # but it must be a PYCODE_* artifact, never the json envelope.
         assert final_answer.startswith("PYCODE_"), (
             f"code-task final_answer should be a solution.py artifact, got: {final_answer!r}"
         )
@@ -522,7 +436,6 @@ class TestFinalizeTaskAware:
             final_answer = final_state["shared"]["final_answer"]
             assert final_answer is not None, f"final_answer missing for task_id={non_code}"
 
-            # Must be a JSON envelope, NOT the solution.py content.
             assert not final_answer.startswith("PYCODE_"), (
                 f"non-code task_id={non_code!r} leaked solution.py artifact: {final_answer!r}"
             )
@@ -531,11 +444,6 @@ class TestFinalizeTaskAware:
                 f"non-code task_id={non_code!r} should produce json_concat envelope, "
                 f"got keys: {list(parsed.keys())}"
             )
-
-
-# ---------------------------------------------------------------------------
-# Test 11: test_top_coord_and_sub_coord_are_not_in_agents_dict (MC-4)
-# ---------------------------------------------------------------------------
 
 
 class TestCoordinatorsNotInAgentsDict:
@@ -547,14 +455,12 @@ class TestCoordinatorsNotInAgentsDict:
         cfg = _make_cfg()
         agents = _make_agents()
 
-        # Verify coordinators are not in agents
         for key in agents:
             assert "coord" not in key.lower(), (
                 f"Coordinator key {key!r} found in agents dict; "
                 "coordinators must be rule-based closures, not in agents"
             )
 
-        # build() should not mutate the agents dict with coordinator entries
         original_keys = set(agents.keys())
         topology.build(agents, cfg)
         post_build_keys = set(agents.keys())
@@ -572,11 +478,6 @@ class TestCoordinatorsNotInAgentsDict:
         )
 
 
-# ---------------------------------------------------------------------------
-# Test 12: test_should_stop_returns_topology_success_on_finalize_signal
-# ---------------------------------------------------------------------------
-
-
 class TestShouldStopFinalizeSignal:
     """_route_from_top_coord and _route_from_after_team_b use topology_success path for finalize."""
 
@@ -588,10 +489,9 @@ class TestShouldStopFinalizeSignal:
         """
         from atm.topology.base import _should_stop
 
-        # Simulate state after top_coord_after_team_b sets finalize signal
         finalize_signal = "top_coord_finalize"
         state = _make_state(
-            iter_total=5,  # well below max_iterations=20
+            iter_total=5,
             signals={
                 finalize_signal: True,
                 "team_a_draft": "team_a result",
@@ -601,7 +501,6 @@ class TestShouldStopFinalizeSignal:
 
         cfg = _make_cfg(max_iterations=20, max_rounds=4, finalize_signal=finalize_signal)
 
-        # _should_stop with topology_success=True (simulating what _route_from_after_team_b does)
         stop, reason = _should_stop(
             state,
             cfg,
@@ -627,15 +526,9 @@ class TestShouldStopFinalizeSignal:
         shared = final_state.get("shared", {})
         signals = shared.get("signals", {})
 
-        # The finalize_signal should still be True (set by top_coord_after_team_b)
         assert signals.get("top_coord_finalize") is True, (
             f"Expected top_coord_finalize=True, got signals={signals}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests: checkpointer passthrough
-# ---------------------------------------------------------------------------
 
 
 def _make_mock_graph() -> MagicMock:
@@ -659,7 +552,6 @@ class TestHierarchicalBuildCheckpointer:
         agents = _make_agents()
         mock_cp = MagicMock()
 
-        # StateGraph is called 3 times: team_a subgraph, team_b subgraph, top-level.
         mock_team_a = _make_mock_graph()
         mock_team_b = _make_mock_graph()
         mock_top = _make_mock_graph()
@@ -670,7 +562,6 @@ class TestHierarchicalBuildCheckpointer:
         ):
             compiled = topology.build(agents, cfg, checkpointer=mock_cp)
 
-        # The top-level graph must be compiled with the checkpointer
         mock_top.compile.assert_called_once_with(checkpointer=mock_cp)
         assert compiled is mock_top.compile.return_value
 
@@ -695,8 +586,6 @@ class TestHierarchicalBuildCheckpointer:
         ):
             topology.build(agents, cfg, checkpointer=mock_cp)
 
-        # Subgraphs compiled with no args (positional or keyword)
         mock_team_a.compile.assert_called_once_with()
         mock_team_b.compile.assert_called_once_with()
-        # Top-level graph compiled with the checkpointer
         mock_top.compile.assert_called_once_with(checkpointer=mock_cp)

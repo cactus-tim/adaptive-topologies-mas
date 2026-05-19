@@ -26,10 +26,6 @@ from atm.storage.export import (
     export_experiment,
 )
 
-# ---------------------------------------------------------------------------
-# _to_jsonable
-# ---------------------------------------------------------------------------
-
 
 class TestToJsonable:
     def test_decimal_to_float(self) -> None:
@@ -61,11 +57,6 @@ class TestToJsonable:
         assert _to_jsonable(None) is None
 
 
-# ---------------------------------------------------------------------------
-# _experiment_to_dict / _run_to_row
-# ---------------------------------------------------------------------------
-
-
 class TestExperimentToDict:
     def test_full_row(self) -> None:
         exp = SimpleNamespace(
@@ -83,7 +74,6 @@ class TestExperimentToDict:
         assert out["name"] == "e3_pilot"
         assert out["total_cost_usd"] == 12.34
         assert out["status"] == "completed"
-        # JSON-roundtrippable
         json.dumps(out)
 
     def test_handles_none_finished_at(self) -> None:
@@ -169,11 +159,6 @@ class TestRunToRow:
         assert row["budget_spent_usd"] == 0.0
         assert row["human_role"] is None
         assert row["error"] == "boom"
-
-
-# ---------------------------------------------------------------------------
-# export_experiment — end-to-end with mocked session_factory
-# ---------------------------------------------------------------------------
 
 
 class _ScalarResult:

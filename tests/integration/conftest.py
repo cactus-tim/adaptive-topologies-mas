@@ -26,11 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from atm.storage.models import Base
 from atm.storage.session import create_engine, create_session_factory
 
-# ---------------------------------------------------------------------------
-# Module-level flag: only run when ATM_ENABLE_PG_TESTS is truthy
-# (canonical env-var across the whole suite; root conftest uses the same)
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 

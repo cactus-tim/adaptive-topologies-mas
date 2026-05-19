@@ -19,16 +19,7 @@ import pytest
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _SANDBOX = SubprocessSandbox()
-
-
-# ---------------------------------------------------------------------------
-# IS_ISOLATED
-# ---------------------------------------------------------------------------
 
 
 def test_is_isolated_false() -> None:
@@ -36,17 +27,12 @@ def test_is_isolated_false() -> None:
     assert SubprocessSandbox.IS_ISOLATED is False
 
 
-# ---------------------------------------------------------------------------
-# Python — basic stdout / stderr / exit_code
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_python_print_returns_stdout() -> None:
     """print('hello') should produce stdout='hello\\n', exit_code=0, timed_out=False."""
     result = await _SANDBOX.execute(lang="python", code='print("hello")')
     assert result.stdout == "hello\n"
-    assert result.stderr == "" or result.stderr is not None  # stderr may be empty
+    assert result.stderr == "" or result.stderr is not None
     assert result.exit_code == 0
     assert result.timed_out is False
     assert result.oom_killed is False
@@ -70,11 +56,6 @@ async def test_python_nonzero_exit() -> None:
     assert result.timed_out is False
 
 
-# ---------------------------------------------------------------------------
-# Timeout
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_python_timeout() -> None:
     """An infinite loop with timeout=1s should result in timed_out=True.
@@ -87,16 +68,9 @@ async def test_python_timeout() -> None:
         timeout=1.0,
     )
     assert result.timed_out is True
-    # exit_code is -1 or None on timeout — accept any non-zero / falsy value
     assert result.exit_code != 0 or result.exit_code is None
-    # Duration should be close to 1 second (allow up to 5s for slow CI)
     assert result.duration_ms >= 900, f"duration_ms={result.duration_ms} is too low"
     assert result.duration_ms < 5_000, f"duration_ms={result.duration_ms} is too high"
-
-
-# ---------------------------------------------------------------------------
-# Multi-file support
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -113,11 +87,6 @@ async def test_multi_file() -> None:
     assert result.timed_out is False
 
 
-# ---------------------------------------------------------------------------
-# Node.js support (skipped when node is not available)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_node_print() -> None:
     """console.log('hi') should produce stdout='hi\\n' (skipped if node absent)."""
@@ -129,30 +98,14 @@ async def test_node_print() -> None:
     assert result.timed_out is False
 
 
-# ---------------------------------------------------------------------------
-# Cleanup — temp dir is removed even on error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_tempdir_cleaned_up_on_success() -> None:
     """After a successful run the temp directory should no longer exist."""
     import os
     import tempfile
 
-    # We can't directly inspect the temp dir, but we can verify that normal
-    # execution completes without lingering /tmp/... directories growing.
-    # A basic smoke-test: the result is returned without raising.
     result = await _SANDBOX.execute(lang="python", code="print('clean')")
     assert result.stdout == "clean\n"
-    # No assertion about temp dirs themselves — OS cleanup may be deferred,
-    # but TemporaryDirectory.__exit__ guarantees removal on context exit.
-
-
-# ---------------------------------------------------------------------------
-# Workspace pass-through — fixes dabench=0 (staged CSVs were invisible to
-# code_run because SubprocessSandbox executed in an empty tmpdir cwd).
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -201,9 +154,6 @@ async def test_workspace_writes_do_not_leak_back(tmp_path) -> None:
         code="open('data.txt', 'w').write('modified'); open('new.txt', 'w').write('x')",
     )
     assert result.exit_code == 0
-    # Workspace must be unchanged after execute() returns — the sandbox copied
-    # the file into its tmpdir, the user code rewrote the COPY, and the tmpdir
-    # was destroyed.
     assert (workspace / "data.txt").read_text() == "original"
     assert not (workspace / "new.txt").exists()
 

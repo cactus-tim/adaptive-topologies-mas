@@ -21,7 +21,6 @@ async def test_live_search_returns_results() -> None:
     assert result.ok is True, f"Expected ok=True but got error: {result.error}"
     results = result.output["results"]
     assert len(results) > 0, "Expected at least one result from live DDGS search"
-    # Verify the shape of each result
     for item in results:
         assert "title" in item
         assert "url" in item

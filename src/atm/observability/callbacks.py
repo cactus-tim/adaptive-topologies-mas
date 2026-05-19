@@ -3,7 +3,7 @@
 Writes all LLM calls, tool calls, messages, phase/topology transitions to Parquet streams
 and updates PostgreSQL budget counters atomically.
 
-4 flush invariants (arch.md §10.3, §17/#2):
+4 flush invariants:
 (a) on_chain_end of root chain → parquet_writer.close() (flush + close all streams)
 (b) phase_transition / topology_transition custom events → parquet_writer.flush()
     STRICTLY BEFORE PG INSERT of the transition row
@@ -84,15 +84,10 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         self._log = (logger or structlog.get_logger("atm.observability")).bind(
             run_id=str(run_id), exp_id=str(exp_id)
         )
-        self._root_run_id: UUID | None = None  # set on first root on_chain_start
+        self._root_run_id: UUID | None = None
         self._warn_emitted: bool = False
         self._exceed_emitted: bool = False
-        # Maps tool run_id → start info dict for latency calculation and metadata
         self._tool_starts: dict[UUID, dict[str, Any]] = {}
-
-    # ------------------------------------------------------------------
-    # Chain hooks
-    # ------------------------------------------------------------------
 
     async def on_chain_start(
         self,
@@ -107,11 +102,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
     ) -> None:
         """Detect the root run on first call."""
         if self._root_run_id is None and parent_run_id is None:
-            # Prefer explicit metadata flag; fall back to first-seen
             if metadata is not None and metadata.get("is_root_run") is True:
                 self._root_run_id = run_id
             else:
-                # Fallback: set root on first top-level chain start
                 self._root_run_id = run_id
 
     async def on_chain_end(
@@ -146,10 +139,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         except Exception:
             self._log.critical("on_chain_error: parquet close failed", exc_info=True)
 
-    # ------------------------------------------------------------------
-    # LLM hook
-    # ------------------------------------------------------------------
-
     async def on_llm_end(
         self,
         response: LLMResult,
@@ -158,7 +147,7 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> None:
-        """Write LLM call row to Parquet and atomically update budget in PG (arch.md §4.2, §18/#4)."""
+        """Write LLM call row to Parquet and atomically update budget in PG."""
         try:
             llm_output: dict[str, Any] = response.llm_output or {}
             cost_usd: float = float(llm_output.get("cost_usd", 0.0))
@@ -189,9 +178,7 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             await self._parquet_writer.write_llm_call(row)
         except Exception:
             self._log.critical("on_llm_end: parquet write failed", exc_info=True)
-            # Still attempt budget update
 
-        # Atomic budget update (arch.md §4.2, §18/#4)
         try:
             cost_delta_decimal = Decimal(
                 str(float((response.llm_output or {}).get("cost_usd", 0.0)))
@@ -204,10 +191,9 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         """Atomically update budget_spent_usd on Run and total_cost_usd on Experiment.
 
         Fires BudgetEvent warn/exceed if thresholds are crossed (once each).
-        All writes are in a single session_scope transaction (arch.md §11.3).
+        All writes are in a single session_scope transaction.
         """
         async with session_scope(self._session_factory) as session:
-            # Update Run.budget_spent_usd
             result = await session.execute(
                 update(Run)
                 .where(Run.id == self._run_id)
@@ -216,7 +202,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             )
             new_run_total: Decimal = result.scalar_one()
 
-            # Update Experiment.total_cost_usd
             result2 = await session.execute(
                 update(Experiment)
                 .where(Experiment.id == self._exp_id)
@@ -227,7 +212,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
 
             now = _now_utc()
 
-            # Budget warn threshold
             if (
                 self._budget_warn_threshold is not None
                 and not self._warn_emitted
@@ -245,7 +229,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                     )
                 )
 
-            # Budget exceed threshold
             if (
                 self._budget_exceed_threshold is not None
                 and not self._exceed_emitted
@@ -262,10 +245,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                         at=now,
                     )
                 )
-
-    # ------------------------------------------------------------------
-    # Tool hooks
-    # ------------------------------------------------------------------
 
     async def on_tool_start(
         self,
@@ -350,10 +329,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
         except Exception:
             self._log.critical("on_tool_error: write failed", exc_info=True)
 
-    # ------------------------------------------------------------------
-    # Custom event hook
-    # ------------------------------------------------------------------
-
     async def on_custom_event(
         self,
         name: str,
@@ -387,7 +362,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
 
     async def _handle_phase_transition(self, data: Any) -> None:
         """Invariant (b): flush Parquet FIRST, then INSERT phase into PG atomically."""
-        # INVARIANT (b): flush BEFORE pg insert
         try:
             await self._parquet_writer.flush()
         except Exception:
@@ -400,7 +374,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             now = _now_utc()
 
             async with session_scope(self._session_factory) as session:
-                # SELECT the most recent open phase for this run
                 result = await session.execute(
                     select(PhaseModel.id)
                     .where(PhaseModel.run_id == self._run_id, PhaseModel.ended_at.is_(None))
@@ -409,7 +382,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                 )
                 prev_phase_id: UUID | None = result.scalar_one_or_none()
 
-                # If there's a previous open phase, close it
                 if prev_phase_id is not None:
                     await session.execute(
                         update(PhaseModel)
@@ -417,7 +389,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                         .values(ended_at=now)
                     )
 
-                # Insert new Phase row
                 new_phase = PhaseModel(
                     id=uuid.uuid4(),
                     run_id=self._run_id,
@@ -433,7 +404,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                 )
                 session.add(new_phase)
 
-            # Write to Parquet after PG insert (flush already done above)
             row = phase_transition_to_row(self._run_id, transition)
             await self._parquet_writer.write_phase(row)
         except Exception:
@@ -441,7 +411,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
 
     async def _handle_topology_transition(self, data: Any) -> None:
         """Invariant (b): flush Parquet FIRST, then INSERT topology_transition into PG."""
-        # INVARIANT (b): flush BEFORE pg insert
         try:
             await self._parquet_writer.flush()
         except Exception:
@@ -471,7 +440,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                 )
                 session.add(tt)
 
-            # Write to Parquet after PG insert
             row = topology_transition_to_row(self._run_id, transition)
             await self._parquet_writer.write_topology_transition(row)
         except Exception:
@@ -544,9 +512,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
             requested_at: datetime = data.get("requested_at", answered_at)
 
             async with session_scope(self._session_factory) as session:
-                # SELECT ... FOR UPDATE serializes against a concurrent _handle_human_request
-                # INSERT for the same (run_id, request_id) so the race is collapsed inside
-                # a single transaction.
                 existing = (
                     await session.execute(
                         select(HumanInteraction)
@@ -559,9 +524,6 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                 ).scalar_one_or_none()
 
                 if existing is None:
-                    # No request row landed yet (or never will) — insert a complete row
-                    # so the response is not lost. ON CONFLICT DO NOTHING guards against
-                    # the request handler racing in between SELECT and INSERT.
                     ins = (
                         pg_insert(HumanInteraction)
                         .values(
@@ -586,6 +548,5 @@ class ExperimentCallbackHandler(AsyncCallbackHandler):
                             response_json=response_json,
                         )
                     )
-                # else: response already filled — idempotent no-op
         except Exception:
             self._log.error("on_custom_event[human_response]: db upsert failed", exc_info=True)

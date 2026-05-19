@@ -21,10 +21,6 @@ from uuid import uuid4
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Helpers / fixtures
-# ---------------------------------------------------------------------------
-
 
 def _make_llm_result(
     *,
@@ -120,11 +116,6 @@ def _build_session_factory(scalar_values: list[Decimal] | None = None) -> AsyncM
     return factory
 
 
-# ---------------------------------------------------------------------------
-# 1. Root detection — metadata flag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_root_detection_metadata_flag() -> None:
     """First on_chain_start with parent_run_id=None and metadata.is_root_run=True sets _root_run_id;
@@ -145,7 +136,6 @@ async def test_root_detection_metadata_flag() -> None:
     )
     assert handler._root_run_id == root_id
 
-    # Second call with another run_id should NOT overwrite
     other_id = uuid4()
     await handler.on_chain_start(
         serialized={},
@@ -154,12 +144,7 @@ async def test_root_detection_metadata_flag() -> None:
         parent_run_id=None,
         metadata={"is_root_run": True},
     )
-    assert handler._root_run_id == root_id  # unchanged
-
-
-# ---------------------------------------------------------------------------
-# 2. Root detection — fallback (no metadata)
-# ---------------------------------------------------------------------------
+    assert handler._root_run_id == root_id
 
 
 @pytest.mark.asyncio
@@ -191,11 +176,6 @@ async def test_root_not_set_for_child_chain() -> None:
         parent_run_id=parent_id,
     )
     assert handler._root_run_id is None
-
-
-# ---------------------------------------------------------------------------
-# 3. on_chain_end of root triggers parquet_writer.close()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -230,11 +210,6 @@ async def test_on_chain_end_non_root_does_not_close() -> None:
     parquet_writer.close.assert_not_awaited()
 
 
-# ---------------------------------------------------------------------------
-# 4. on_chain_error of root triggers parquet_writer.close()
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_on_chain_error_root_triggers_close() -> None:
     """on_chain_error(run_id=root_id) must await parquet_writer.close() — invariant (c)."""
@@ -250,11 +225,6 @@ async def test_on_chain_error_root_triggers_close() -> None:
     )
 
     parquet_writer.close.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# 5. on_llm_end writes parquet and updates PG budget
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -276,29 +246,20 @@ async def test_on_llm_end_writes_parquet_and_updates_budget() -> None:
 
     parquet_writer.write_llm_call.assert_awaited_once()
 
-    # Check that session.execute was called at least twice (two UPDATE ... RETURNING)
     session = session_factory.return_value
     assert session.execute.await_count >= 2
-
-
-# ---------------------------------------------------------------------------
-# 6. Budget warn branching
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_budget_warn_branching() -> None:
     """With budget_warn_threshold=1.0 and run total=1.5 → BudgetEvent(event='warn') inserted once.
     Second call with total=1.8 → no second warn (already warned)."""
-    # First call: run total = 1.5 > threshold 1.0 → warn inserted
-    # Second call: run total = 1.8 > threshold 1.0 → no second warn
     scalar_values_call1 = [Decimal("1.5"), Decimal("1.5")]
     scalar_values_call2 = [Decimal("1.8"), Decimal("1.8")]
 
     parquet_writer = AsyncMock()
     parquet_writer.write_llm_call = AsyncMock()
 
-    # We need a session factory that we can inspect for session.add calls
     mock_result1 = MagicMock()
     mock_result1.scalar_one = MagicMock(side_effect=scalar_values_call1)
 
@@ -330,7 +291,6 @@ async def test_budget_warn_branching() -> None:
 
     llm_result = _make_llm_result(cost_usd=0.5)
 
-    # First call → warn should fire
     await handler.on_llm_end(response=llm_result, run_id=uuid4())  # type: ignore[union-attr]
 
     add_calls = session.add.call_args_list
@@ -341,7 +301,6 @@ async def test_budget_warn_branching() -> None:
     ]
     assert len(warn_inserts) == 1, f"Expected 1 warn insert, got {len(warn_inserts)}"
 
-    # Second call — total is still > threshold, but flag already set → no new warn
     session.add.reset_mock()
     await handler.on_llm_end(response=llm_result, run_id=uuid4())  # type: ignore[union-attr]
 
@@ -352,11 +311,6 @@ async def test_budget_warn_branching() -> None:
         if isinstance(c.args[0], BudgetEventModel) and c.args[0].event == "warn"
     ]
     assert len(warn_inserts2) == 0, "Duplicate warn should not be inserted"
-
-
-# ---------------------------------------------------------------------------
-# 7. Budget exceed branching
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -401,11 +355,6 @@ async def test_budget_exceed_branching() -> None:
     assert len(exceed_inserts) == 1, f"Expected 1 exceed insert, got {len(exceed_inserts)}"
 
 
-# ---------------------------------------------------------------------------
-# 8. phase_transition ordering invariant — flush BEFORE pg insert
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_phase_transition_ordering() -> None:
     """For 'phase_transition' event: parquet_writer.flush() must be called BEFORE session.execute.
@@ -415,7 +364,7 @@ async def test_phase_transition_ordering() -> None:
     from atm.core.types import Phase, PhaseTransition
 
     mock_result = MagicMock()
-    mock_result.scalar_one = MagicMock(return_value=None)  # no previous phase
+    mock_result.scalar_one = MagicMock(return_value=None)
 
     session = AsyncMock()
     session.execute = AsyncMock(return_value=mock_result)
@@ -448,7 +397,6 @@ async def test_phase_transition_ordering() -> None:
         decided_by="initial",
     )
 
-    # Track order of flush vs execute calls using a shared call log
     call_log: list[str] = []
 
     async def tracked_flush(*a: object, **kw: object) -> None:
@@ -476,11 +424,6 @@ async def test_phase_transition_ordering() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 9. phase_transition prev ended_at update
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_phase_transition_prev_ended_at_update() -> None:
     """When SELECT returns a previous phase id, an UPDATE to set ended_at must be executed."""
@@ -488,12 +431,8 @@ async def test_phase_transition_prev_ended_at_update() -> None:
 
     prev_phase_id = uuid4()
 
-    # First execute call: SELECT → returns prev_phase_id
-    # Subsequent execute calls: UPDATEs
-    # SELECT scalar_one returns prev_phase_id
     select_result = MagicMock()
     select_result.scalar_one = MagicMock(return_value=prev_phase_id)
-    # UPDATE results
     update_result = MagicMock()
     update_result.scalar_one = MagicMock(return_value=None)
 
@@ -505,7 +444,7 @@ async def test_phase_transition_prev_ended_at_update() -> None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return select_result  # SELECT previous phase
+            return select_result
         return update_result
 
     session.execute = AsyncMock(side_effect=mock_execute)
@@ -542,13 +481,7 @@ async def test_phase_transition_prev_ended_at_update() -> None:
         run_id=uuid4(),
     )
 
-    # Should have been called at least twice: SELECT + UPDATE ended_at + INSERT
     assert call_count >= 2, f"Expected >=2 execute calls, got {call_count}"
-
-
-# ---------------------------------------------------------------------------
-# 10. topology_transition ordering invariant
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -619,11 +552,6 @@ async def test_topology_transition_ordering() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 11. Exception in hook is swallowed
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_exception_in_hook_is_swallowed() -> None:
     """If parquet_writer.write_llm_call raises, on_llm_end must NOT propagate the exception."""
@@ -635,13 +563,7 @@ async def test_exception_in_hook_is_swallowed() -> None:
 
     llm_result = _make_llm_result()
 
-    # Must not raise
     await handler.on_llm_end(response=llm_result, run_id=uuid4())  # type: ignore[union-attr]
-
-
-# ---------------------------------------------------------------------------
-# 12. on_tool_end latency computed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -667,7 +589,6 @@ async def test_on_tool_end_latency_computed() -> None:
         metadata={"agent_id": "agent-1"},
     )
 
-    # Small sleep to ensure measurable latency
     await asyncio.sleep(0.001)
 
     await handler.on_tool_end(  # type: ignore[union-attr]
@@ -691,11 +612,6 @@ async def test_on_tool_end_latency_computed() -> None:
     assert json.loads(written_row["result_json"]) == "result", (
         "result_json should be valid JSON encoding the output string"
     )
-
-
-# ---------------------------------------------------------------------------
-# 13. on_tool_error writes row with ok=False
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -724,11 +640,6 @@ async def test_on_tool_error_writes_row() -> None:
     written_row = parquet_writer.write_tool_call.call_args.args[0]
     assert written_row["ok"] is False
     assert "tool failed" in written_row["error"]
-
-
-# ---------------------------------------------------------------------------
-# 14. on_tool_error propagates tool_name, agent_id from on_tool_start
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -763,11 +674,6 @@ async def test_on_tool_error_records_error() -> None:
     assert written_row["agent_id"] == "agent-error", (
         f"Expected 'agent-error', got {written_row['agent_id']!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# 16. message_emit custom event
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

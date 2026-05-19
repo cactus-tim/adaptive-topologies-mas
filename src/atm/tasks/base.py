@@ -1,15 +1,4 @@
-"""Base Protocols, Registries, and EvalResult for the ATM tasks module.
-
-Public API:
-- ``LLMLike``      — runtime-checkable Protocol for LLM-like objects with ``ainvoke``
-- ``Evaluator``    — runtime-checkable Protocol for task evaluators
-- ``EvalResult``   — frozen Pydantic model: score ∈ [0, 1], passed, details, error
-- ``TaskLoader``   — runtime-checkable Protocol for task loaders
-- ``EvaluatorRegistry`` — registry of evaluator classes keyed by name
-- ``TaskRegistry`` — registry of loader classes with lazy load + cache + ``sample``
-- ``TASKS``        — module-level singleton ``TaskRegistry``
-- ``EVALUATORS``   — module-level singleton ``EvaluatorRegistry``
-"""
+"""Base protocols, registries, and EvalResult for the ATM tasks module."""
 
 from __future__ import annotations
 
@@ -34,18 +23,9 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# LLMLike Protocol
-# ---------------------------------------------------------------------------
-
-
 @runtime_checkable
 class LLMLike(Protocol):
-    """Minimal LLM interface required by judge evaluators.
-
-    Any object with a compatible ``ainvoke`` method (including ``LLMWrapper``
-    and ``FakeLLM``) satisfies this Protocol without explicit inheritance.
-    """
+    """Minimal LLM interface (ainvoke) required by judge evaluators."""
 
     async def ainvoke(
         self,
@@ -58,19 +38,9 @@ class LLMLike(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------
-# Evaluator Protocol
-# ---------------------------------------------------------------------------
-
-
 @runtime_checkable
 class Evaluator(Protocol):
-    """Protocol for task evaluators.
-
-    Conforming classes must expose:
-    - ``name: str`` — class-level attribute used for registry key
-    - ``evaluate(spec, answer, *, artifacts) -> EvalResult`` — async evaluation method
-    """
+    """Protocol for task evaluators (name attribute + async evaluate method)."""
 
     name: str
 
@@ -85,20 +55,8 @@ class Evaluator(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------
-# EvalResult
-# ---------------------------------------------------------------------------
-
-
 class EvalResult(BaseModel):
-    """Immutable result of a single evaluation.
-
-    Attributes:
-        score:   Normalised score in [0.0, 1.0].
-        passed:  Convenience boolean (threshold set by each evaluator).
-        details: Free-form dict with evaluator-specific diagnostics.
-        error:   Optional error message if evaluation itself failed.
-    """
+    """Immutable result of a single evaluation; score ∈ [0.0, 1.0]."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -108,19 +66,9 @@ class EvalResult(BaseModel):
     error: str | None = None
 
 
-# ---------------------------------------------------------------------------
-# TaskLoader Protocol
-# ---------------------------------------------------------------------------
-
-
 @runtime_checkable
 class TaskLoader(Protocol):
-    """Protocol for task loaders.
-
-    Conforming classes must expose:
-    - ``name: str`` — class-level attribute used for registry key
-    - ``load(cache_dir)`` — returns a list of TaskSpec
-    """
+    """Protocol for task loaders (name attribute + load method)."""
 
     name: str
 
@@ -132,23 +80,8 @@ class TaskLoader(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------
-# EvaluatorRegistry
-# ---------------------------------------------------------------------------
-
-
 class EvaluatorRegistry:
-    """Registry of evaluator classes keyed by name.
-
-    Usage::
-
-        @EVALUATORS.register
-        class MyEval:
-            name = "my_eval"
-            async def evaluate(self, spec, answer): ...
-
-        eval_cls = EVALUATORS.get("my_eval")
-    """
+    """Registry of evaluator classes keyed by name."""
 
     def __init__(self) -> None:
         self._registry: dict[str, type[Any]] = {}
@@ -160,11 +93,7 @@ class EvaluatorRegistry:
         return cls
 
     def get(self, name: str) -> type[Any]:
-        """Return the evaluator class registered under ``name``.
-
-        Raises:
-            KeyError: if ``name`` is not in the registry.
-        """
+        """Return the evaluator class registered under ``name``; raises KeyError if absent."""
         try:
             return self._registry[name]
         except KeyError:
@@ -177,30 +106,8 @@ class EvaluatorRegistry:
         return sorted(self._registry.keys())
 
 
-# ---------------------------------------------------------------------------
-# TaskRegistry
-# ---------------------------------------------------------------------------
-
-
 class TaskRegistry:
-    """Registry of loader classes with lazy loading, caching, and deterministic sampling.
-
-    Usage::
-
-        @TASKS.register
-        class MyLoader:
-            name = "my_dataset"
-            def load(self, cache_dir=None): ...
-
-        specs = TASKS.sample("my_dataset", n=10, seed=42)
-
-    Lazy loading: ``load()`` is called once on first ``sample()`` call; the result
-    is cached in ``self._cache`` and reused on subsequent calls.
-
-    Sampling: the pool is sorted by ``TaskSpec.id`` before sampling using
-    ``random.Random(seed)`` for determinism. If ``n >= len(pool)``, all tasks
-    are returned in sorted order.
-    """
+    """Registry of loader classes with lazy loading, caching, and deterministic sampling."""
 
     def __init__(self) -> None:
         self._registry: dict[str, type[Any]] = {}
@@ -213,11 +120,7 @@ class TaskRegistry:
         return cls
 
     def get(self, name: str) -> type[Any]:
-        """Return the loader class registered under ``name``.
-
-        Raises:
-            KeyError: if ``name`` is not in the registry.
-        """
+        """Return the loader class registered under ``name``; raises KeyError if absent."""
         try:
             return self._registry[name]
         except KeyError:
@@ -226,37 +129,22 @@ class TaskRegistry:
             ) from None
 
     def _load_and_cache(self, name: str) -> list[TaskSpec]:
-        """Load tasks for ``name`` if not already cached, and return sorted pool."""
+        """Load tasks for ``name`` if not already cached; return sorted pool."""
         if name not in self._cache:
             loader_cls = self.get(name)
             loader = loader_cls()
             raw: list[TaskSpec] = loader.load()
-            # Sort by id for deterministic, stable sampling
             self._cache[name] = sorted(raw, key=lambda s: s.id)
         return self._cache[name]
 
     def sample(self, name: str, *, n: int, seed: int) -> list[TaskSpec]:
-        """Return a deterministic sample of up to ``n`` tasks for loader ``name``.
-
-        Args:
-            name: The registered loader name.
-            n:    Maximum number of tasks to return.
-            seed: Random seed for ``random.Random`` — guarantees determinism.
-
-        Returns:
-            A list of up to ``n`` TaskSpec instances, chosen from the id-sorted pool.
-            If ``n >= len(pool)``, returns all tasks in sorted order.
-        """
+        """Return a deterministic sample of up to ``n`` tasks for loader ``name``."""
         pool = self._load_and_cache(name)
         if n >= len(pool):
             return list(pool)
         rng = random.Random(seed)
         return rng.sample(pool, n)
 
-
-# ---------------------------------------------------------------------------
-# Module-level singletons
-# ---------------------------------------------------------------------------
 
 TASKS: TaskRegistry = TaskRegistry()
 EVALUATORS: EvaluatorRegistry = EvaluatorRegistry()

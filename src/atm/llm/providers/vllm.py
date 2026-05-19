@@ -33,6 +33,5 @@ def build_vllm(model_id: str, opts: dict[str, Any]) -> BaseChatModel:
     """
     _, bare_model = model_id.split(":", 1)
     kwargs = dict(opts)
-    # vLLM + LangChain convention: use "EMPTY" as the placeholder API key.
     kwargs.setdefault("api_key", "EMPTY")
     return ChatOpenAI(model=bare_model, **kwargs)

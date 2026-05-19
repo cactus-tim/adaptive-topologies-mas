@@ -83,7 +83,7 @@ def test_run_estimate_below_threshold_no_confirm(tmp_path: Path) -> None:
     cfg = _make_cfg(per_experiment_usd=10.0)
 
     async def fake_estimate(**_kw: object) -> GridEstimate:
-        return _make_grid_estimate(cost=1.0)  # well below 5.0
+        return _make_grid_estimate(cost=1.0)
 
     async def fake_run_one(*_a: object, **_kw: object) -> RunResult:
         return _make_result()
@@ -111,7 +111,7 @@ def test_run_estimate_above_threshold_aborts_without_yes(tmp_path: Path) -> None
     cfg = _make_cfg(per_experiment_usd=1.0)
 
     async def fake_estimate(**_kw: object) -> GridEstimate:
-        return _make_grid_estimate(cost=0.9)  # > 0.5 (1.0 / 2)
+        return _make_grid_estimate(cost=0.9)
 
     async def fake_run_one(*_a: object, **_kw: object) -> RunResult:
         return _make_result()

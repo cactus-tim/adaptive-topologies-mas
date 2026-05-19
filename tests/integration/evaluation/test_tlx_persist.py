@@ -26,10 +26,6 @@ from atm.evaluation.tlx import persist_tlx
 from atm.storage.models import Experiment, HumanInteraction, Run
 from atm.storage.session import create_session_factory, session_scope
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 async def _insert_exp_run_interaction(
     factory,  # type: ignore[no-untyped-def]
@@ -75,11 +71,6 @@ async def _insert_exp_run_interaction(
         )
 
 
-# ---------------------------------------------------------------------------
-# 1. persist_tlx writes raw_tlx_score column
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_persist_tlx_writes_column(
     pg_engine_fast: AsyncEngine,
@@ -96,18 +87,12 @@ async def test_persist_tlx_writes_column(
     async with session_scope(factory) as session:
         await persist_tlx(session, interaction_id, raw_score=42.5)
 
-    # Verify the column was updated
     async with session_scope(factory) as session:
         result = await session.execute(
             select(HumanInteraction).where(HumanInteraction.id == interaction_id)
         )
         row = result.scalar_one()
         assert row.raw_tlx_score == pytest.approx(42.5)
-
-
-# ---------------------------------------------------------------------------
-# 2. persist_tlx is idempotent (second call overwrites first)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -123,11 +108,9 @@ async def test_persist_tlx_idempotent_overwrite(
         factory, exp_id=exp_id, run_id=run_id, interaction_id=interaction_id
     )
 
-    # First call
     async with session_scope(factory) as session:
         await persist_tlx(session, interaction_id, raw_score=42.5)
 
-    # Second call — overwrites
     async with session_scope(factory) as session:
         await persist_tlx(session, interaction_id, raw_score=88.0)
 
@@ -139,19 +122,13 @@ async def test_persist_tlx_idempotent_overwrite(
         assert row.raw_tlx_score == pytest.approx(88.0)
 
 
-# ---------------------------------------------------------------------------
-# 3. persist_tlx on unknown interaction_id — no-op (does not raise)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_persist_tlx_unknown_id_noop(
     pg_engine_fast: AsyncEngine,
 ) -> None:
     """persist_tlx on an unknown interaction_id does not raise."""
     factory = create_session_factory(pg_engine_fast)
-    ghost_id = uuid.uuid4()  # never inserted
+    ghost_id = uuid.uuid4()
 
-    # Should not raise even though the row does not exist
     async with session_scope(factory) as session:
         await persist_tlx(session, ghost_id, raw_score=99.0)  # no-op

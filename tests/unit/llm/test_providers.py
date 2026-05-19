@@ -14,10 +14,6 @@ from atm.llm.providers import (
     inject_cache_control,
 )
 
-# ---------------------------------------------------------------------------
-# build_openai tests
-# ---------------------------------------------------------------------------
-
 
 class TestBuildOpenAI:
     def test_returns_base_chat_model(self) -> None:
@@ -45,14 +41,8 @@ class TestBuildOpenAI:
 
     def test_no_api_call_on_construction(self) -> None:
         """Constructing the model object does not trigger any network call."""
-        # If this test hangs or raises a network error, the factory is wrong.
         model = build_openai("openai:gpt-4o-mini", {"temperature": 0.0})
         assert model is not None
-
-
-# ---------------------------------------------------------------------------
-# build_anthropic tests
-# ---------------------------------------------------------------------------
 
 
 class TestBuildAnthropic:
@@ -92,11 +82,6 @@ class TestBuildAnthropic:
         assert model is not None
 
 
-# ---------------------------------------------------------------------------
-# build_vllm tests
-# ---------------------------------------------------------------------------
-
-
 class TestBuildVLLM:
     def test_returns_base_chat_model(self) -> None:
         """build_vllm returns a BaseChatModel subclass."""
@@ -126,7 +111,6 @@ class TestBuildVLLM:
 
         model = build_vllm("vllm:my-model", {"base_url": "http://localhost:8000/v1"})
         assert isinstance(model, ChatOpenAI)
-        # openai_api_key is a SecretStr in langchain-openai
         secret = model.openai_api_key
         key_value = (
             secret.get_secret_value() if hasattr(secret, "get_secret_value") else str(secret)
@@ -147,14 +131,7 @@ class TestBuildVLLM:
         assert model is not None
 
 
-# ---------------------------------------------------------------------------
-# inject_cache_control tests
-# ---------------------------------------------------------------------------
-
-
 class TestInjectCacheControl:
-    # ---- immutability invariants ----
-
     def test_returns_new_list(self) -> None:
         """inject_cache_control returns a new list — input is not the returned object."""
         messages: list[BaseMessage] = [HumanMessage(content="hello")]
@@ -175,9 +152,7 @@ class TestInjectCacheControl:
         last = HumanMessage(content="last message")
         messages: list[BaseMessage] = [first, last]
         result = inject_cache_control(messages, key="k1")
-        # The returned first message must be unchanged
         assert result[0].content == "first message"
-        # Input first message object is unchanged
         assert first.content == "first message"
 
     def test_original_last_message_not_mutated(self) -> None:
@@ -185,10 +160,7 @@ class TestInjectCacheControl:
         original_last = HumanMessage(content="last")
         messages: list[BaseMessage] = [HumanMessage(content="first"), original_last]
         _ = inject_cache_control(messages, key="k2")
-        # original_last.content must still be a plain string (or unchanged list)
         assert original_last.content == "last"
-
-    # ---- ephemeral cache_control added to last text block ----
 
     def test_adds_cache_control_to_last_message_simple_string(self) -> None:
         """For a string-content last message, content becomes list-of-blocks with cache_control."""
@@ -198,9 +170,7 @@ class TestInjectCacheControl:
         ]
         result = inject_cache_control(messages, key="some-key")
         last = result[-1]
-        # content should be converted to list-of-blocks
         assert isinstance(last.content, list)
-        # The last block must have cache_control
         last_block = last.content[-1]
         assert isinstance(last_block, dict)
         assert "cache_control" in last_block
@@ -231,11 +201,8 @@ class TestInjectCacheControl:
         ]
         result = inject_cache_control(msgs, key="k")
         assert len(result) == len(msgs)
-        # First 3 messages are unchanged
         for i in range(3):
             assert result[i].content == msgs[i].content
-
-    # ---- multi-modal last message ----
 
     def test_multimodal_adds_cache_control_to_last_text_block(self) -> None:
         """For a last message with content=list[dict], cache_control goes on the last text-type block."""
@@ -248,7 +215,6 @@ class TestInjectCacheControl:
         result = inject_cache_control(messages, key="img-key")
         last = result[-1]
         assert isinstance(last.content, list)
-        # Find the last text block
         text_blocks = [b for b in last.content if isinstance(b, dict) and b.get("type") == "text"]
         assert text_blocks, "Expected at least one text block"
         last_text_block = text_blocks[-1]
@@ -274,11 +240,6 @@ class TestInjectCacheControl:
         """inject_cache_control with empty list returns empty list gracefully."""
         result = inject_cache_control([], key="k")
         assert result == []
-
-
-# ---------------------------------------------------------------------------
-# build_cerebras tests
-# ---------------------------------------------------------------------------
 
 
 class TestBuildCerebras:

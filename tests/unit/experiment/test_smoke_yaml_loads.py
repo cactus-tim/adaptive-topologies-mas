@@ -17,11 +17,6 @@ SMOKE_YAML = str(Path(__file__).parent.parent.parent.parent / "conf" / "experime
 AGENTS_GLOB = str(Path(__file__).parent.parent.parent.parent / "conf" / "agents" / "*.yaml")
 
 
-# ---------------------------------------------------------------------------
-# 1. Default topology is chain
-# ---------------------------------------------------------------------------
-
-
 def test_smoke_yaml_loads_chain() -> None:
     """Smoke YAML loads correctly with default chain topology."""
     cfg = load_config(SMOKE_YAML)
@@ -40,26 +35,15 @@ def test_smoke_yaml_loads_chain() -> None:
     assert cfg.model.by_role.get("critic") == "fake:scripted"
 
 
-# ---------------------------------------------------------------------------
-# 2. Override topology.name=star
-# ---------------------------------------------------------------------------
-
-
 def test_smoke_yaml_loads_star_override() -> None:
     """Smoke YAML with +topology.name=star override yields star topology."""
     cfg = load_config(SMOKE_YAML, overrides=["+topology.name=star"])
 
     assert isinstance(cfg, ExperimentConfig)
     assert cfg.topology.name == "star"
-    # Other fields unchanged
     assert cfg.name == "m6_smoke"
     assert cfg.seed == 42
     assert cfg.agents.set == "canonical_4"
-
-
-# ---------------------------------------------------------------------------
-# 3. Pre-flight: at least 4 agent YAML files exist
-# ---------------------------------------------------------------------------
 
 
 def test_at_least_four_agent_yamls_exist() -> None:

@@ -33,11 +33,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 _DEFAULT_LOG = Path("logs/e2_errors.log")
-_WARN_DELTA = 3       # >=3 new fails in window → WARN
+_WARN_DELTA = 3
 _WARN_WINDOW_S = 120
-_ALERT_DELTA = 10     # >=10 new fails in window → ALERT
+_ALERT_DELTA = 10
 _ALERT_WINDOW_S = 300
-_ALERT_RATE_PCT = 15.0  # >=15% cumulative fail rate → ALERT
+_ALERT_RATE_PCT = 15.0
 
 
 def _now() -> str:
@@ -52,23 +52,40 @@ def _emit(out_fh, level: str, **payload) -> None:
 
 async def _poll_once(engine, exp_id: str):
     async with engine.connect() as conn:
-        r = (await conn.execute(text("""
+        r = (
+            (
+                await conn.execute(
+                    text("""
             SELECT status, COUNT(*) AS n
             FROM runs
             WHERE exp_id = :e
             GROUP BY status
-        """), {"e": exp_id})).mappings().all()
+        """),
+                    {"e": exp_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
         counts = {row["status"]: int(row["n"]) for row in r}
 
-        # Sample of the 5 most recent failed runs
-        r = (await conn.execute(text("""
+        r = (
+            (
+                await conn.execute(
+                    text("""
             SELECT id, topology, task_id, finish_reason,
                    LEFT(COALESCE(error, ''), 240) AS err
             FROM runs
             WHERE exp_id = :e AND status IN ('failed', 'budget_exceeded')
             ORDER BY finished_at DESC NULLS LAST
             LIMIT 5
-        """), {"e": exp_id})).mappings().all()
+        """),
+                    {"e": exp_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
         samples = [dict(row) for row in r]
     return counts, samples
 
@@ -84,13 +101,18 @@ async def run(exp_id: str, interval: int, out_path: Path) -> None:
 
     engine = create_async_engine(dsn)
 
-    # Sliding window of (timestamp, fails_seen) tuples.
-    history: deque[tuple[float, int]] = deque(maxlen=120)  # ~2h at 60s
+    history: deque[tuple[float, int]] = deque(maxlen=120)
     last_total_fails = 0
 
-    _emit(fh, "INFO", event="watch_start", exp_id=exp_id, interval_s=interval,
-          warn=(_WARN_DELTA, _WARN_WINDOW_S),
-          alert=(_ALERT_DELTA, _ALERT_WINDOW_S, _ALERT_RATE_PCT))
+    _emit(
+        fh,
+        "INFO",
+        event="watch_start",
+        exp_id=exp_id,
+        interval_s=interval,
+        warn=(_WARN_DELTA, _WARN_WINDOW_S),
+        alert=(_ALERT_DELTA, _ALERT_WINDOW_S, _ALERT_RATE_PCT),
+    )
 
     try:
         while True:
@@ -109,10 +131,8 @@ async def run(exp_id: str, interval: int, out_path: Path) -> None:
             now_ts = time.time()
             history.append((now_ts, fails))
 
-            # Compute deltas over sliding windows
             def _delta(window_s: int) -> int:
                 cutoff = now_ts - window_s
-                # Find oldest sample within the window
                 for ts, f in history:
                     if ts >= cutoff:
                         return fails - f
@@ -123,28 +143,51 @@ async def run(exp_id: str, interval: int, out_path: Path) -> None:
             rate_pct = (fails / total * 100.0) if total > 0 else 0.0
 
             if fails != last_total_fails:
-                _emit(fh, "INFO", event="fail_count_change",
-                      fails=fails, completed=completed, running=running,
-                      delta_2m=delta_warn, delta_5m=delta_alert,
-                      rate_pct=round(rate_pct, 2),
-                      samples=samples)
+                _emit(
+                    fh,
+                    "INFO",
+                    event="fail_count_change",
+                    fails=fails,
+                    completed=completed,
+                    running=running,
+                    delta_2m=delta_warn,
+                    delta_5m=delta_alert,
+                    rate_pct=round(rate_pct, 2),
+                    samples=samples,
+                )
                 last_total_fails = fails
 
             if delta_alert >= _ALERT_DELTA:
-                _emit(fh, "ALERT", event="burst_5m",
-                      msg=f"{delta_alert} new fails in 5 min",
-                      delta_5m=delta_alert, rate_pct=round(rate_pct, 2),
-                      samples=samples)
+                _emit(
+                    fh,
+                    "ALERT",
+                    event="burst_5m",
+                    msg=f"{delta_alert} new fails in 5 min",
+                    delta_5m=delta_alert,
+                    rate_pct=round(rate_pct, 2),
+                    samples=samples,
+                )
             elif delta_warn >= _WARN_DELTA:
-                _emit(fh, "WARN", event="burst_2m",
-                      msg=f"{delta_warn} new fails in 2 min",
-                      delta_2m=delta_warn, samples=samples)
+                _emit(
+                    fh,
+                    "WARN",
+                    event="burst_2m",
+                    msg=f"{delta_warn} new fails in 2 min",
+                    delta_2m=delta_warn,
+                    samples=samples,
+                )
 
             if rate_pct >= _ALERT_RATE_PCT and total >= 50:
-                _emit(fh, "ALERT", event="rate_high",
-                      msg=f"cumulative fail rate {rate_pct:.1f}% over {total} cells",
-                      rate_pct=round(rate_pct, 2), fails=fails, total=total,
-                      samples=samples)
+                _emit(
+                    fh,
+                    "ALERT",
+                    event="rate_high",
+                    msg=f"cumulative fail rate {rate_pct:.1f}% over {total} cells",
+                    rate_pct=round(rate_pct, 2),
+                    fails=fails,
+                    total=total,
+                    samples=samples,
+                )
 
             await asyncio.sleep(interval)
     finally:

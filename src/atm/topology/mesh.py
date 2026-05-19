@@ -1,67 +1,4 @@
-"""MeshTopology — broadcast-bus graph with dispatcher, voting, and consensus.
-
-Architecture (arch.md §7.3):
-  Agents communicate via a shared broadcast bus. A dispatcher node selects
-  the next agent to activate using either round-robin or priority policy.
-  After each agent run, mesh_broadcast reads the agent's outbox and appends
-  messages to shared.broadcast_bus (capped at broadcast_bus_cap).
-  mesh_postprocess tallies DECISION votes and checks for consensus.
-
-Graph structure (without HITL):
-  START → dispatcher → agent_node → mesh_broadcast → mesh_postprocess
-          ↑                                              |
-          |_____________loop (no consensus)______________|
-          |____________END  (consensus or max_rounds)____|
-
-Graph structure (with HITL, human_cfg.enabled=True):
-  human_peer is inserted into agent_order and participates in round-robin.
-  human_peer is skipped by the dispatcher until activation_round is reached
-  (default 2). human_peer votes via shared.broadcast_bus DECISION messages.
-
-Nodes:
-  dispatcher, planner, researcher, executor, critic,
-  mesh_broadcast, mesh_postprocess
-  (+ human_peer when human_cfg.enabled=True)
-
-TopologyConfig.extra defaults (under namespaced extras.mesh):
-  max_rounds: 12                                          — mirrors ``_DEFAULT_MAX_ROUNDS``
-  consensus_threshold: 3                                  — mirrors ``_DEFAULT_CONSENSUS_THRESHOLD``
-  broadcast_bus_cap: 200                                  — mirrors ``_DEFAULT_BROADCAST_BUS_CAP``
-  activation_policy: "round_robin"                        — mirrors ``_DEFAULT_ACTIVATION_POLICY``
-  agent_order: ["planner","researcher","executor","critic"] — mirrors ``_DEFAULT_AGENT_ORDER``
-
-  NOTE: max_rounds default is 12 (NOT 6) to give the round-robin dispatcher
-  [planner, researcher, executor, critic] at least 3 full passes before END;
-  the historical value of 6 starved the executor when a shared max_rounds was
-  set to 2 for debate/hierarchical experiments.
-
-  Legacy flat key ``mesh_max_rounds`` is auto-remapped to ``extras.mesh.max_rounds``
-  with a ``DeprecationWarning`` by the bw-compat validator in
-  ``atm.experiment.config.TopologyCfg``. The flat key ``max_rounds`` is NOT
-  scattered to mesh (only to debate + hierarchical) to prevent starvation bugs.
-
-HumanCfg.extra keys (when human_cfg.enabled=True):
-  activation_round     — first dispatch_round when human_peer participates (default 2)
-  on_consensus_pending — if True, human_peer also fires when consensus_pending signal
-                         is raised (default False)
-
-Stopping precedence (arch.md §7.1):
-  budget → (raised upstream by LLMWrapper as BudgetExceededError)
-  max_iter (global) → topology_success (consensus) → topology_max (max_rounds) → continue
-
-Vote payload format (MC-7 / task 2.2 test_consensus_vote_payload_str_format):
-  MessageKind.DECISION with payload={"vote_for": str}
-  Non-string vote_for values are silently ignored during tally.
-
-Design note — inline closure vs. build_human_node_factory:
-  Mesh's human_peer uses an inline closure (not ``build_human_node_factory``) because
-  broadcast_bus voting semantics and round-aware activation are tightly coupled to
-  mesh's dispatcher.  The node must read ``_mesh_dispatch_round`` from signals and
-  append a DECISION vote directly to ``broadcast_bus``, rather than writing
-  ``shared["human_approved"]`` / ``needs_rerun`` (the factory's default behaviour).
-  Migration to the shared factory would require a new ``apply_decision`` overload that
-  knows about broadcast_bus; this is deferred to a future refactor.
-"""
+"""MeshTopology — broadcast-bus graph with dispatcher, voting, and consensus."""
 
 from __future__ import annotations
 
@@ -74,13 +11,6 @@ from atm.core.state import GraphState
 from atm.core.types import MessageKind
 from atm.topology.base import TopologyConfig, TopologyRegistry, _should_stop, get_topology_extras
 from atm.topology.star import _extract_final_answer
-
-# ---------------------------------------------------------------------------
-# Lazy imports for HITL — patchable in tests
-# ---------------------------------------------------------------------------
-# These are set to None if the respective module is unavailable at import time.
-# Tests patch "atm.topology.mesh.<Name>" to inject stubs.
-# Typed as Any to allow both the class/function and None without mypy complaints.
 
 LLMSimulatedGateway: Any
 CLIGateway: Any
@@ -109,51 +39,23 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _DEFAULT_MAX_ROUNDS = 12
 _DEFAULT_CONSENSUS_THRESHOLD = 3
 _DEFAULT_BROADCAST_BUS_CAP = 200
 _DEFAULT_ACTIVATION_POLICY = "round_robin"
 _DEFAULT_AGENT_ORDER = ["planner", "researcher", "executor", "critic"]
 
-# HITL constants
 _DEFAULT_HUMAN_ACTIVATION_ROUND = 2
 _HUMAN_PEER_ID = "human_peer"
 
-# Route sentinels
-_ROUTE_AGENT_PREFIX = "agent:"  # sentinel prefix for dispatcher → agent routing
+_ROUTE_AGENT_PREFIX = "agent:"
 _ROUTE_DISPATCHER = "dispatcher"
 _ROUTE_END = "__end__"
 
 
-# ---------------------------------------------------------------------------
-# MeshTopology
-# ---------------------------------------------------------------------------
-
-
 @TopologyRegistry.register("mesh")
 class MeshTopology:
-    """Broadcast-bus topology with dispatcher and consensus voting.
-
-    Graph:
-      START → dispatcher → (agent_node) → mesh_broadcast → mesh_postprocess
-              ↑                                                    |
-              |_____________ loop (no consensus, rounds left) _____|
-                             END (consensus reached OR max_rounds hit OR global max_iter)
-
-    Activation policies:
-      round_robin — cycles through agent_order list; state counter tracks position.
-      priority    — routes to "critic" if any broadcast_bus message has
-                    kind==DRAFT, otherwise falls back to round-robin position.
-
-    Vote tally in mesh_postprocess:
-      Counts MessageKind.DECISION messages in broadcast_bus with string payload["vote_for"].
-      First vote_for value reaching consensus_threshold wins.
-      Sets shared.signals["consensus_reached"] = True and shared.final_answer = winner.
-    """
+    """Broadcast-bus topology: dispatcher → agent → broadcast → consensus vote → loop/END."""
 
     name = "mesh"
 
@@ -163,29 +65,10 @@ class MeshTopology:
         cfg: TopologyConfig,
         **kwargs: Any,
     ) -> Any:
-        """Compile and return a CompiledStateGraph.
-
-        Args:
-            agents: Dict mapping agent_id → Agent instance. Expected keys:
-                    planner, researcher, executor, critic.
-            cfg:    TopologyConfig with max_iterations and extra mesh params.
-            **kwargs: Optional; checkpointer=... forwarded to graph.compile().
-                      human_cfg=HumanCfg enables HITL (human_peer in agent_order).
-                      human_gateway_llm=LLMWrapper forwarded to LLMSimulatedGateway.
-                      role_router=HumanRoleRouter | None — when not None, overrides
-                          human_cfg.role dynamically via await role_router.decide(phase, state).
-
-        Returns:
-            CompiledStateGraph ready for ainvoke.
-        """
+        """Compile and return a CompiledStateGraph."""
         checkpointer = kwargs.get("checkpointer")
         extras = get_topology_extras(cfg, "mesh")
 
-        # Under the namespaced schema the key is ``max_rounds`` (collision-safe:
-        # each topology reads from its own bucket). The bw-compat validator in
-        # experiment.config remaps the legacy flat ``mesh_max_rounds`` key to
-        # ``mesh.max_rounds`` so old configs continue working without changes.
-        # Default 12 (≥3 full round-robin passes over 4 agents; cheap headroom).
         max_rounds: int = int(extras.get("max_rounds", _DEFAULT_MAX_ROUNDS))
         consensus_threshold: int = int(
             extras.get("consensus_threshold", _DEFAULT_CONSENSUS_THRESHOLD)
@@ -194,14 +77,10 @@ class MeshTopology:
         agent_order: list[str] = list(extras.get("agent_order", _DEFAULT_AGENT_ORDER))
         broadcast_bus_cap: int = int(extras.get("broadcast_bus_cap", _DEFAULT_BROADCAST_BUS_CAP))
 
-        # ----------------------------------------------------------------
-        # HITL configuration — human_peer participates in round-robin
-        # ----------------------------------------------------------------
         human_cfg: Any = kwargs.get("human_cfg")
         human_enabled: bool = human_cfg is not None and bool(getattr(human_cfg, "enabled", False))
         role_router: Any = kwargs.get("role_router")
 
-        # Per-topology HITL extra config
         human_extra: dict[str, Any] = {}
         if human_enabled and human_cfg is not None:
             human_extra = dict(getattr(human_cfg, "extra", None) or {})
@@ -211,7 +90,6 @@ class MeshTopology:
         )
         on_consensus_pending: bool = bool(human_extra.get("on_consensus_pending", False))
 
-        # Build human_peer gateway when HITL is enabled
         human_gateway: Any = None
         if human_enabled and human_cfg is not None:
             gateway_llm: Any = kwargs.get("human_gateway_llm")
@@ -230,37 +108,20 @@ class MeshTopology:
                     "Ensure atm.human is installed."
                 )
 
-        # Extend agent_order with human_peer when HITL is enabled
         effective_agent_order: list[str] = list(agent_order)
         if human_enabled:
             effective_agent_order.append(_HUMAN_PEER_ID)
 
-        # ----------------------------------------------------------------
-        # dispatcher node — selects next agent to activate
-        # ----------------------------------------------------------------
-
         async def dispatcher_node(state: GraphState) -> dict[str, Any]:
-            """Increment round counter and record active_agent_id in signals.
-
-            When human_peer is in effective_agent_order, it is skipped if the
-            current dispatch_round is < activation_round. The round-robin index
-            continues advancing through human_peer's slot (so ordering is stable)
-            but the dispatcher is called recursively until a non-skipped agent
-            is selected. This is done via a loop rather than recursion to avoid
-            deep LangGraph node re-invocation.
-            """
+            """Select next agent via round-robin or priority; skip human_peer before activation_round."""
             shared: dict[str, Any] = dict(state.get("shared") or {})
             signals: dict[str, Any] = dict(shared.get("signals") or {})
 
-            # Advance round-robin index
             rr_index: int = int(signals.get("_mesh_rr_index", 0))
             dispatch_round: int = int(signals.get("_mesh_dispatch_round", 0))
 
-            # Determine next agent — may skip human_peer before activation_round
-            # and skip human_peer if consensus_pending is not set (when on_consensus_pending=True)
             consensus_pending_set: bool = bool(signals.get("consensus_pending", False))
 
-            # Loop to find the next non-skipped agent
             attempts = 0
             max_attempts = len(effective_agent_order) + 1
             next_agent: str = effective_agent_order[0]
@@ -270,7 +131,6 @@ class MeshTopology:
                 else:
                     candidate = effective_agent_order[rr_index % len(effective_agent_order)]
 
-                # Determine if this candidate should be skipped
                 skip = False
                 if (
                     candidate == _HUMAN_PEER_ID
@@ -289,8 +149,6 @@ class MeshTopology:
                     break
                 attempts += 1
             else:
-                # All candidates were skipped (e.g. only human_peer in order, not activated)
-                # Fall back to first non-human agent
                 for aid in effective_agent_order:
                     if aid != _HUMAN_PEER_ID:
                         next_agent = aid
@@ -305,20 +163,12 @@ class MeshTopology:
             shared["signals"] = signals
             return {"shared": shared}
 
-        # ----------------------------------------------------------------
-        # _route_from_dispatcher — conditional edge after dispatcher
-        # ----------------------------------------------------------------
-
         def _route_from_dispatcher(state: GraphState) -> str:
             """Return the agent node name to activate."""
             shared: dict[str, Any] = dict(state.get("shared") or {})
             signals: dict[str, Any] = dict(shared.get("signals") or {})
             active_agent: str = str(signals.get("_mesh_active_agent", effective_agent_order[0]))
             return active_agent
-
-        # ----------------------------------------------------------------
-        # Agent node wrappers
-        # ----------------------------------------------------------------
 
         async def _wrap_agent(agent_id: str, state: GraphState) -> dict[str, Any]:
             """Call agent.step() if the agent exists, else return empty delta."""
@@ -329,7 +179,6 @@ class MeshTopology:
             result: dict[str, Any] = await agent.step(state)
             return result
 
-        # Build individual node closures (must capture agent_id by value)
         def _make_agent_node(agent_id: str) -> Any:
             async def node(state: GraphState) -> dict[str, Any]:
                 return await _wrap_agent(agent_id, state)
@@ -349,10 +198,6 @@ class MeshTopology:
             "critic": critic_node,
         }
 
-        # ----------------------------------------------------------------
-        # human_peer node — HITL voter in the mesh
-        # ----------------------------------------------------------------
-
         if human_enabled and human_cfg is not None and human_gateway is not None:
             import time
             from copy import deepcopy
@@ -365,14 +210,7 @@ class MeshTopology:
             _role_router = role_router
 
             async def human_peer_node(state: GraphState) -> dict[str, Any]:
-                """HITL peer node — requests a vote from the human gateway.
-
-                The human votes by returning an action payload that is converted
-                to a DECISION message with payload={"vote_for": action} and
-                appended to the broadcast_bus via shared state.
-
-                request_id: "mesh:{run_id}:{dispatch_round}:peer"
-                """
+                """HITL peer node: request a vote and append DECISION to broadcast_bus."""
                 import uuid as _uuid_mod
 
                 shared: dict[str, Any] = dict(deepcopy(state.get("shared") or {}))
@@ -391,13 +229,9 @@ class MeshTopology:
                     else _uuid_mod.uuid4()
                 )
 
-                # request_id includes iter_total (monotonic across checkpointer-resume)
-                # and dispatch_round (per-resume-cycle uniqueness).  dispatch_round alone
-                # is not monotonic across resume — (run_id, request_id) must be UNIQUE.
                 iter_total_now: int = int(shared.get("iter_total", 0))
                 request_id = f"mesh:{run_id}:{iter_total_now}:{dispatch_round_now}:peer"
 
-                # Build HumanContext — extract question from bus or use default
                 from atm.core.types import HumanContext, Message, MessageKind, Phase
 
                 bus: list[Any] = list(shared.get("broadcast_bus") or [])
@@ -407,7 +241,6 @@ class MeshTopology:
                         question = getattr(msg, "content", question) or question
                         break
 
-                # Resolve active role — dynamic via role_router or static from cfg
                 if _role_router is not None:
                     _raw_phase = shared.get("phase", "execution")
                     _phase = Phase(_raw_phase) if isinstance(_raw_phase, str) else _raw_phase
@@ -424,7 +257,6 @@ class MeshTopology:
                     deadline_s=int(_hcfg.timeout_s) if _hcfg.timeout_s is not None else None,
                 )
 
-                # Dispatch human_request event
                 _requested_at = datetime.now(UTC)
                 try:
                     await adispatch_custom_event(
@@ -445,7 +277,6 @@ class MeshTopology:
                         exc_info=True,
                     )
 
-                # Call gateway
                 _t0 = time.monotonic()
                 timeout_s_val: float | None = getattr(_hcfg, "timeout_s", None)
                 policy: str = getattr(_hcfg, "timeout_policy", "skip")
@@ -468,7 +299,6 @@ class MeshTopology:
 
                 _latency_s = time.monotonic() - _t0
 
-                # Dispatch human_response event
                 try:
                     await adispatch_custom_event(
                         "human_response",
@@ -488,13 +318,9 @@ class MeshTopology:
                         exc_info=True,
                     )
 
-                # Convert response action to a DECISION vote on the bus
                 action: str = getattr(response, "action", "") or ""
-                # The comment or payload may contain the vote_for value
                 comment: str = getattr(response, "comment", "") or ""
 
-                # Extract vote_for from response: prefer payload["vote_for"],
-                # then comment, then action itself
                 resp_payload: dict[str, Any] = dict(getattr(response, "payload", {}) or {})
                 vote_for: str = str(resp_payload.get("vote_for") or comment.strip() or action)
 
@@ -505,7 +331,6 @@ class MeshTopology:
                     payload={"vote_for": vote_for},
                 )
 
-                # Append to broadcast_bus
                 new_bus = [*list(bus), vote_msg]
                 if len(new_bus) > broadcast_bus_cap:
                     new_bus = new_bus[-broadcast_bus_cap:]
@@ -520,18 +345,6 @@ class MeshTopology:
                 return {"shared": shared}
 
             _agent_nodes[_HUMAN_PEER_ID] = human_peer_node
-
-        # ----------------------------------------------------------------
-        # _route_from_agent — after agent, go to mesh_broadcast
-        # (always, regardless of which agent ran)
-        # ----------------------------------------------------------------
-
-        # We cannot use a single conditional edge from multiple sources to
-        # mesh_broadcast — instead we add direct edges from each agent node.
-
-        # ----------------------------------------------------------------
-        # mesh_broadcast node factory (reads active_agent from signals)
-        # ----------------------------------------------------------------
 
         async def mesh_broadcast_node(state: GraphState) -> dict[str, Any]:
             """Flush active agent's outbox to broadcast_bus with cap."""
@@ -551,34 +364,15 @@ class MeshTopology:
             shared["broadcast_bus"] = new_bus
             return {"shared": shared}
 
-        # ----------------------------------------------------------------
-        # mesh_postprocess — vote tally and consensus check
-        # ----------------------------------------------------------------
-
         async def mesh_postprocess_node(state: GraphState) -> dict[str, Any]:
-            """Count DECISION votes in broadcast_bus; check consensus threshold.
-
-            Vote format: MessageKind.DECISION with payload={"vote_for": str}.
-            Non-string vote_for values are silently ignored.
-
-            Sets shared.signals["consensus_reached"] = True and
-            shared.final_answer = winner_value when threshold met.
-            Also increments shared.iter_total (one iteration = one dispatch cycle).
-
-            When HITL is enabled: additionally sets signals["consensus_pending"] = True
-            when ≥1 vote exists but threshold is NOT yet reached. This is additive —
-            consensus_reached is set/cleared independently. consensus_pending is
-            consumed by the dispatcher to optionally activate human_peer early.
-            """
+            """Tally DECISION votes on broadcast_bus; set consensus_reached when threshold met."""
             shared: dict[str, Any] = dict(state.get("shared") or {})
             bus: list[Any] = list(shared.get("broadcast_bus") or [])
             signals: dict[str, Any] = dict(shared.get("signals") or {})
 
-            # Increment global iter_total (each postprocess = 1 iteration)
             old_iter: int = int(shared.get("iter_total") or 0)
             shared["iter_total"] = old_iter + 1
 
-            # Tally votes
             vote_counts: dict[str, int] = {}
             for msg in bus:
                 kind = getattr(msg, "kind", None)
@@ -590,7 +384,6 @@ class MeshTopology:
                     continue
                 vote_counts[vote_for] = vote_counts.get(vote_for, 0) + 1
 
-            # Check consensus
             winner: str | None = None
             for candidate, count in vote_counts.items():
                 if count >= consensus_threshold:
@@ -605,8 +398,6 @@ class MeshTopology:
                 signals["consensus_reached"] = False
                 signals.pop("consensus_winner", None)
 
-            # Additive: set consensus_pending when HITL is enabled and there are
-            # votes but threshold not reached (split-vote condition).
             if human_enabled:
                 total_votes = sum(vote_counts.values())
                 if total_votes > 0 and winner is None:
@@ -614,13 +405,6 @@ class MeshTopology:
                 else:
                     signals["consensus_pending"] = False
 
-            # ALWAYS-extract contract (mirrors star/chain post-Bug #6/#8):
-            # Canonical_4 agents do not emit DECISION votes with payload["vote_for"],
-            # so consensus is essentially never reached on standard runs. Without
-            # this fallback, final_answer stays empty and the run reports
-            # quality_score=0 even when the executor wrote a perfectly good
-            # solution.py via file_write. Provisionally extract the executor's
-            # latest artifact every tick, regardless of consensus state.
             if not shared.get("final_answer"):
                 provisional = _extract_final_answer(state)
                 if provisional and provisional != "<incomplete>":
@@ -628,10 +412,6 @@ class MeshTopology:
 
             shared["signals"] = signals
             return {"shared": shared}
-
-        # ----------------------------------------------------------------
-        # _route_from_postprocess — conditional edge after mesh_postprocess
-        # ----------------------------------------------------------------
 
         def _route_from_postprocess(state: GraphState) -> str:
             """Return dispatcher or END based on stopping conditions."""
@@ -653,13 +433,8 @@ class MeshTopology:
 
             return _ROUTE_DISPATCHER
 
-        # ----------------------------------------------------------------
-        # Assemble graph
-        # ----------------------------------------------------------------
-
         graph: StateGraph[GraphState] = StateGraph(GraphState)
 
-        # Add nodes
         graph.add_node("dispatcher", dispatcher_node)
         graph.add_node("mesh_broadcast", mesh_broadcast_node)
         graph.add_node("mesh_postprocess", mesh_postprocess_node)
@@ -667,11 +442,8 @@ class MeshTopology:
         for agent_id, node_fn in _agent_nodes.items():
             graph.add_node(agent_id, node_fn)
 
-        # Entry point
         graph.add_edge(START, "dispatcher")
 
-        # Dispatcher → agent (conditional)
-        # Include human_peer in routing map when HITL enabled
         dispatcher_routing: dict[str, str] = {
             agent_id: agent_id for agent_id in effective_agent_order
         }
@@ -681,14 +453,10 @@ class MeshTopology:
             dispatcher_routing,  # type: ignore[arg-type]
         )
 
-        # Each agent → mesh_broadcast (includes human_peer when enabled)
         for agent_id in effective_agent_order:
             graph.add_edge(agent_id, "mesh_broadcast")
 
-        # mesh_broadcast → mesh_postprocess
         graph.add_edge("mesh_broadcast", "mesh_postprocess")
-
-        # mesh_postprocess → dispatcher or END
         graph.add_conditional_edges(
             "mesh_postprocess",
             _route_from_postprocess,
@@ -701,36 +469,18 @@ class MeshTopology:
         return graph.compile(checkpointer=checkpointer)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _pick_priority_agent(
     state: GraphState,
     agent_order: list[str],
     rr_index: int,
 ) -> str:
-    """Priority policy: route to 'critic' if any DRAFT exists on broadcast_bus.
-
-    Falls back to round-robin position when no DRAFT is found.
-
-    Args:
-        state:       Current GraphState.
-        agent_order: Ordered list of agent IDs for fallback round-robin.
-        rr_index:    Current round-robin pointer (for fallback).
-
-    Returns:
-        agent_id string.
-    """
+    """Return 'critic' when DRAFT exists on broadcast_bus, else round-robin fallback."""
     shared: dict[str, Any] = dict(state.get("shared") or {})
     bus: list[Any] = list(shared.get("broadcast_bus") or [])
 
     for msg in bus:
         kind = getattr(msg, "kind", None)
         if (kind == MessageKind.DRAFT or str(kind) == "draft") and "critic" in agent_order:
-            # Route to critic as priority reviewer
             return "critic"
 
-    # Fallback: round-robin
     return agent_order[rr_index % len(agent_order)]

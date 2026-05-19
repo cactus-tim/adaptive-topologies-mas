@@ -24,10 +24,6 @@ from atm.experiment.reconcile import (
     reconcile_zombies,
 )
 
-# ---------------------------------------------------------------------------
-# _classify_row — pure-function tests
-# ---------------------------------------------------------------------------
-
 
 def test_classify_none_host_is_no_pid_zombie() -> None:
     rid = uuid.uuid4()
@@ -66,11 +62,6 @@ def test_classify_same_host_live_pid_is_not_zombie(monkeypatch: pytest.MonkeyPat
     assert z is None
 
 
-# ---------------------------------------------------------------------------
-# _pid_alive — uses real os.kill for current pid
-# ---------------------------------------------------------------------------
-
-
 def test_pid_alive_self_pid_is_live() -> None:
     import os
 
@@ -78,21 +69,12 @@ def test_pid_alive_self_pid_is_live() -> None:
 
 
 def test_pid_alive_invalid_pid_is_dead() -> None:
-    # PID 0 / negative are non-live by definition
     assert reconcile_mod._pid_alive(0) is False
     assert reconcile_mod._pid_alive(-1) is False
 
 
 def test_pid_alive_likely_dead_pid_is_dead() -> None:
-    # A very large PID is virtually guaranteed to not exist on the test host.
-    # If by miracle it does, this test will be flaky — but the probability is
-    # ~1 in 2^31, which is acceptable for a unit test.
     assert reconcile_mod._pid_alive(2_147_000_000) is False
-
-
-# ---------------------------------------------------------------------------
-# reconcile_zombies — full async path with mocked session
-# ---------------------------------------------------------------------------
 
 
 def _make_session_factory(
@@ -110,8 +92,6 @@ def _make_session_factory(
     select_result.all = MagicMock(return_value=select_rows)
 
     async def _execute(stmt: Any) -> Any:
-        # Crude heuristic: first execute call returns SELECT result; subsequent
-        # calls are UPDATEs.
         compiled = str(stmt).upper()
         if compiled.startswith("SELECT"):
             return select_result
@@ -124,8 +104,6 @@ def _make_session_factory(
     async def _scope(_factory: Any) -> Any:
         yield session
 
-    # Patch session_scope on the reconcile module instead of passing a factory
-    # mock — the function imports session_scope lazily inside the function.
     return session, _scope
 
 
@@ -146,7 +124,6 @@ async def test_reconcile_marks_dead_pid_as_zombie(monkeypatch: pytest.MonkeyPatc
         "_pid_alive",
         lambda pid: pid == 1234,
     )
-    # Patch the lazily-imported session_scope inside reconcile_zombies.
     import atm.storage.session as storage_session_mod
 
     monkeypatch.setattr(storage_session_mod, "session_scope", _scope)
@@ -162,7 +139,6 @@ async def test_reconcile_marks_dead_pid_as_zombie(monkeypatch: pytest.MonkeyPatc
     assert report.zombies[0].run_id == rid_dead
     assert report.zombies[0].reason == "pid_dead"
     assert report.actions == {rid_dead: "marked_failed"}
-    # Exactly one UPDATE was issued.
     assert len(update_capture) == 1
 
 
@@ -189,7 +165,7 @@ async def test_reconcile_force_resume_does_not_mutate(monkeypatch: pytest.Monkey
     assert report.scanned == 1
     assert len(report.zombies) == 1
     assert report.actions == {rid_dead: "kept_force_resume"}
-    assert update_capture == []  # no UPDATE issued
+    assert update_capture == []
 
 
 @pytest.mark.asyncio
@@ -200,7 +176,6 @@ async def test_reconcile_host_mismatch_marked_failed(monkeypatch: pytest.MonkeyP
     update_capture: list[Any] = []
     _session, _scope = _make_session_factory(rows, update_capture)
 
-    # Even if _pid_alive would return True, host mismatch wins.
     monkeypatch.setattr(reconcile_mod, "_pid_alive", lambda pid: True)
     import atm.storage.session as storage_session_mod
 
@@ -271,5 +246,4 @@ def test_zombie_row_is_frozen() -> None:
 
 def test_current_host_default_is_socket_gethostname() -> None:
     """When current_host is omitted, socket.gethostname() is used."""
-    # Sanity check — the constant is reachable.
     assert isinstance(socket.gethostname(), str)

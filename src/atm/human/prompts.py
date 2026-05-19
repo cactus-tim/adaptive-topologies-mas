@@ -1,20 +1,10 @@
-"""Per-role system prompts and user prompt builder for HITL interactions (M9 Step 1.1).
-
-Each HumanRole maps to a concise system prompt that frames the human participant's
-responsibility.  The ``build_role_prompt`` function renders both the system prompt
-and a contextual user prompt from a HumanContext.
-"""
+"""Per-role system prompts and user prompt builder for HITL interactions."""
 
 from __future__ import annotations
 
 from atm.core.types import HumanContext, HumanRole
 
 __all__ = ["ROLE_SYSTEM_PROMPTS", "build_role_prompt"]
-
-# ---------------------------------------------------------------------------
-# Per-role system prompts
-# Keep them concise and directive — no boilerplate, no flattery.
-# ---------------------------------------------------------------------------
 
 ROLE_SYSTEM_PROMPTS: dict[HumanRole, str] = {
     HumanRole.COORDINATOR: (
@@ -51,25 +41,9 @@ ROLE_SYSTEM_PROMPTS: dict[HumanRole, str] = {
 
 
 def build_role_prompt(role: HumanRole, ctx: HumanContext) -> tuple[str, str]:
-    """Build ``(system_prompt, user_prompt)`` for a given role and HumanContext.
-
-    Parameters
-    ----------
-    role:
-        The HumanRole for which to generate prompts.
-    ctx:
-        The HumanContext describing the decision point.
-
-    Returns
-    -------
-    tuple[str, str]
-        ``(system_prompt, user_prompt)`` — both non-empty strings ready to be
-        sent to an LLM or rendered in a CLI interface.
-    """
+    """Build ``(system_prompt, user_prompt)`` for a given role and HumanContext."""
     system_prompt = ROLE_SYSTEM_PROMPTS[role]
 
-    # Build a structured user-facing prompt that embeds the context fields
-    # every gateway (LLM-simulated, CLI, or web) will need.
     actions_str = ", ".join(f'"{a}"' for a in ctx.allowed_actions)
     deadline_line = (
         f"\nDeadline: respond within {ctx.deadline_s} seconds."
@@ -87,11 +61,6 @@ def build_role_prompt(role: HumanRole, ctx: HumanContext) -> tuple[str, str]:
     )
 
     return system_prompt, user_prompt
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _format_recent_messages(ctx: HumanContext) -> str:

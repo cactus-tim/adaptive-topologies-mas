@@ -18,10 +18,6 @@ from uuid import uuid4
 
 from atm.core.state import AgentState, GraphState, SharedState
 
-# ---------------------------------------------------------------------------
-# 1. AgentState structure
-# ---------------------------------------------------------------------------
-
 
 class TestAgentState:
     def test_is_typeddict(self) -> None:
@@ -44,7 +40,6 @@ class TestAgentState:
         assert "cost_spent_usd" in hints
 
     def test_total_false_allows_empty_creation(self) -> None:
-        # AgentState is total=False — all keys optional
         state: AgentState = {}  # type: ignore[typeddict-item]
         assert isinstance(state, dict)
 
@@ -58,11 +53,6 @@ class TestAgentState:
         assert state["step_count"] == 5
 
 
-# ---------------------------------------------------------------------------
-# 2. SharedState structure
-# ---------------------------------------------------------------------------
-
-
 class TestSharedState:
     def test_is_typeddict(self) -> None:
         assert issubclass(SharedState, dict)
@@ -73,7 +63,6 @@ class TestSharedState:
 
     def test_has_topology_fields(self) -> None:
         hints = get_type_hints(SharedState)
-        # Required L2 topology fields — field name matches arch.md §3.2 line 419
         assert "active_topology" in hints
         assert "topology_switch_count" in hints
         assert "topology_history" in hints
@@ -93,11 +82,6 @@ class TestSharedState:
         assert isinstance(state, dict)
 
 
-# ---------------------------------------------------------------------------
-# 3. GraphState structure
-# ---------------------------------------------------------------------------
-
-
 class TestGraphState:
     def test_is_typeddict(self) -> None:
         assert issubclass(GraphState, dict)
@@ -115,7 +99,6 @@ class TestGraphState:
         agents_hint = hints["agents"]
         assert get_origin(agents_hint) is Annotated
         args = get_args(agents_hint)
-        # args[0] is the type, args[1] is the reducer callable
         assert callable(args[1])
         assert args[1].__name__ == "merge_agent_states"
 
@@ -148,11 +131,6 @@ class TestGraphState:
         assert callable(args[1])
 
 
-# ---------------------------------------------------------------------------
-# 4. MC-3: closure name check
-# ---------------------------------------------------------------------------
-
-
 class TestMC3ClosureName:
     """MC-3: factory-produced reducers must be named `_reduce`;
     the bare merge_agent_states must be named `merge_agent_states`.
@@ -160,7 +138,6 @@ class TestMC3ClosureName:
 
     def test_dedup_reducer_closure_name_is_reduce(self) -> None:
         hints = get_type_hints(GraphState, include_extras=True)
-        # All dedup-based reducers (messages, llm_calls, budget_events, topology_transitions)
         for field in ("messages", "llm_calls", "budget_events", "topology_transitions"):
             hint = hints[field]
             reducer = get_args(hint)[1]
@@ -173,11 +150,6 @@ class TestMC3ClosureName:
         agents_hint = hints["agents"]
         reducer = get_args(agents_hint)[1]
         assert reducer.__name__ == "merge_agent_states"
-
-
-# ---------------------------------------------------------------------------
-# 5. MC-4: reducers are callable (runtime check)
-# ---------------------------------------------------------------------------
 
 
 class TestMC4ReducersCallable:
@@ -212,11 +184,6 @@ class TestMC4ReducersCallable:
         assert result == {}
 
 
-# ---------------------------------------------------------------------------
-# 6. M2 step 1.3: llm_calls reducer sorts by started_at
-# ---------------------------------------------------------------------------
-
-
 class TestLlmCallsReducerSortByStartedAt:
     """M2 step 1.3: GraphState.llm_calls reducer must sort by started_at ASC."""
 
@@ -233,7 +200,6 @@ class TestLlmCallsReducerSortByStartedAt:
         early = self._make_llm_response(started_at=now - timedelta(seconds=10))
         late = self._make_llm_response(started_at=now)
 
-        # Pass late first in left, early in right — result must be sorted ASC
         result = reducer([late], [early])
         assert len(result) == 2
         assert result[0]["started_at"] < result[1]["started_at"]
@@ -250,8 +216,6 @@ class TestLlmCallsReducerSortByStartedAt:
             self._make_llm_response(started_at=now + timedelta(seconds=i))
             for i in [3, 1, 4, 1, 5, 9, 2, 6]
         ]
-        # Shuffle: put some in left, some in right
-        # Dedup by id means all unique IDs so all 8 kept
         result = reducer(items[:4], items[4:])
         started_ats = [r["started_at"] for r in result]
         assert started_ats == sorted(started_ats)
@@ -264,8 +228,8 @@ class TestLlmCallsReducerSortByStartedAt:
         shared_id = uuid4()
         now = datetime.now(UTC)
         left_item = {"id": shared_id, "started_at": now - timedelta(seconds=5)}
-        right_item = {"id": shared_id, "started_at": now}  # same id, left wins
+        right_item = {"id": shared_id, "started_at": now}
 
         result = reducer([left_item], [right_item])
         assert len(result) == 1
-        assert result[0]["started_at"] == left_item["started_at"]  # left wins
+        assert result[0]["started_at"] == left_item["started_at"]

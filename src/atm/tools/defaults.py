@@ -42,7 +42,6 @@ def build_default_registry(
         CodeSandbox implementation (SubprocessSandbox or DockerSandbox).
     prod_mode:
         If True, raises ToolError when sandbox is not isolated (IS_ISOLATED=False).
-        Fail-closed: prevents accidental use of dev sandbox in production.
     include_pylint:
         Forward to LintTool — include pylint if installed (default False).
     retry_policy:
@@ -66,7 +65,6 @@ def build_default_registry(
             ),
         )
 
-    # Lazy imports to prevent circular imports at module load time
     from atm.tools.global_.calculator import CalculatorTool
     from atm.tools.global_.file_read import FileReadTool
     from atm.tools.global_.search import DuckDuckGoSearchTool
@@ -82,13 +80,11 @@ def build_default_registry(
 
     registry = ToolRegistry()
 
-    # Global tools
     registry.register(CalculatorTool())
     registry.register(FileReadTool(workspace=workspace))
     registry.register(DuckDuckGoSearchTool(retry_policy=retry_policy))
     registry.register(UrlFetchTool(retry_policy=retry_policy))
 
-    # Local tools
     registry.register(CodeRunTool(sandbox=sandbox))
     registry.register(TestRunTool(sandbox=sandbox))
     registry.register(FileWriteTool(workspace=workspace))

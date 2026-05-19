@@ -16,14 +16,9 @@ import pytest
 
 import atm.core
 
-# ---------------------------------------------------------------------------
-# Basic import tests
-# ---------------------------------------------------------------------------
-
 
 def test_star_import_does_not_fail() -> None:
     """from atm.core import * must not raise."""
-    # Already executed at module load; just assert the module is importable
     assert atm.core is not None
 
 
@@ -32,22 +27,12 @@ def test_all_is_defined_and_non_empty() -> None:
     assert len(atm.core.__all__) >= 25
 
 
-# ---------------------------------------------------------------------------
-# IR-4: every name in __all__ resolves via hasattr / getattr
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("name", atm.core.__all__)
 def test_all_name_resolvable(name: str) -> None:
     """Every name in __all__ must be present on the module and not None."""
     assert hasattr(atm.core, name), f"atm.core has no attribute {name!r}"
     obj = getattr(atm.core, name)
     assert obj is not None, f"atm.core.{name} is None"
-
-
-# ---------------------------------------------------------------------------
-# MC-5: dedup_by_id_reducer with Pydantic Message — left-wins on id collision
-# ---------------------------------------------------------------------------
 
 
 def test_mc5_dedup_message_left_wins_on_same_id() -> None:
@@ -60,7 +45,6 @@ def test_mc5_dedup_message_left_wins_on_same_id() -> None:
         content="left content",
         payload={"version": "left"},
     )
-    # Construct right with same id but different payload (bypass frozen model via construct)
     msg_right = Message.model_construct(
         id=msg_left.id,
         sender="agent-b",
@@ -96,11 +80,6 @@ def test_mc5_dedup_distinct_ids_both_kept() -> None:
     ids = {item.id for item in result}
     assert m1.id in ids
     assert m2.id in ids
-
-
-# ---------------------------------------------------------------------------
-# End-to-end reducer roundtrip: merge_agent_states
-# ---------------------------------------------------------------------------
 
 
 def test_merge_agent_states_roundtrip() -> None:
@@ -142,16 +121,10 @@ def test_merge_agent_states_roundtrip() -> None:
 
     assert "agent-1" in merged
     agent = merged["agent-1"]
-    # scratchpad — longer-list wins (no inherent id; sub-graph delta is a
-    # superset of the parent's events). On a length tie the right side wins.
     assert agent["scratchpad"] == [{"step": 2}]
-    # step_count — max
     assert agent["step_count"] == 5
-    # tokens_spent — max
     assert agent["tokens_spent"] == 100
-    # cost_spent_usd — max
     assert agent["cost_spent_usd"] == pytest.approx(0.02)
-    # summary — right wins when non-empty
     assert agent["summary_before_window"] == "summary text"
 
 
@@ -184,18 +157,12 @@ def test_merge_agent_states_none_neutral() -> None:
     assert merge_agent_states(state, None) == state
 
 
-# ---------------------------------------------------------------------------
-# GraphState Annotated metadata contains callable reducers
-# ---------------------------------------------------------------------------
-
-
 def test_graphstate_annotated_reducers_are_callable() -> None:
     """GraphState list/dict fields must have callable reducers in Annotated metadata."""
     from atm.core import GraphState
 
     hints = get_type_hints(GraphState, include_extras=True)
 
-    # These fields must all have Annotated[..., callable]
     expected_annotated = (
         "agents",
         "messages",
@@ -214,16 +181,6 @@ def test_graphstate_annotated_reducers_are_callable() -> None:
         assert callable(reducer), (
             f"GraphState.{field} second Annotated arg must be callable, got {reducer!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Direct import smoke test
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Sort-by tests (arch.md §3.2 lines 454-459)
-# ---------------------------------------------------------------------------
 
 
 def test_dedup_sort_by_created_at_messages() -> None:
@@ -256,7 +213,6 @@ def test_dedup_sort_by_created_at_messages() -> None:
         created_at=t_old,
     )
 
-    # Feed descending order (newer first, older second) — reducer must return ASC
     reducer = dedup_by_id_reducer("id", sort_by="created_at")
     result = reducer([msg_newer], [msg_older])
 
@@ -275,7 +231,6 @@ def test_dedup_sort_by_at_budget_events() -> None:
     t_old = datetime.datetime(2026, 1, 1, 9, 0, 0, tzinfo=datetime.UTC)
     t_new = datetime.datetime(2026, 1, 1, 11, 0, 0, tzinfo=datetime.UTC)
 
-    # Two events with distinct run_ids so they are not deduped; timestamps set via model_copy
     base_newer = BudgetEvent(
         run_id=uuid.uuid4(), level="run", event="warn", limit_usd=1.0, current_usd=0.5
     )

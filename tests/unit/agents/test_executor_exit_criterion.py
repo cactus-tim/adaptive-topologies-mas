@@ -25,17 +25,8 @@ from atm.llm.pricing import Pricing
 from atm.llm.wrapper import LLMWrapper
 from atm.tools.base import ToolRegistry, ToolSchema
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-
-# ---------------------------------------------------------------------------
-# FakeCodeRunTool — inline deterministic stub (no Docker dependency)
-# ---------------------------------------------------------------------------
 
 
 class FakeCodeRunTool:
@@ -78,7 +69,7 @@ class FakeCodeRunTool:
         from uuid import uuid4
 
         return ToolResult(
-            call_id=uuid4(),  # registry will override this with the ToolCall's id
+            call_id=uuid4(),
             ok=True,
             output={
                 "stdout": "2\n",
@@ -90,11 +81,6 @@ class FakeCodeRunTool:
             error=None,
             latency_ms=1,
         )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_budget() -> BudgetTracker:
@@ -126,25 +112,17 @@ def _make_initial_state() -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Test
-# ---------------------------------------------------------------------------
-
-
 class TestExecutorExitCriterion:
     """End-to-end exit-criterion test for the Executor agent."""
 
     async def test_executor_runs_code_via_tool_loop(self) -> None:
         """Executor calls code_run through the tool loop; scratchpad grows; result captured."""
 
-        # Build LLMWrapper with the scripted fixture
         llm = _make_llm_wrapper("m5_executor_exit.yaml")
 
-        # Build ToolRegistry and register the fake code_run tool
         registry = ToolRegistry()
         registry.register(FakeCodeRunTool())
 
-        # Build AgentConfig for executor role
         cfg = AgentConfig(
             role="executor",
             system_prompt="You are an executor.",
@@ -154,18 +132,12 @@ class TestExecutorExitCriterion:
             tools=["code_run"],
         )
 
-        # Build the Executor agent
         executor = Executor(agent_id="e1", cfg=cfg, llm=llm, tools=registry)
 
-        # Initial state
         state = _make_initial_state()
 
-        # Execute one step
         delta = await executor.step(state)
 
-        # ------------------------------------------------------------------
-        # 1. Delta structure
-        # ------------------------------------------------------------------
         assert isinstance(delta, dict), "step() must return a dict"
         assert "agents" in delta, "delta must contain 'agents' key"
         assert "messages" in delta, "delta must contain 'messages' key"
@@ -173,30 +145,17 @@ class TestExecutorExitCriterion:
 
         agent_delta = delta["agents"]["e1"]
 
-        # ------------------------------------------------------------------
-        # 2. Scratchpad has >= 3 events
-        #    Minimum expected layout:
-        #      step 0: reasoning ("I will run print(1+1)…")
-        #      step 0: tool_call (code_run)
-        #      step 0: observation (result of code_run)
-        #      step 1: reasoning ("Successfully executed…")
-        #    = 4 events; relaxed to >= 3 to avoid brittleness
-        # ------------------------------------------------------------------
         scratchpad = agent_delta["scratchpad"]
         assert len(scratchpad) >= 3, (
             f"scratchpad must have >= 3 events (reasoning + tool_call + observation + …), "
             f"got {len(scratchpad)}: {scratchpad}"
         )
 
-        # Verify the scratchpad contains the expected kinds in order
         kinds = [ev["kind"] for ev in scratchpad]
         assert "reasoning" in kinds, "scratchpad must contain a reasoning event"
         assert "tool_call" in kinds, "scratchpad must contain a tool_call event"
         assert "observation" in kinds, "scratchpad must contain an observation event"
 
-        # ------------------------------------------------------------------
-        # 3. tool_calls has exactly 1 entry (C1 accumulation check)
-        # ------------------------------------------------------------------
         tool_calls = agent_delta["tool_calls"]
         assert len(tool_calls) == 1, (
             f"C1: exactly 1 tool_call expected (code_run), got {len(tool_calls)}: {tool_calls}"
@@ -205,9 +164,6 @@ class TestExecutorExitCriterion:
             f"Expected tool_name='code_run', got {tool_calls[0].tool_name!r}"
         )
 
-        # ------------------------------------------------------------------
-        # 4. tool_results has exactly 1 entry; ok is True; stdout == "2\n"
-        # ------------------------------------------------------------------
         tool_results = agent_delta["tool_results"]
         assert len(tool_results) == 1, (
             f"Exactly 1 tool_result expected, got {len(tool_results)}: {tool_results}"
@@ -219,14 +175,10 @@ class TestExecutorExitCriterion:
             f"output['stdout'] must be '2\\n', got {tr.output.get('stdout')!r}"
         )
 
-        # Verify the registry stamped the correct call_id from the ToolCall
         assert tr.call_id == tool_calls[0].id, (
             "tool_results[0].call_id must match the issued ToolCall's id"
         )
 
-        # ------------------------------------------------------------------
-        # 5. delta["messages"] includes a DRAFT from "e1" mentioning "2"
-        # ------------------------------------------------------------------
         messages = delta["messages"]
         assert len(messages) >= 1, "delta['messages'] must contain at least one message"
 
@@ -235,7 +187,6 @@ class TestExecutorExitCriterion:
             f"Must have at least one DRAFT message from 'e1', got: {messages}"
         )
 
-        # The final response content is "Successfully executed; the output was 2."
         draft_content = draft_messages[0].content
         assert "2" in draft_content, (
             f"DRAFT message content must mention '2' (the result), got: {draft_content!r}"

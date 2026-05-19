@@ -44,10 +44,6 @@ def _make_budget() -> BudgetTracker:
 def _make_echo_llm(response_text: str) -> LLMWrapper:
     """Build an echo LLMWrapper that always returns response_text."""
     fake = FakeLLM(mode="echo")
-    # Echo mode repeats the last user message, so we need to control the input.
-    # Use scripted mode with a fixture that has the exact content.
-    # For simplicity, use the m6_chain_critic fixture which has "APPROVE fib".
-    # Tests that need custom text use a FakeLLM(mode="scripted").
     return LLMWrapper(
         model_id="fake:echo",
         pricing=_make_pricing(),
@@ -104,7 +100,7 @@ class TestCriticEmitsDecision:
 
     async def test_critic_approved_true_on_approve(self) -> None:
         """APPROVE in response text → payload['approved'] == True."""
-        llm = _make_scripted_llm("m6_chain_critic.yaml")  # content: "APPROVE fib"
+        llm = _make_scripted_llm("m6_chain_critic.yaml")
         cfg = _make_cfg()
         critic = Critic(agent_id="critic", cfg=cfg, llm=llm, tools=ToolRegistry())
 
@@ -120,13 +116,10 @@ class TestCriticEmitsDecision:
 
     async def test_critic_approved_false_on_non_approve(self) -> None:
         """Absence of 'approve' in response text → payload['approved'] == False."""
-        # Use echo LLM — echo returns the task input which has no "approve"
         llm = _make_echo_llm("REJECT: code is incorrect")
         cfg = _make_cfg()
         critic = Critic(agent_id="critic", cfg=cfg, llm=llm, tools=ToolRegistry())
 
-        # Echo mode returns the last user message — we make the state so the
-        # prompt produces no "approve" text.
         state = {
             "shared": {"task_input": "REJECT: output is wrong."},
             "agents": {},

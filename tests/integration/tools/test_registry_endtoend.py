@@ -13,10 +13,6 @@ import pytest
 from atm.tools.defaults import build_default_registry
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture(scope="module")
 def workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -55,11 +51,6 @@ def registry(workspace: Path, corpus_dir: Path):
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 class TestRegistryEndToEnd:
     @pytest.mark.asyncio
     async def test_todo_write_state_update(self, registry) -> None:
@@ -91,7 +82,6 @@ class TestRegistryEndToEnd:
 
         content = "print('hello from integration test')\n"
 
-        # Write
         write_call = ToolCall(
             tool_name="file_write",
             issued_by="test_agent",
@@ -105,7 +95,6 @@ class TestRegistryEndToEnd:
         assert write_result.ok is True
         assert write_result.output["bytes_written"] == len(content.encode("utf-8"))
 
-        # Read back
         read_call = ToolCall(
             tool_name="file_read",
             issued_by="test_agent",
@@ -170,7 +159,6 @@ class TestRegistryEndToEnd:
         """lint on code with unused import detects a ruff diagnostic."""
         from atm.core.types import ToolCall
 
-        # F401: imported but unused
         call = ToolCall(
             tool_name="lint",
             issued_by="test_agent",
@@ -178,10 +166,7 @@ class TestRegistryEndToEnd:
         )
         result = await registry.ainvoke_by_name("lint", call)
         assert result.ok is True
-        # Should have at least one ruff diagnostic (F811 redefined or F401 unused)
         assert isinstance(result.output["ruff"], list)
-        # We don't assert length because ruff may auto-fix or not raise on duplicates
-        # depending on config; just verify shape is correct
         for diag in result.output["ruff"]:
             assert "code" in diag or "message" in diag
 
@@ -220,7 +205,6 @@ class TestRegistryEndToEnd:
         """code_run can import solution.py written by file_write."""
         from atm.core.types import ToolCall
 
-        # Write a helper module
         write_call = ToolCall(
             tool_name="file_write",
             issued_by="test_agent",
@@ -232,7 +216,6 @@ class TestRegistryEndToEnd:
         )
         await registry.ainvoke_by_name("file_write", write_call)
 
-        # Run code that imports helper
         code_call = ToolCall(
             tool_name="code_run",
             issued_by="test_agent",

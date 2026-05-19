@@ -1,18 +1,4 @@
-"""SQLAlchemy 2.x ORM models for the ATM storage layer.
-
-6 business tables:
-  - experiments    — root entity; one experiment = a grid/sweep run
-  - runs           — one run within an experiment; reproducibility bundle §14.4
-  - phases         — phase transitions within a run §3.4
-  - human_interactions — HITL events with NASA-TLX §13.3
-  - budget_events  — budget warn/exceed events §3.4
-  - topology_transitions — TopologyRouter decisions §3.4 / RQ2
-
-All datetime columns use TIMESTAMPTZ.
-JSONB columns use server_default=sa.text("'{}'::jsonb") where arch.md requires it.
-ARRAY(String) columns use server_default=sa.text("'{}'::text[]").
-All relationships use lazy="raise".
-"""
+"""SQLAlchemy 2.x ORM models for the ATM storage layer (6 business tables)."""
 
 from __future__ import annotations
 
@@ -27,10 +13,6 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-# ---------------------------------------------------------------------------
-# FinishReason — StrEnum with canonical values (arch.md §3.4)
-# ---------------------------------------------------------------------------
-
 
 class FinishReason(StrEnum):
     """Terminal reason for a run finishing."""
@@ -43,18 +25,8 @@ class FinishReason(StrEnum):
     HUMAN_TIMEOUT = "human_timeout"
 
 
-# ---------------------------------------------------------------------------
-# Declarative base
-# ---------------------------------------------------------------------------
-
-
 class Base(DeclarativeBase):
     """Single declarative base for all ATM storage models."""
-
-
-# ---------------------------------------------------------------------------
-# Experiment
-# ---------------------------------------------------------------------------
 
 
 class Experiment(Base):
@@ -91,7 +63,6 @@ class Experiment(Base):
     )
     status: Mapped[str] = mapped_column(sa.String(16), nullable=False)
 
-    # Relationships
     runs: Mapped[list[Run]] = relationship(
         "Run",
         back_populates="experiment",
@@ -99,19 +70,8 @@ class Experiment(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# Run
-# ---------------------------------------------------------------------------
-
-
 class Run(Base):
-    """One run within an experiment — atomic unit of execution.
-
-    Contains the full reproducibility bundle (§14.4):
-      - models_by_role_json: snapshot of ModelCfg.by_role at run start
-      - model_version_snapshot: {model_id: version} for exact replay
-      - sandbox_image_digest: sha256:… of the DockerSandbox image
-    """
+    """One run within an experiment — atomic unit of execution."""
 
     __tablename__ = "runs"
 
@@ -141,7 +101,6 @@ class Run(Base):
     seed: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     model: Mapped[str] = mapped_column(sa.String(64), nullable=False)
 
-    # Reproducibility bundle (§14.4)
     models_by_role_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -189,7 +148,6 @@ class Run(Base):
     )
     error: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
 
-    # Replay / provenance columns (m12-config-schema §3)
     replay_of: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         sa.ForeignKey("runs.id", ondelete="SET NULL", name="fk_runs_replay_of_runs"),
@@ -198,7 +156,6 @@ class Run(Base):
     host: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
     process_pid: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
-    # Relationships
     experiment: Mapped[Experiment] = relationship(
         "Experiment",
         back_populates="runs",
@@ -226,11 +183,6 @@ class Run(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# Phase
-# ---------------------------------------------------------------------------
-
-
 class Phase(Base):
     """Phase transition within a run (planning → execution → verification → done)."""
 
@@ -251,7 +203,7 @@ class Phase(Base):
     phase_name: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     from_phase: Mapped[str | None] = mapped_column(
         sa.String(32),
-        nullable=True,  # §3.4: None on initial init
+        nullable=True,
     )
     started_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
@@ -260,13 +212,12 @@ class Phase(Base):
     )
     ended_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True),
-        nullable=True,  # §3.4: nullable — phase may still be ongoing
+        nullable=True,
     )
     entry_reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
     topology_used: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     decided_by: Mapped[str] = mapped_column(sa.String(16), nullable=False)
 
-    # Relationships
     run: Mapped[Run] = relationship(
         "Run",
         back_populates="phases",
@@ -274,20 +225,8 @@ class Phase(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# HumanInteraction
-# ---------------------------------------------------------------------------
-
-
 class HumanInteraction(Base):
-    """One HITL event — a human was asked for input and (optionally) responded.
-
-    NASA-TLX data (§13.3):
-      - tlx_scores: raw 6-scale JSONB (NasaTLX.model_dump())
-      - raw_tlx_score: aggregated float for fast filter queries
-    Idempotency:
-      - request_id: VARCHAR(64) — idempotency key paired with run_id
-    """
+    """One HITL event — a human was asked for input and (optionally) responded."""
 
     __tablename__ = "human_interactions"
 
@@ -322,36 +261,30 @@ class HumanInteraction(Base):
     )
     context_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
-        nullable=False,  # §3.4: HumanContext.model_dump()
+        nullable=False,
     )
     response_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
-        nullable=True,  # §3.4: HumanResponse.model_dump(); null until answered
+        nullable=True,
     )
     tlx_scores: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
-        nullable=True,  # §3.4: nullable
+        nullable=True,
     )
     raw_tlx_score: Mapped[float | None] = mapped_column(
         sa.Double(),
-        nullable=True,  # §13.3: aggregated float for fast filter; null before TLX filled
+        nullable=True,
     )
     request_id: Mapped[str | None] = mapped_column(
         sa.String(64),
-        nullable=True,  # idempotency key (run_id, request_id) pair
+        nullable=True,
     )
 
-    # Relationships
     run: Mapped[Run] = relationship(
         "Run",
         back_populates="human_interactions",
         lazy="raise",
     )
-
-
-# ---------------------------------------------------------------------------
-# BudgetEvent
-# ---------------------------------------------------------------------------
 
 
 class BudgetEvent(Base):
@@ -387,7 +320,6 @@ class BudgetEvent(Base):
         server_default=sa.text("now()"),
     )
 
-    # Relationships
     run: Mapped[Run] = relationship(
         "Run",
         back_populates="budget_events",
@@ -395,17 +327,8 @@ class BudgetEvent(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# TopologyTransition
-# ---------------------------------------------------------------------------
-
-
 class TopologyTransition(Base):
-    """TopologyRouter decision — recorded for every call, switch or no-change.
-
-    Source of truth for RQ2 metrics:
-      topology_switch_count, guard_override_rate, router_cost_share, oracle_gap.
-    """
+    """TopologyRouter decision — recorded for every call, switch or no-change."""
 
     __tablename__ = "topology_transitions"
 
@@ -427,18 +350,18 @@ class TopologyTransition(Base):
     )
     from_topology: Mapped[str | None] = mapped_column(
         sa.String(32),
-        nullable=True,  # §3.4: null only for initial
+        nullable=True,
     )
     to_topology: Mapped[str] = mapped_column(
         sa.String(32),
-        nullable=False,  # §3.4: == from_topology if no-change
+        nullable=False,
     )
     phase_at_decision: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     iter_within_phase: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     iter_within_topology: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     decided_by: Mapped[str] = mapped_column(
         sa.String(24),
-        nullable=False,  # enum: rule|llm_router|oracle|guard_override|initial
+        nullable=False,
     )
     reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
     considered_alternatives: Mapped[list[str]] = mapped_column(
@@ -467,7 +390,6 @@ class TopologyTransition(Base):
         server_default=sa.text("now()"),
     )
 
-    # Relationships
     run: Mapped[Run] = relationship(
         "Run",
         back_populates="topology_transitions",

@@ -64,11 +64,9 @@ async def test_replay_deterministic_round_trip(
         parquet_dir=str(parquet_dir),
     )
 
-    # 1) Original run.
     original = await run_one(cfg)
     assert original.status == "completed", f"original did not complete: {original}"
 
-    # The original llm_calls.parquet must have been written before replay.
     original_parquet = (
         parquet_dir
         / "experiments"
@@ -79,11 +77,9 @@ async def test_replay_deterministic_round_trip(
     )
     assert original_parquet.exists(), f"expected llm_calls.parquet at {original_parquet}"
 
-    # 2) Replay deterministically.
     replayed = await replay_one(original.run_id, mode="deterministic")
     assert replayed.status == "completed", f"replay did not complete: {replayed}"
 
-    # 3) Verify replay_of and exp_id parity in the DB.
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine.connect() as conn:
@@ -105,7 +101,6 @@ async def test_replay_deterministic_round_trip(
     assert host is not None
     assert pid is not None
 
-    # 4) Answer & iterations parity.
     assert replayed.final_answer == original.final_answer
     assert replayed.metrics.get("iters") == original.metrics.get("iters")
     if iterations is not None and original.metrics.get("iters") is not None:

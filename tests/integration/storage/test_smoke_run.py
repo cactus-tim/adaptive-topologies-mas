@@ -2,8 +2,8 @@
 
 Wave 7 — Step 5.1 of m3-storage-observability plan.
 
-Verifies the 4 flush invariants (arch.md §10.3) in a real PostgreSQL + Parquet
-end-to-end scenario, and verifies DDL equivalence between Base.metadata and
+Verifies the 4 flush invariants in a real PostgreSQL + Parquet end-to-end
+scenario, and verifies DDL equivalence between Base.metadata and
 the alembic migration head.
 
 Tests are marked @pytest.mark.integration and are skipped unless
@@ -52,10 +52,6 @@ from atm.storage.models import Phase as PhaseModel
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_session_factory, session_scope
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_exp_id() -> uuid.UUID:
     return uuid.uuid4()
@@ -63,11 +59,6 @@ def _make_exp_id() -> uuid.UUID:
 
 def _make_run_id() -> uuid.UUID:
     return uuid.uuid4()
-
-
-# ---------------------------------------------------------------------------
-# Test 1: full smoke — messages/phases/llm_calls land in PG + Parquet
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -90,7 +81,6 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
     exp_id = _make_exp_id()
     run_id = _make_run_id()
 
-    # --- Arrange: insert Experiment + Run rows ---
     async with session_scope(factory) as session:
         session.add(
             Experiment(
@@ -116,7 +106,6 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
             )
         )
 
-    # --- Build ParquetWriter + handler ---
     parquet_writer = ParquetWriter(tmp_path, run_id, exp_id)
     handler = ExperimentCallbackHandler(
         run_id=run_id,
@@ -127,11 +116,10 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
         budget_exceed_threshold=Decimal("1000"),
     )
 
-    # --- Build LLMResult for manual on_llm_end call ---
     llm_result = LLMResult(
         generations=[[]],
         llm_output={
-            "cost_usd": 150.0,  # >= warn_threshold=100 → should emit warn event
+            "cost_usd": 150.0,
             "model": "gpt-4",
             "input_tokens": 1000,
             "output_tokens": 500,
@@ -142,10 +130,8 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
         },
     )
 
-    # --- Build RunnableLambda that dispatches events and calls on_llm_end manually ---
     async def _run_step(inputs: dict) -> dict:  # type: ignore[type-arg]
         """Graph node that dispatches custom events (runs inside LangChain context)."""
-        # Dispatch message_emit
         msg = Message(
             sender="planner",
             recipients=("executor",),
@@ -154,7 +140,6 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
         )
         await adispatch_custom_event("message_emit", msg)
 
-        # Dispatch phase_transition
         pt = PhaseTransition(
             run_id=run_id,
             from_phase=None,
@@ -165,7 +150,6 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
         )
         await adispatch_custom_event("phase_transition", pt)
 
-        # Manually call on_llm_end (simulates LLM response within the run)
         await handler.on_llm_end(
             llm_result,
             run_id=uuid.uuid4(),
@@ -176,7 +160,6 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
 
     runnable: RunnableLambda[dict[str, object], dict[str, object]] = RunnableLambda(_run_step)
 
-    # --- Invoke the runnable with the handler as callback ---
     chain_run_id = uuid.uuid4()
     await runnable.ainvoke(
         {},
@@ -187,10 +170,8 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
         },
     )
 
-    # Give async background flushes a moment to complete
     await asyncio.sleep(0.1)
 
-    # --- Assertions: PostgreSQL rows ---
     async with session_scope(factory) as session:
         phase_result = await session.execute(select(PhaseModel).where(PhaseModel.run_id == run_id))
         phases = phase_result.scalars().all()
@@ -201,14 +182,12 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
             select(BudgetEvent).where(BudgetEvent.run_id == run_id)
         )
         budget_events = budget_result.scalars().all()
-        # cost_usd=150 >= warn_threshold=100 → at least 1 warn event
         assert len(budget_events) >= 1, (
             f"Expected >= 1 BudgetEvent (warn), got {len(budget_events)}"
         )
         warn_events = [e for e in budget_events if e.event == "warn"]
         assert len(warn_events) >= 1, "Expected at least 1 'warn' BudgetEvent"
 
-    # --- Assertions: Parquet files ---
     run_dir = tmp_path / "experiments" / str(exp_id) / "runs" / str(run_id)
 
     messages_df = pd.read_parquet(run_dir / "messages.parquet")
@@ -224,20 +203,12 @@ async def test_smoke_full_run_records_to_pg_and_parquet(
     phases_df = pd.read_parquet(run_dir / "phases.parquet")
     assert phases_df.shape[0] >= 1, f"Expected >= 1 phase row in Parquet, got {phases_df.shape[0]}"
 
-    # --- Assertions: checkpointer setup (arch.md §11.3, two pools) ---
-    # `str(engine.url)` masks the password as ***; render with full credentials.
     pg_dsn = pg_engine_fast.url.render_as_string(hide_password=False)
     async with checkpointer_scope(pg_dsn) as saver:
         count = 0
         async for _ in saver.alist({"configurable": {"thread_id": str(run_id)}}):
             count += 1
-        # count == 0 because we didn't write any checkpoints; >= 0 confirms saver works
         assert count >= 0
-
-
-# ---------------------------------------------------------------------------
-# Test 2: alembic DDL equivalence smoke
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -246,7 +217,7 @@ async def test_alembic_equivalence(pg_engine_alembic: AsyncEngine) -> None:
 
     Verifies:
     - information_schema.tables shows all 6 expected table names
-    - runs table has reproducibility bundle columns (arch.md §14.4)
+    - runs table has reproducibility bundle columns
     - Base.metadata.sorted_tables names match the alembic-created tables
     """
     expected_tables = {
@@ -258,7 +229,6 @@ async def test_alembic_equivalence(pg_engine_alembic: AsyncEngine) -> None:
         "topology_transitions",
     }
 
-    # Columns that must exist on 'runs' (reproducibility bundle §14.4)
     required_runs_columns = {
         "models_by_role_json",
         "model_version_snapshot",
@@ -267,7 +237,6 @@ async def test_alembic_equivalence(pg_engine_alembic: AsyncEngine) -> None:
     }
 
     async with pg_engine_alembic.connect() as conn:
-        # Query information_schema for public tables
         result = await conn.execute(
             text(
                 "SELECT table_name FROM information_schema.tables "
@@ -276,11 +245,9 @@ async def test_alembic_equivalence(pg_engine_alembic: AsyncEngine) -> None:
         )
         db_tables = {row[0] for row in result}
 
-    # All 6 business tables must be present
     missing = expected_tables - db_tables
     assert not missing, f"Missing tables after alembic upgrade head: {missing}"
 
-    # runs table: inspect reproducibility bundle columns
     async with pg_engine_alembic.connect() as conn:
         result = await conn.execute(
             text(
@@ -293,8 +260,6 @@ async def test_alembic_equivalence(pg_engine_alembic: AsyncEngine) -> None:
     missing_cols = required_runs_columns - runs_columns
     assert not missing_cols, f"Missing columns in 'runs' table: {missing_cols}"
 
-    # DDL equivalence: Base.metadata table names must match alembic-created tables
     orm_table_names = {t.name for t in Base.metadata.sorted_tables}
-    # business tables in ORM must all be present in DB
     orm_missing = orm_table_names - db_tables
     assert not orm_missing, f"ORM tables not found in DB after alembic upgrade: {orm_missing}"

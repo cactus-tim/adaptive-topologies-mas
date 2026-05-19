@@ -29,11 +29,6 @@ FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_pricing() -> Pricing:
     if PRICING_PATH.exists():
         return Pricing.from_yaml(PRICING_PATH)
@@ -75,17 +70,11 @@ def _make_state(signals: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 class TestCriticSignalEmission:
     """Critic.step() must emit correct signals into delta['shared']['signals']."""
 
     async def test_critic_approve_sets_critic_approved(self) -> None:
         """Approve response → signals['critic_approved'] == True."""
-        # m6_chain_critic.yaml produces "APPROVE fib"
         llm = _make_llm("m6_chain_critic.yaml")
         critic = Critic(agent_id="critic", cfg=_make_cfg(), llm=llm, tools=ToolRegistry())
 
@@ -96,7 +85,6 @@ class TestCriticSignalEmission:
         assert signals.get(CRITIC_APPROVED) is True, (
             f"Expected signals['{CRITIC_APPROVED}'] == True, got {signals}"
         )
-        # rejected_count should NOT be set on approve
         assert REJECTED_COUNT not in signals or signals.get(REJECTED_COUNT) == 0, (
             f"rejected_count should not be incremented on approve, signals={signals}"
         )
@@ -116,11 +104,9 @@ class TestCriticSignalEmission:
 
     async def test_critic_three_rejects_sets_needs_debate(self) -> None:
         """After 3 rejects, signals['needs_debate'] == True."""
-        # Use reject fixture — start at rejected_count=2 so this step makes it 3
         llm = _make_llm("m8_critic_reject.yaml")
         critic = Critic(agent_id="critic", cfg=_make_cfg(), llm=llm, tools=ToolRegistry())
 
-        # Start with count=2 — after this step it becomes 3 → needs_debate
         state = _make_state(signals={REJECTED_COUNT: 2})
         delta = await critic.step(state)
 
@@ -135,19 +121,16 @@ class TestCriticSignalEmission:
 
     async def test_critic_signals_additive(self) -> None:
         """Existing signals in shared.signals are preserved after emission."""
-        llm = _make_llm("m6_chain_critic.yaml")  # APPROVE
+        llm = _make_llm("m6_chain_critic.yaml")
         critic = Critic(agent_id="critic", cfg=_make_cfg(), llm=llm, tools=ToolRegistry())
 
-        # Existing unrelated signal
         existing_signals: dict[str, Any] = {"ready_for_execution": True}
         state = _make_state(signals=existing_signals)
         delta = await critic.step(state)
 
         shared_out: dict[str, Any] = delta.get("shared") or {}
         signals: dict[str, Any] = shared_out.get("signals") or {}
-        # Existing signal preserved
         assert signals.get("ready_for_execution") is True, (
             "Pre-existing signals should be preserved in the output"
         )
-        # New signal added
         assert signals.get(CRITIC_APPROVED) is True

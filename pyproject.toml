@@ -92,6 +92,9 @@ ignore = ["E501"]  # line length is controlled by the formatter
 "tests/unit/tools/test_sandbox_base.py" = ["I001"]
 "tests/unit/tools/test_subprocess_sandbox.py" = ["I001", "F401"]
 "tests/unit/analysis/test_oracle_no_matplotlib_import.py" = ["I001", "UP032", "RUF100"]
+"analysis/e2_report.py" = ["RUF001"]
+"analysis/e4_report.py" = ["RUF001", "RUF002"]
+"scripts/e2_error_watch.py" = ["B023"]
 
 [tool.ruff.format]
 # defaults

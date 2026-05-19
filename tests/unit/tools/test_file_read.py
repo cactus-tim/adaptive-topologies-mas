@@ -8,19 +8,10 @@ import pytest
 
 from atm.tools.global_.file_read import FileReadTool
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 async def _invoke(tool: FileReadTool, path: str):
     """Thin wrapper to invoke the tool and return the ToolResult."""
     return await tool.ainvoke({"path": path})
-
-
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -40,11 +31,6 @@ async def test_file_read_happy(tmp_path: Path) -> None:
     assert result.output["size"] == 5
 
 
-# ---------------------------------------------------------------------------
-# Path traversal rejection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_file_read_rejects_traversal(tmp_path: Path) -> None:
     """Path component ``../..`` that escapes the workspace is rejected."""
@@ -57,11 +43,6 @@ async def test_file_read_rejects_traversal(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.error is not None
     assert "outside workspace" in result.error
-
-
-# ---------------------------------------------------------------------------
-# Absolute path rejection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -78,11 +59,6 @@ async def test_file_read_rejects_absolute(tmp_path: Path) -> None:
     assert "absolute paths not allowed" in result.error
 
 
-# ---------------------------------------------------------------------------
-# Over-size file rejection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_file_read_rejects_oversize(tmp_path: Path) -> None:
     """Files exceeding max_bytes are rejected — NO silent truncation."""
@@ -90,20 +66,14 @@ async def test_file_read_rejects_oversize(tmp_path: Path) -> None:
     workspace.mkdir()
 
     big_file = workspace / "big.bin"
-    # Write 2 MiB of zeros
     big_file.write_bytes(b"\x00" * (2 * 1024 * 1024))
 
-    tool = FileReadTool(workspace=workspace, max_bytes=1024 * 1024)  # 1 MiB limit
+    tool = FileReadTool(workspace=workspace, max_bytes=1024 * 1024)
     result = await _invoke(tool, "big.bin")
 
     assert result.ok is False
     assert result.error is not None
     assert "too large" in result.error
-
-
-# ---------------------------------------------------------------------------
-# Symlink outside workspace rejection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -112,7 +82,6 @@ async def test_file_read_rejects_symlink_outside(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    # Create a symlink pointing outside the workspace
     link = workspace / "secret_link"
     link.symlink_to("/etc/hostname")
 
@@ -121,11 +90,6 @@ async def test_file_read_rejects_symlink_outside(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert result.error is not None
-
-
-# ---------------------------------------------------------------------------
-# Output shape
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -146,11 +110,6 @@ async def test_file_read_output_shape(tmp_path: Path) -> None:
     assert "size" in keys
 
 
-# ---------------------------------------------------------------------------
-# Nested path (subdirectory) — still within workspace
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_file_read_nested_path(tmp_path: Path) -> None:
     """Files in subdirectories within the workspace can be read."""
@@ -168,11 +127,6 @@ async def test_file_read_nested_path(tmp_path: Path) -> None:
     assert result.output["path"] == "sub/dir/data.txt"
 
 
-# ---------------------------------------------------------------------------
-# File not found
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_file_read_file_not_found(tmp_path: Path) -> None:
     """Reading a non-existent file returns ok=False with an appropriate error."""
@@ -184,11 +138,6 @@ async def test_file_read_file_not_found(tmp_path: Path) -> None:
 
     assert result.ok is False
     assert result.error is not None
-
-
-# ---------------------------------------------------------------------------
-# Tool protocol contract
-# ---------------------------------------------------------------------------
 
 
 def test_file_read_name_and_schema(tmp_path: Path) -> None:

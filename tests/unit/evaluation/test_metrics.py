@@ -33,12 +33,10 @@ class TestHumanevalPassAtK:
     def test_reference_value_n20_c2_k10(self) -> None:
         """Chen et al. 2021 unbiased estimator: n=20,c=2,k=10 → ~0.7632."""
         result = humaneval_pass_at_k(n=20, c=2, k=10)
-        # Correct reference from Chen et al. 2021: 1 - C(18,10)/C(20,10) ≈ 0.7632
         assert result == pytest.approx(0.7632, abs=1e-4)
 
     def test_n_minus_c_less_than_k_returns_one(self) -> None:
         """When n-c < k, guaranteed to find at least one correct → 1.0."""
-        # n=5, c=4, k=3: n-c=1 < k=3 → 1.0
         assert humaneval_pass_at_k(n=5, c=4, k=3) == pytest.approx(1.0)
 
     def test_no_correct_samples_returns_zero(self) -> None:

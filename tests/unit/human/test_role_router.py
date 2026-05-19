@@ -42,17 +42,11 @@ from atm.human.role_router import (
     RuleBasedRoleRouter,
 )
 
-# Absolute path to LLM fixture files used in TestLLMRoleRouter.
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _FIXTURE_VALID = _FIXTURES_DIR / "m9_2_role_router_valid.yaml"
 _FIXTURE_INVALID = _FIXTURES_DIR / "m9_2_role_router_invalid.yaml"
 
-# Absolute path to the default role_table YAML shipped with the project.
 _CONF_ROLE_TABLE = Path(__file__).parent.parent.parent.parent / "conf" / "human" / "role_table.yaml"
-
-# ---------------------------------------------------------------------------
-# Protocol shape tests
-# ---------------------------------------------------------------------------
 
 
 class TestHumanRoleRouterProtocol:
@@ -60,14 +54,12 @@ class TestHumanRoleRouterProtocol:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """isinstance() must not raise TypeError — protocol must be @runtime_checkable."""
-        # This would raise TypeError if not @runtime_checkable
         result = isinstance(object(), HumanRoleRouter)
         assert isinstance(result, bool)
 
     def test_protocol_has_decide_method(self) -> None:
         """HumanRoleRouter must expose an async 'decide' method."""
         assert hasattr(HumanRoleRouter, "decide")
-        # The method should be in the protocol's own annotations/members
         members = {name for name, _ in inspect.getmembers(HumanRoleRouter)}
         assert "decide" in members
 
@@ -75,11 +67,6 @@ class TestHumanRoleRouterProtocol:
         """decide() on a concrete impl must be an async method."""
         router = FixedRoleRouter(role=HumanRole.REVIEWER)
         assert inspect.iscoroutinefunction(router.decide)
-
-
-# ---------------------------------------------------------------------------
-# FixedRoleRouter — behavioural tests
-# ---------------------------------------------------------------------------
 
 
 class TestFixedRoleRouter:
@@ -132,11 +119,6 @@ class TestFixedRoleRouter:
         assert router.role == HumanRole.MONITOR
 
 
-# ---------------------------------------------------------------------------
-# Public API exports test
-# ---------------------------------------------------------------------------
-
-
 class TestPublicExports:
     """Verify that atm.human.__init__ re-exports the required symbols."""
 
@@ -154,11 +136,6 @@ class TestPublicExports:
         import atm.human as human_pkg
 
         assert hasattr(human_pkg, "RuleBasedRoleRouter")
-
-
-# ---------------------------------------------------------------------------
-# DEFAULT_ROLE_TABLE constant
-# ---------------------------------------------------------------------------
 
 
 class TestDefaultRoleTable:
@@ -179,11 +156,6 @@ class TestDefaultRoleTable:
     def test_all_phases_covered(self) -> None:
         """DEFAULT_ROLE_TABLE must cover all four Phase values."""
         assert set(DEFAULT_ROLE_TABLE.keys()) == set(Phase)
-
-
-# ---------------------------------------------------------------------------
-# RuleBasedRoleRouter — behavioural tests
-# ---------------------------------------------------------------------------
 
 
 class TestRuleBasedRoleRouter:
@@ -226,7 +198,6 @@ class TestRuleBasedRoleRouter:
         """Phases absent from custom table must return the fallback role."""
         partial_table = {Phase.PLANNING: HumanRole.COORDINATOR}
         router = RuleBasedRoleRouter(table=partial_table, fallback=HumanRole.MONITOR)
-        # EXECUTION is not in partial_table → fallback
         result = await router.decide(Phase.EXECUTION, {})
         assert result == HumanRole.MONITOR
 
@@ -252,13 +223,7 @@ class TestRuleBasedRoleRouter:
         original: dict[Phase, HumanRole] = {Phase.PLANNING: HumanRole.COORDINATOR}
         router = RuleBasedRoleRouter(table=original)
         original[Phase.PLANNING] = HumanRole.JUDGE
-        # Router should still have the original value
         assert router._table[Phase.PLANNING] == HumanRole.COORDINATOR
-
-
-# ---------------------------------------------------------------------------
-# RuleBasedRoleRouter.from_yaml
-# ---------------------------------------------------------------------------
 
 
 class TestRuleBasedRoleRouterFromYaml:
@@ -294,11 +259,6 @@ class TestRuleBasedRoleRouterFromYaml:
             RuleBasedRoleRouter.from_yaml(bad_yaml)
 
 
-# ---------------------------------------------------------------------------
-# LLMRoleRouter helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_fake_llm_mock(text: str) -> AsyncMock:
     """Create an AsyncMock that returns an LLMResponse with the given text content."""
     mock = AsyncMock()
@@ -319,17 +279,8 @@ def _make_rule_fallback() -> RuleBasedRoleRouter:
     return RuleBasedRoleRouter()
 
 
-# ---------------------------------------------------------------------------
-# LLMRoleRouter — behavioural tests
-# ---------------------------------------------------------------------------
-
-
 class TestLLMRoleRouter:
     """Verify LLMRoleRouter routes correctly and falls back on any error."""
-
-    # -----------------------------------------------------------------------
-    # Test (a): valid response → returns expected role
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_valid_response_returns_role(self) -> None:
@@ -362,13 +313,8 @@ class TestLLMRoleRouter:
         result = await router.decide(Phase.EXECUTION, state)
 
         assert result == HumanRole.PEER
-        # Verify agent_id='role_router' was passed
         call_kwargs = llm.ainvoke.call_args
         assert call_kwargs.kwargs.get("agent_id") == "role_router"
-
-    # -----------------------------------------------------------------------
-    # Test (b): malformed JSON → fallback called
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_malformed_json_triggers_fallback(self) -> None:
@@ -379,7 +325,6 @@ class TestLLMRoleRouter:
 
         result = await router.decide(Phase.PLANNING, {})
 
-        # Fallback RuleBasedRoleRouter maps PLANNING → COORDINATOR
         assert result == HumanRole.COORDINATOR
         llm.ainvoke.assert_awaited_once()
 
@@ -391,12 +336,7 @@ class TestLLMRoleRouter:
 
         result = await router.decide(Phase.EXECUTION, {})
 
-        # Fallback: EXECUTION → PEER
         assert result == HumanRole.PEER
-
-    # -----------------------------------------------------------------------
-    # Test (c): JSON with unknown role string → fallback called
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_unknown_role_triggers_fallback(self) -> None:
@@ -407,7 +347,6 @@ class TestLLMRoleRouter:
 
         result = await router.decide(Phase.VERIFICATION, {})
 
-        # Fallback: VERIFICATION → REVIEWER
         assert result == HumanRole.REVIEWER
         llm.ainvoke.assert_awaited_once()
 
@@ -420,12 +359,7 @@ class TestLLMRoleRouter:
 
         result = await router.decide(Phase.DONE, {})
 
-        # Fallback: DONE → REVIEWER
         assert result == HumanRole.REVIEWER
-
-    # -----------------------------------------------------------------------
-    # Test (d): llm.ainvoke raises → fallback called
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_llm_raises_triggers_fallback(self) -> None:
@@ -437,7 +371,6 @@ class TestLLMRoleRouter:
 
         result = await router.decide(Phase.EXECUTION, {})
 
-        # Fallback: EXECUTION → PEER
         assert result == HumanRole.PEER
         llm.ainvoke.assert_awaited_once()
 
@@ -452,10 +385,6 @@ class TestLLMRoleRouter:
 
         assert result == HumanRole.COORDINATOR
 
-    # -----------------------------------------------------------------------
-    # Test (e): isinstance check against HumanRoleRouter
-    # -----------------------------------------------------------------------
-
     def test_llm_router_satisfies_protocol(self) -> None:
         """LLMRoleRouter instance must pass isinstance check against HumanRoleRouter."""
         router = LLMRoleRouter(llm=AsyncMock(), fallback=_make_rule_fallback())
@@ -465,10 +394,6 @@ class TestLLMRoleRouter:
         """decide() must be an async method."""
         router = LLMRoleRouter(llm=AsyncMock(), fallback=_make_rule_fallback())
         assert inspect.iscoroutinefunction(router.decide)
-
-    # -----------------------------------------------------------------------
-    # FakeLLM scripted fixture tests
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_valid_fixture_step0_returns_judge(self) -> None:
@@ -490,9 +415,7 @@ class TestLLMRoleRouter:
         fake = FakeLLM(mode="scripted", fixture=_FIXTURE_VALID)
         router = LLMRoleRouter(llm=fake, fallback=_make_rule_fallback())
 
-        # Exhaust step 0
         await router.decide(Phase.VERIFICATION, {})
-        # Step 1
         result = await router.decide(Phase.PLANNING, {})
 
         assert result == HumanRole.COORDINATOR
@@ -507,12 +430,7 @@ class TestLLMRoleRouter:
 
         result = await router.decide(Phase.PLANNING, {})
 
-        # Fallback for PLANNING → COORDINATOR
         assert result == HumanRole.COORDINATOR
-
-    # -----------------------------------------------------------------------
-    # Export test
-    # -----------------------------------------------------------------------
 
     def test_llm_role_router_exported(self) -> None:
         """LLMRoleRouter must be exported from atm.human package."""

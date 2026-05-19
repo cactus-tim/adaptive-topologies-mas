@@ -15,10 +15,6 @@ import pytest
 from atm.llm.retry import RetryPolicy
 from atm.tools.global_.url_fetch import UrlFetchTool
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _fake_getaddrinfo_for(ip: str):
     """Return a fake getaddrinfo that resolves any host to *ip*."""
@@ -31,7 +27,6 @@ def _fake_getaddrinfo_for(ip: str):
         proto: int = 0,
         flags: int = 0,
     ) -> list[Any]:
-        # AF_INET = 2; SOCK_STREAM = 1; proto = 6 (TCP); canonname = ''
         return [(2, 1, 6, "", (ip, port or 0))]
 
     return fake_getaddrinfo
@@ -83,11 +78,6 @@ def _mock_transport_timeout() -> httpx.MockTransport:
         raise httpx.TimeoutException("timed out", request=request)
 
     return httpx.MockTransport(handler)
-
-
-# ---------------------------------------------------------------------------
-# SSRF rejection tests (monkeypatching socket.getaddrinfo)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -144,18 +134,12 @@ async def test_rejects_ftp_scheme() -> None:
     assert "url rejected" in result.error
 
 
-# ---------------------------------------------------------------------------
-# Happy path (public IP, MockTransport)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """Public IP (93.184.216.34 = example.com) with 200 OK must succeed."""
     monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo_for("93.184.216.34"))
     tool = _make_tool()
 
-    # Patch httpx.AsyncClient to use MockTransport
     transport = _mock_transport_200(b"<html>Hello</html>", "text/html")
     original_init = httpx.AsyncClient.__init__
 
@@ -194,17 +178,11 @@ async def test_allow_private_true_permits_localhost(monkeypatch: pytest.MonkeyPa
     assert result.output["status"] == 200
 
 
-# ---------------------------------------------------------------------------
-# Size limit test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_size_limit_aborts(monkeypatch: pytest.MonkeyPatch) -> None:
     """Body exceeding max_bytes must yield ok=False with 'too large' error."""
     monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo_for("93.184.216.34"))
 
-    # 100 bytes payload, limit = 50 bytes
     big_body = b"X" * 100
     transport = _mock_transport_200(big_body)
 
@@ -225,11 +203,6 @@ async def test_size_limit_aborts(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not result.ok
     assert result.error is not None
     assert "too large" in result.error
-
-
-# ---------------------------------------------------------------------------
-# Redirect rejection test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -253,11 +226,6 @@ async def test_follow_redirects_rejected(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "redirect" in result.error
 
 
-# ---------------------------------------------------------------------------
-# Timeout + retry exhaustion test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_timeout_raises_retry_then_toolerror(monkeypatch: pytest.MonkeyPatch) -> None:
     """MockTransport always raises TimeoutException → retry exhausted → ok=False."""
@@ -272,7 +240,6 @@ async def test_timeout_raises_retry_then_toolerror(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr("atm.tools.global_.url_fetch.httpx.AsyncClient", PatchedClient)
 
-    # Use a policy with 1 retry to verify retry cycle, then exhaustion
     policy = RetryPolicy(
         max_retries=1,
         base_delay_s=0.0,

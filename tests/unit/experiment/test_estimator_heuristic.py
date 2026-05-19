@@ -45,11 +45,6 @@ def _load_cfg(**overrides: str) -> ExperimentConfig:
     return load_config(str(VALID_MINIMAL), overrides=list(overrides.values()) or None)
 
 
-# ---------------------------------------------------------------------------
-# Test 1: empty configs
-# ---------------------------------------------------------------------------
-
-
 def test_empty_configs_returns_empty_estimate() -> None:
     est_cfg = EstimateCfg()
     pricing = _make_pricing()
@@ -64,17 +59,12 @@ def test_empty_configs_returns_empty_estimate() -> None:
     assert result.per_topology == {}
 
 
-# ---------------------------------------------------------------------------
-# Test 2: heuristic path matches pricing.estimate
-# ---------------------------------------------------------------------------
-
-
 def test_heuristic_cost_matches_pricing_estimate() -> None:
     cfg = _load_cfg()
     est_cfg = EstimateCfg(heuristic_tokens_per_call=1000, calls_per_iter=4)
     pricing = _make_pricing()
 
-    expected_in = 1000 * 4 * cfg.topology.max_iterations  # 20_000 for max_iter=5
+    expected_in = 1000 * 4 * cfg.topology.max_iterations
     expected_out = expected_in // 3
     expected_cost = pricing.estimate(
         "fake:scripted",
@@ -99,11 +89,6 @@ def test_heuristic_cost_matches_pricing_estimate() -> None:
     assert result.total_cost_usd == pytest.approx(expected_cost)
 
 
-# ---------------------------------------------------------------------------
-# Test 3: use_historical=False skips DB even when session_factory is non-None
-# ---------------------------------------------------------------------------
-
-
 def test_use_historical_false_skips_db() -> None:
     cfg = _load_cfg()
     est_cfg = EstimateCfg(use_historical=False)
@@ -125,13 +110,8 @@ def test_use_historical_false_skips_db() -> None:
     assert result.cells[0].source == "heuristic"
 
 
-# ---------------------------------------------------------------------------
-# Test 4: per_topology aggregation across multiple cells
-# ---------------------------------------------------------------------------
-
-
 def test_per_topology_aggregation() -> None:
-    cfg_chain = _load_cfg()  # topology.name = chain
+    cfg_chain = _load_cfg()
     cfg_star = cfg_chain.model_copy(
         update={"topology": cfg_chain.topology.model_copy(update={"name": "star"})}
     )
@@ -157,17 +137,11 @@ def test_per_topology_aggregation() -> None:
     assert result.total_cost_usd == pytest.approx(chain_cost + star_cost)
 
 
-# ---------------------------------------------------------------------------
-# Test 5: source label correctness when no historical data
-# ---------------------------------------------------------------------------
-
-
 def test_source_label_heuristic_when_no_history() -> None:
     cfg = _load_cfg()
     est_cfg = EstimateCfg()
     pricing = _make_pricing()
 
-    # session_factory=None forces no historical lookup; source must be heuristic
     result = asyncio.run(
         estimate_grid(
             configs=[cfg],
@@ -179,16 +153,9 @@ def test_source_label_heuristic_when_no_history() -> None:
     assert all(c.source == "heuristic" for c in result.cells)
 
 
-# ---------------------------------------------------------------------------
-# Test 6: unknown model falls back to 0.0 cost
-# ---------------------------------------------------------------------------
-
-
 def test_unknown_model_falls_back_to_zero_cost() -> None:
     cfg = _load_cfg()
     est_cfg = EstimateCfg()
-    # Pricing table with NO entry for "fake:scripted" → estimate() raises
-    # LLMError → estimator catches and returns 0.0.
     pricing = Pricing(version=1, models={})
 
     result = asyncio.run(
@@ -202,11 +169,6 @@ def test_unknown_model_falls_back_to_zero_cost() -> None:
     assert len(result.cells) == 1
     assert result.cells[0].est_cost_usd == 0.0
     assert result.cells[0].source == "heuristic"
-
-
-# ---------------------------------------------------------------------------
-# Test 7: token formula
-# ---------------------------------------------------------------------------
 
 
 def test_token_formula_matches_documented_shape() -> None:
@@ -228,11 +190,6 @@ def test_token_formula_matches_documented_shape() -> None:
     assert cell.est_output_tokens == expected_in // 3
 
 
-# ---------------------------------------------------------------------------
-# Test 8: dataclass shape — CellEstimate / GridEstimate are frozen
-# ---------------------------------------------------------------------------
-
-
 def test_cell_estimate_is_frozen() -> None:
     cell = CellEstimate(
         topology="star",
@@ -243,6 +200,5 @@ def test_cell_estimate_is_frozen() -> None:
         est_cost_usd=0.01,
         source="heuristic",
     )
-    # Frozen dataclasses raise FrozenInstanceError (subclass of AttributeError).
     with pytest.raises((AttributeError, TypeError)):
         cell.seed = 1  # type: ignore[misc]

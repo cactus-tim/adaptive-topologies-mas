@@ -28,21 +28,12 @@ from atm.llm.fake import FakeLLM
 from atm.llm.pricing import Pricing
 from atm.llm.retry import RetryPolicy, with_retry
 
-# ---------------------------------------------------------------------------
-# Default retry policy used when caller passes retry_policy=None
-# ---------------------------------------------------------------------------
-
 _DEFAULT_RETRY_POLICY = RetryPolicy(
     max_retries=3,
     base_delay_s=1.0,
     max_delay_s=30.0,
     jitter=True,
 )
-
-
-# ---------------------------------------------------------------------------
-# Token counting helpers
-# ---------------------------------------------------------------------------
 
 
 def _count_tokens_tiktoken(text: str, model_id: str) -> int:
@@ -90,15 +81,9 @@ def _count_prompt_tokens(messages: list[BaseMessage], model_id: str) -> int:
     return max(1, total)
 
 
-# ---------------------------------------------------------------------------
-# Usage parsing helpers
-# ---------------------------------------------------------------------------
-
-
 def _parse_usage_openai(ai_msg: AIMessage) -> tuple[TokenUsage, int]:
     """Parse OpenAI-style usage_metadata. Returns (TokenUsage, cache_write_tokens=0)."""
     raw_meta = ai_msg.usage_metadata
-    # usage_metadata can be UsageMetadata (TypedDict-like) or dict
     meta: dict[str, Any] = dict(raw_meta) if raw_meta else {}
     input_tokens: int = int(meta.get("input_tokens", 0))
     output_tokens: int = int(meta.get("output_tokens", 0))
@@ -114,7 +99,7 @@ def _parse_usage_openai(ai_msg: AIMessage) -> tuple[TokenUsage, int]:
         cached_input_tokens=cache_read,
         total_tokens=total_tokens,
     )
-    return usage, 0  # no cache_write in OpenAI convention
+    return usage, 0
 
 
 def _parse_usage_anthropic(ai_msg: AIMessage) -> tuple[TokenUsage, int]:
@@ -156,7 +141,6 @@ def _detect_and_parse_usage(
     if "usage" in resp_meta:
         return _parse_usage_anthropic(ai_msg)
 
-    # Fallback: zero usage
     usage = TokenUsage(
         prompt_tokens=0,
         completion_tokens=0,
@@ -164,11 +148,6 @@ def _detect_and_parse_usage(
         total_tokens=0,
     )
     return usage, 0
-
-
-# ---------------------------------------------------------------------------
-# Tool-call parsing helper
-# ---------------------------------------------------------------------------
 
 
 def _parse_tool_calls(ai_msg: AIMessage, issued_by: str) -> tuple[ToolCall, ...]:
@@ -188,11 +167,6 @@ def _parse_tool_calls(ai_msg: AIMessage, issued_by: str) -> tuple[ToolCall, ...]
     return tuple(result)
 
 
-# ---------------------------------------------------------------------------
-# Model version extraction helper
-# ---------------------------------------------------------------------------
-
-
 def _extract_model_version(response_metadata: dict[str, Any]) -> str | None:
     """Extract the actual model version/fingerprint from LLM response_metadata.
 
@@ -210,10 +184,6 @@ def _extract_model_version(response_metadata: dict[str, Any]) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Finish reason helper
-# ---------------------------------------------------------------------------
-
 _VALID_FINISH_REASONS = frozenset({"stop", "tool_calls", "length", "content_filter", "error"})
 
 
@@ -221,23 +191,16 @@ def _parse_finish_reason(ai_msg: AIMessage) -> str:
     """Extract finish_reason from response_metadata, normalising to known values."""
     resp_meta: dict[str, Any] = ai_msg.response_metadata or {}
 
-    # OpenAI uses finish_reason; Anthropic uses stop_reason
     raw: str | None = resp_meta.get("finish_reason") or resp_meta.get("stop_reason")
 
     if raw is None:
         return "stop"
 
-    # Normalise Anthropic "end_turn" → "stop"
     if raw == "end_turn":
         return "stop"
     if raw in _VALID_FINISH_REASONS:
         return raw
     return "stop"
-
-
-# ---------------------------------------------------------------------------
-# LLMWrapper
-# ---------------------------------------------------------------------------
 
 
 class LLMWrapper:
@@ -278,28 +241,20 @@ class LLMWrapper:
         if llm is not None:
             self._llm: Any = llm
         else:
-            # Build a real model via init_chat_model when no injection provided.
             from langchain.chat_models import init_chat_model
 
             self._llm = init_chat_model(model_id, **self._cfg)
 
-        # Parse provider for cost/retry logic
         parts = model_id.split(":", 1)
         self._provider: str = parts[0] if len(parts) == 2 else "unknown"
         self._bare_model: str = parts[1] if len(parts) == 2 else model_id
 
-        # Reproducibility: actual model version reported by provider after each call.
-        # Updated in-place by ainvoke(); only set to a non-None value, never cleared.
         self.last_model_version: str | None = None
 
     @property
     def model_id(self) -> str:
         """The provider-qualified model identifier (e.g. ``'fake:deterministic'``)."""
         return self._model_id
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     def _to_lc_messages(
         self,
@@ -312,15 +267,12 @@ class LLMWrapper:
         first = messages[0]
 
         if isinstance(first, Message):
-            # list[Message] → convert via to_lc
             return [m.to_lc() for m in messages]
 
         if isinstance(first, BaseMessage):
-            # Already BaseMessage
             return list(messages)
 
         if isinstance(first, dict):
-            # dict format — use LangChain conversion
             from langchain_core.messages import convert_to_messages
 
             return convert_to_messages(messages)
@@ -337,7 +289,6 @@ class LLMWrapper:
         """Call the underlying LLM with retry, returning response (AIMessage or LLMResponse)."""
 
         async def _call() -> Any:
-            # FakeLLM has its own ainvoke signature and returns LLMResponse directly
             if isinstance(self._llm, FakeLLM):
                 return await self._llm.ainvoke(list(lc_messages), agent_id=agent_id)
             return await self._llm.ainvoke(lc_messages, **invoke_kwargs)
@@ -348,10 +299,6 @@ class LLMWrapper:
             provider=self._provider,
             model=self._bare_model,
         )
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     async def ainvoke(
         self,
@@ -379,12 +326,9 @@ class LLMWrapper:
         started_monotonic = time.monotonic()
         started_dt = datetime.datetime.now(datetime.UTC)
 
-        # --- Step 1: convert messages ---
         lc_messages = self._to_lc_messages(list(messages))
 
-        # --- Step 2: estimate prompt tokens and cost ---
         prompt_tokens = _count_prompt_tokens(lc_messages, self._model_id)
-        # Estimate completion tokens as 10% of prompt tokens (conservative)
         estimated_completion = max(1, prompt_tokens // 10)
         estimated_cost = self._pricing.estimate(
             self._model_id,
@@ -392,18 +336,15 @@ class LLMWrapper:
             completion_tokens=estimated_completion,
         )
 
-        # --- Step 3: pre-call budget checks ---
         await self._budget.check(estimated_cost, level=BudgetLevel.CALL)
         await self._budget.check(estimated_cost, level=BudgetLevel.RUN)
         await self._budget.check(estimated_cost, level=BudgetLevel.EXPERIMENT)
 
-        # --- Step 4: inject cache control for Anthropic if cache_key is set ---
         if self._provider == "anthropic" and cache_key is not None:
             from atm.llm.providers.anthropic import inject_cache_control
 
             lc_messages = inject_cache_control(lc_messages, key=cache_key)
 
-        # --- Step 5: build invoke kwargs and call LLM with retry ---
         invoke_kwargs: dict[str, Any] = {}
         if tools is not None:
             invoke_kwargs["tools"] = tools
@@ -415,8 +356,6 @@ class LLMWrapper:
 
         ai_msg = await self._invoke_llm(lc_messages, invoke_kwargs, agent_id=agent_id)
 
-        # --- Step 6: parse usage and cost ---
-        # FakeLLM returns LLMResponse directly; bypass AIMessage parsing in that case.
         if isinstance(ai_msg, LLMResponse):
             fake_resp = ai_msg
             actual_cost = self._pricing.cost(
@@ -424,7 +363,6 @@ class LLMWrapper:
                 fake_resp.usage,
                 cache_write_tokens=0,
             )
-            # --- Step 7: record cost ---
             await self._budget.record(actual_cost, level=BudgetLevel.RUN)
             await self._budget.record(actual_cost, level=BudgetLevel.EXPERIMENT)
 
@@ -441,7 +379,6 @@ class LLMWrapper:
                 started_at=started_dt,
             )
 
-        # --- Capture actual model version from provider response_metadata ---
         resp_meta_for_version: dict[str, Any] = dict(ai_msg.response_metadata or {})
         extracted_version = _extract_model_version(resp_meta_for_version)
         if extracted_version is not None:
@@ -454,21 +391,17 @@ class LLMWrapper:
             cache_write_tokens=cache_write_tokens,
         )
 
-        # --- Step 7: record cost ---
         await self._budget.record(actual_cost, level=BudgetLevel.RUN)
         await self._budget.record(actual_cost, level=BudgetLevel.EXPERIMENT)
 
-        # --- Step 8: build LLMResponse ---
         latency_ms = int((time.monotonic() - started_monotonic) * 1000)
         finish_reason = _parse_finish_reason(ai_msg)
         tool_calls = _parse_tool_calls(ai_msg, issued_by=agent_id)
 
-        # text: None if content is empty string (no text response)
         text_raw = ai_msg.content
         if isinstance(text_raw, str):
             text: str | None = text_raw if text_raw else None
         else:
-            # List of content blocks
             extracted = " ".join(
                 block.get("text", "") if isinstance(block, dict) else str(block)
                 for block in text_raw

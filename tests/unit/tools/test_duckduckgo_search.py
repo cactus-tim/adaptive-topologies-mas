@@ -15,10 +15,6 @@ from atm.llm.retry import RetryPolicy
 from atm.tools.global_.search import DuckDuckGoSearchTool
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _CANNED_RESULTS: list[dict[str, Any]] = [
     {"title": "Result One", "href": "https://example.com/1", "body": "Snippet one."},
     {"title": "Result Two", "href": "https://example.com/2", "body": "Snippet two."},
@@ -61,11 +57,6 @@ class FakeFailingDDGS:
         return list(_CANNED_RESULTS)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_happy_path_returns_results() -> None:
     """Tool returns correctly mapped results on success."""
@@ -79,7 +70,6 @@ async def test_happy_path_returns_results() -> None:
     assert isinstance(result.output, dict)
     results = result.output["results"]
     assert len(results) == 3
-    # Keys should be title, url, snippet (NOT href/body)
     first = results[0]
     assert first["title"] == "Result One"
     assert first["url"] == "https://example.com/1"
@@ -134,10 +124,8 @@ async def test_schema_has_required_fields() -> None:
 @pytest.mark.asyncio
 async def test_retry_on_first_failure_then_success() -> None:
     """Tool retries on transient error and returns results on second attempt."""
-    # Reset call count for the fake
     FakeFailingDDGS._call_count = 0
 
-    # RetryPolicy with retry_on=OSError so the first failure triggers retry
     policy = RetryPolicy(
         max_retries=2,
         base_delay_s=0.0,
@@ -153,4 +141,4 @@ async def test_retry_on_first_failure_then_success() -> None:
     assert result.ok is True
     results = result.output["results"]
     assert len(results) == 3
-    assert FakeFailingDDGS._call_count == 2  # failed once, succeeded once
+    assert FakeFailingDDGS._call_count == 2

@@ -141,7 +141,6 @@ async def test_estimator_mixed_grid_partial_history(  # type: ignore[no-untyped-
                 iterations=5,
             )
         )
-        # A non-completed run for chain — must NOT contribute.
         session.add(
             Run(
                 id=uuid.uuid4(),

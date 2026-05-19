@@ -20,10 +20,6 @@ from atm.llm.pricing import ModelPricing, Pricing
 from atm.llm.retry import RetryPolicy
 from atm.llm.wrapper import LLMWrapper
 
-# ---------------------------------------------------------------------------
-# Custom rate-limit exception (avoids coupling to openai SDK)
-# ---------------------------------------------------------------------------
-
 
 class FakeRateLimitError(Exception):
     """Fake 429 rate-limit error for testing retry logic."""
@@ -47,11 +43,6 @@ class FakeServerError(Exception):
 
 class FakeNonTransientError(Exception):
     """Non-transient error (no status_code) — should NOT be retried."""
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def make_ai_message(content: str = "ok") -> AIMessage:
@@ -117,11 +108,6 @@ def make_messages() -> list:
     return [Message(sender="user", kind=MessageKind.REQUEST, content="hello")]
 
 
-# ---------------------------------------------------------------------------
-# 1. Rate-limit (429) retry: fails once then succeeds
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_rate_limit_retry_succeeds_on_second_attempt() -> None:
     """Wrapper retries on FakeRateLimitError (status_code=429) and succeeds on 2nd attempt."""
@@ -170,11 +156,6 @@ async def test_server_error_retry_succeeds_on_second_attempt() -> None:
     assert call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# 2. All retries exhausted: LLMError raised
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_all_retries_exhausted_raises_llm_error() -> None:
     """When all retries are exhausted, LLMError is raised with correct attempts count."""
@@ -197,13 +178,8 @@ async def test_all_retries_exhausted_raises_llm_error() -> None:
     err = exc_info.value
     assert err.provider == "openai"
     assert err.model == "gpt-4o-mini"
-    assert err.attempts == 3  # 1 initial + 2 retries
+    assert err.attempts == 3
     assert call_count == 3
-
-
-# ---------------------------------------------------------------------------
-# 3. Non-transient error: raised immediately, no retry
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -225,13 +201,7 @@ async def test_non_transient_error_not_retried() -> None:
     with pytest.raises(FakeNonTransientError):
         await wrapper.ainvoke(make_messages())
 
-    # Should have been called exactly once (no retry)
     assert call_count == 1
-
-
-# ---------------------------------------------------------------------------
-# 4. Retry with no policy uses defaults
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

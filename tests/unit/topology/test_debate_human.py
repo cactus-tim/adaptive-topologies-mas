@@ -43,10 +43,6 @@ from atm.topology.debate import (
     _build_human_judge_node,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(*, max_iterations: int = 12, max_rounds: int = 4) -> TopologyConfig:
     return TopologyConfig(
@@ -206,11 +202,6 @@ def _build_debate_graph(
     return mock_graph, compiled
 
 
-# ---------------------------------------------------------------------------
-# Test 1: back-compat — no human_cfg → "judge" + "judge_postprocess" nodes present
-# ---------------------------------------------------------------------------
-
-
 class TestDebateBackCompat:
     """Default mode (no human_cfg) graph is identical to M7 Debate."""
 
@@ -254,11 +245,6 @@ class TestDebateBackCompat:
         assert ("judge", "judge_postprocess") in edge_calls
 
 
-# ---------------------------------------------------------------------------
-# Test 2: "human" mode — node structure
-# ---------------------------------------------------------------------------
-
-
 class TestDebateHumanMode:
     """judge mode 'human' inserts human_judge node; judge_postprocess unchanged."""
 
@@ -297,7 +283,6 @@ class TestDebateHumanMode:
         mock_gateway = MagicMock()
         mock_gateway.request = AsyncMock(return_value=_make_approve_response(winner="pro"))
 
-        # Build the node directly (bypass graph)
         node_fn = _build_human_judge_node(
             human_cfg,
             mock_gateway,
@@ -312,7 +297,6 @@ class TestDebateHumanMode:
             mock_dispatch.return_value = None
             delta = asyncio.run(node_fn(state))
 
-        # DECISION should be in judge's outbox
         assert "agents" in delta
         judge_outbox = delta["agents"]["judge"]["outbox"]
         assert len(judge_outbox) >= 1
@@ -413,11 +397,6 @@ class TestDebateHumanMode:
         assert captured_request_ids[0] == "debate:3:judge"
 
 
-# ---------------------------------------------------------------------------
-# Tests 3: "both" mode — node structure
-# ---------------------------------------------------------------------------
-
-
 class TestDebateBothModeStructure:
     """judge mode 'both' has 'judge_combined'; no 'judge' or 'judge_postprocess'."""
 
@@ -441,13 +420,7 @@ class TestDebateBothModeStructure:
         edge_calls = [c[0] for c in mock_graph.add_edge.call_args_list]
         assert ("debater_pro", "judge_combined") in edge_calls
         assert ("debater_contra", "judge_combined") in edge_calls
-        # No judge→judge_postprocess edge
         assert ("judge", "judge_postprocess") not in edge_calls
-
-
-# ---------------------------------------------------------------------------
-# Tests 4-7: "both" mode aggregation logic
-# ---------------------------------------------------------------------------
 
 
 class TestDebateBothModeAggregation:
@@ -469,7 +442,6 @@ class TestDebateBothModeAggregation:
             "debater_contra": _make_mock_agent(),
             "judge": _make_mock_agent(),
         }
-        # Configure judge agent to return a DECISION message
         decision = _make_decision_msg(approved=llm_judge_approved, winner="pro")
         agents["judge"].step = AsyncMock(return_value={"agents": {"judge": {"outbox": [decision]}}})
 
@@ -478,7 +450,6 @@ class TestDebateBothModeAggregation:
         mock_gateway = MagicMock()
         mock_gateway.request = AsyncMock(return_value=human_response)
 
-        # Capture the actual judge_combined node function
         captured_nodes: dict[str, Any] = {}
 
         def capture_add_node(name: str, fn: Any) -> None:
@@ -504,7 +475,6 @@ class TestDebateBothModeAggregation:
     ) -> dict[str, Any]:
         """Run the both-mode node with a real state and return delta."""
         run_id = uuid.uuid4()
-        # Ensure judge outbox is empty initially (node populates from LLM step)
         state = _make_state(
             run_id=run_id,
             debater_pro_outbox=[_make_draft_msg("pro argument here")],
@@ -522,12 +492,11 @@ class TestDebateBothModeAggregation:
     def test_both_mode_human_approves_critic_rejects_final_approved(self) -> None:
         """Human approves + critic rejects → final approved=True (human wins)."""
         node_fn = self._build_and_get_judge_combined_node(
-            llm_judge_approved=False,  # critic rejects
-            human_response=_make_approve_response(winner="pro"),  # human approves
+            llm_judge_approved=False,
+            human_response=_make_approve_response(winner="pro"),
         )
         delta = self._run_both_node(node_fn, llm_judge_approved=False)
 
-        # Check signals from _judge_postprocess
         signals = delta["shared"]["signals"]
         assert signals.get("judge_decided") is True, (
             "Human approves + critic rejects → human wins → final approved=True"
@@ -536,8 +505,8 @@ class TestDebateBothModeAggregation:
     def test_both_mode_human_rejects_critic_approves_final_rejected(self) -> None:
         """Human rejects + critic approves → final approved=False (human wins)."""
         node_fn = self._build_and_get_judge_combined_node(
-            llm_judge_approved=True,  # critic approves
-            human_response=_make_reject_response(),  # human rejects
+            llm_judge_approved=True,
+            human_response=_make_reject_response(),
         )
         delta = self._run_both_node(node_fn, llm_judge_approved=True)
 
@@ -638,11 +607,6 @@ class TestDebateBothModeAggregation:
         )
 
 
-# ---------------------------------------------------------------------------
-# Test: build requires gateway for human/both modes
-# ---------------------------------------------------------------------------
-
-
 class TestDebateBuildValidation:
     """build() correctly handles HITL mode configuration."""
 
@@ -662,7 +626,6 @@ class TestDebateBuildValidation:
         mock_gateway = MagicMock()
         mock_gateway.request = AsyncMock(return_value=_make_approve_response())
 
-        # Should compile without errors when gateway is provided
         topology = DebateTopology()
         compiled = topology.build(agents, cfg, human_cfg=human_cfg, gateway=mock_gateway)
         assert compiled is not None
@@ -708,18 +671,11 @@ class TestDebateBuildValidation:
             topology.build(agents, cfg)
 
 
-# ---------------------------------------------------------------------------
-# Group 9 — role_router integration: back-compat + dynamic for both HITL points
-# ---------------------------------------------------------------------------
-
-
 class TestDebateRoleRouter:
     """role_router=None → back-compat (human_cfg.role); role_router set → dynamic role."""
 
     def setup_method(self) -> None:
         _ensure_debate_registered()
-
-    # ---- Helper: build and run human_judge_node directly ----
 
     def _run_human_judge_node(
         self,
@@ -767,7 +723,7 @@ class TestDebateRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.JUDGE, HumanRole.JUDGE),  # back-compat: no router, uses cfg role
+            (False, HumanRole.JUDGE, HumanRole.JUDGE),
             (
                 True,
                 HumanRole.REVIEWER,
@@ -790,8 +746,6 @@ class TestDebateRoleRouter:
 
         assert len(roles) == 1, f"Expected exactly 1 gateway call, got {len(roles)}"
         assert roles[0] == expected_role, f"Expected role={expected_role!r}, got {roles[0]!r}"
-
-    # ---- Helper: build and run judge_combined node (both mode) ----
 
     def _run_judge_combined_node(
         self,
@@ -864,7 +818,7 @@ class TestDebateRoleRouter:
     @pytest.mark.parametrize(
         "use_router,cfg_role,expected_role",
         [
-            (False, HumanRole.JUDGE, HumanRole.JUDGE),  # back-compat: no router, uses cfg role
+            (False, HumanRole.JUDGE, HumanRole.JUDGE),
             (
                 True,
                 HumanRole.REVIEWER,

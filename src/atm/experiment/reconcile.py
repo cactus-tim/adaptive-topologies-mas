@@ -57,11 +57,6 @@ ZombieReason = Literal["pid_dead", "host_mismatch", "no_pid"]
 ActionTaken = Literal["marked_failed", "kept_force_resume"]
 
 
-# ---------------------------------------------------------------------------
-# Public dataclasses
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ZombieRow:
     """One row that was classified as a zombie during reconcile."""
@@ -79,11 +74,6 @@ class ReconcileReport:
     scanned: int = 0
     zombies: list[ZombieRow] = field(default_factory=list)
     actions: dict[UUID, ActionTaken] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# PID liveness probe
-# ---------------------------------------------------------------------------
 
 
 def _pid_alive(pid: int) -> bool:
@@ -112,7 +102,6 @@ def _pid_alive(pid: int) -> bool:
         try:
             return bool(psutil.pid_exists(pid))
         except Exception:
-            # Fall through to os.kill probe on unexpected psutil failure.
             pass
 
     try:
@@ -120,16 +109,10 @@ def _pid_alive(pid: int) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        # EPERM means the pid exists but is owned by another uid — still alive.
         return True
     except OSError as exc:  # pragma: no cover — defensive
         return getattr(exc, "errno", None) != errno.ESRCH
     return True
-
-
-# ---------------------------------------------------------------------------
-# Classification
-# ---------------------------------------------------------------------------
 
 
 def _classify_row(
@@ -149,11 +132,6 @@ def _classify_row(
     if not _pid_alive(pid):
         return ZombieRow(run_id=run_id, host=host, pid=pid, reason="pid_dead")
     return None
-
-
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
 
 
 async def reconcile_zombies(
@@ -187,15 +165,9 @@ async def reconcile_zombies(
     host_name = current_host if current_host is not None else socket.gethostname()
     report = ReconcileReport()
 
-    # Lazy import inside the function to avoid a top-level cycle with
-    # storage.models (which itself imports SQLAlchemy and would be loaded
-    # even when reconcile is never called).
     from atm.storage.models import Run
     from atm.storage.session import session_scope
 
-    # 1) SELECT phase — fetch candidate rows. Use a parameter-bound textual
-    # SELECT against ORM columns: we don't need ORM identity tracking and
-    # this keeps the query path predictable. Result columns are positional.
     select_stmt = (
         sa.select(Run.id, Run.host, Run.process_pid)
         .where(Run.exp_id == exp_id)
@@ -208,7 +180,6 @@ async def reconcile_zombies(
 
     report.scanned = len(rows)
 
-    # 2) Classify in-memory (no DB calls during the pid_alive probe).
     candidates: list[ZombieRow] = []
     for run_id, host, pid in rows:
         zombie = _classify_row(run_id=run_id, host=host, pid=pid, current_host=host_name)
@@ -216,8 +187,6 @@ async def reconcile_zombies(
             candidates.append(zombie)
     report.zombies = candidates
 
-    # 3) Mutate phase — single UPDATE per zombie, gated on status='running'
-    # so a concurrent winner is not clobbered. Skip when force_resume.
     for zombie in candidates:
         if allow_force_resume:
             report.actions[zombie.run_id] = "kept_force_resume"

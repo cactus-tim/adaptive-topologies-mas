@@ -53,10 +53,6 @@ pytestmark = [
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _SMOKE_YAML = Path(__file__).parent.parent.parent.parent / "conf" / "experiments" / "smoke.yaml"
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _KILL_TIMEOUT_S = 60.0  # max wall-clock seconds before we SIGKILL
 _RESUME_TIMEOUT_S = 120  # subprocess.run timeout for `atm resume`
 
@@ -189,11 +185,6 @@ observability:
     return config_path
 
 
-# ---------------------------------------------------------------------------
-# The test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_resume_after_sigkill_m12_exit_criterion(
     ephemeral_pg_dsn: str,
@@ -217,28 +208,16 @@ async def test_resume_after_sigkill_m12_exit_criterion(
 
     config_path = _write_run_yaml(tmp_path, ephemeral_pg_dsn, str(parquet_dir))
 
-    # Inherit parent environment; inject vars the subprocess and resume CLI need.
     env = os.environ.copy()
-    # `atm resume` rehydrates the config from the DB snapshot and needs a DSN to
-    # open a connection before it can read the snapshot. Set ATM_PG_DSN so the
-    # CLI (via create_engine_for_dsn_discovery) can discover the connection string.
     env["ATM_PG_DSN"] = ephemeral_pg_dsn
     env["ATM_PARQUET_DIR"] = str(parquet_dir)
-    # Silence noisy structlog bootstrap from child process.
     env["ATM_DISABLE_STRUCTLOG_BOOTSTRAP"] = "1"
 
-    # ── Step 1: spawn the run subprocess ────────────────────────────────────
-    # Resolve the ``atm`` console_scripts entry-point from the active virtual
-    # environment's bin/ directory.  This avoids the 2-3s startup latency that
-    # ``uv run`` introduces (resolver + venv activation), which otherwise causes
-    # FakeLLM-based runs to complete before the test can poll the DB and SIGKILL
-    # the worker.
     import sys as _sys
 
     _venv_bin = Path(_sys.executable).parent
     _atm_exe = _venv_bin / "atm"
     if not _atm_exe.exists():
-        # Fallback to uv run (slower, but may work on some CI setups).
         _run_cmd = ["uv", "run", "atm", "run", "--config", str(config_path)]
     else:
         _run_cmd = [str(_atm_exe), "run", "--config", str(config_path)]
@@ -250,14 +229,12 @@ async def test_resume_after_sigkill_m12_exit_criterion(
         stderr=subprocess.PIPE,
     )
 
-    # ── Step 2: poll for the run row and (optionally) a checkpoint ──────────
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     target_run_id: UUID | None = None
     deadline = time.monotonic() + _KILL_TIMEOUT_S
 
     try:
         while time.monotonic() < deadline:
-            # Bail out early if the child already exited (unexpected before kill).
             if proc.poll() is not None:
                 stdout, stderr = proc.communicate(timeout=5)
                 pytest.fail(
@@ -266,10 +243,6 @@ async def test_resume_after_sigkill_m12_exit_criterion(
                 )
 
             async with engine.connect() as conn:
-                # Wait for the run row with status='running' to appear.
-                # process_pid may not yet be set in pre-m12 runs rows; fall back
-                # to searching by the child's PID when the column exists, otherwise
-                # accept any 'running' row (there is at most one per unique exp name).
                 try:
                     row = (
                         await conn.execute(
@@ -281,8 +254,6 @@ async def test_resume_after_sigkill_m12_exit_criterion(
                         )
                     ).fetchone()
                 except Exception:
-                    # process_pid column may not exist if Step 1 not yet merged;
-                    # fall back to any running row (unique exp name isolates it).
                     row = (
                         await conn.execute(
                             sa.text(
@@ -299,9 +270,6 @@ async def test_resume_after_sigkill_m12_exit_criterion(
             time.sleep(0.3)
     finally:
         if proc.poll() is None:
-            # ── Step 2 (cont.): SIGKILL once the run row is visible ─────────
-            # Give LangGraph a moment to commit at least one checkpoint so
-            # resume has something to continue from.
             time.sleep(1.5)
             proc.send_signal(signal.SIGKILL)
             proc.wait(timeout=10)
@@ -311,7 +279,6 @@ async def test_resume_after_sigkill_m12_exit_criterion(
         "did `atm run` start correctly? Check the config and FakeLLM fixtures."
     )
 
-    # ── Step 3: run `atm resume` (blocking) ─────────────────────────────────
     resume_result = subprocess.run(
         [
             "uv",
@@ -328,15 +295,12 @@ async def test_resume_after_sigkill_m12_exit_criterion(
         timeout=_RESUME_TIMEOUT_S,
     )
 
-    # A non-zero exit from `atm resume` is acceptable only for 'budget_exceeded'
-    # (exit code 2). Anything else is a test failure.
     assert resume_result.returncode in (0, 2), (
         f"`atm resume` failed (rc={resume_result.returncode}).\n"
         f"stdout={resume_result.stdout!r}\n"
         f"stderr={resume_result.stderr!r}"
     )
 
-    # ── Step 4: assert terminal status in DB ────────────────────────────────
     try:
         async with engine.connect() as conn:
             status_row = (
@@ -358,8 +322,6 @@ async def test_resume_after_sigkill_m12_exit_criterion(
         f"atm resume stderr: {resume_result.stderr!r}"
     )
 
-    # ── Step 5: assert no extra run row inserted ─────────────────────────────
-    # resume_one must reuse the EXISTING run_id, not INSERT a new row.
     engine2 = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine2.connect() as conn:
@@ -374,8 +336,6 @@ async def test_resume_after_sigkill_m12_exit_criterion(
         "resume_one must not INSERT a new row."
     )
 
-    # ── Bonus assertion: quality_score is a float (evaluator ran post-resume) ─
-    # quality_score may legitimately be 0.0 (inline task, no registered spec).
     assert quality_score is None or isinstance(quality_score, float), (
         f"Expected quality_score to be float or None, got {type(quality_score).__name__}"
     )

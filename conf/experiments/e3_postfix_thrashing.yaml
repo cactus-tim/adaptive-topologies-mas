@@ -50,7 +50,7 @@ topology:
       topology_router: rule
       subgraph_max_iterations: 4
       switch_guards: true
-      # ← swept below; defaults documented in arch.md §8bis.3
+      # ← swept below
       switch_guards_config:
         min_dwell_iters: 1
         cooldown_iters: 3

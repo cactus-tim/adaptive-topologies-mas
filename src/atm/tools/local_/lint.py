@@ -73,10 +73,8 @@ class LintTool:
         code: str = args["code"]
         filename: str = args.get("filename", "snippet.py")
 
-        # --- run ruff -------------------------------------------------------
         ruff_result = await self._run_ruff(code, filename)
         if ruff_result is None:
-            # ruff crashed and produced non-JSON output
             return ToolResult(
                 call_id=uuid.uuid4(),
                 ok=False,
@@ -85,7 +83,6 @@ class LintTool:
                 latency_ms=0,
             )
 
-        # --- run pylint (optional) ------------------------------------------
         pylint_result: list[Any] | None = None
         pylint_skipped: str | None = None
 
@@ -111,9 +108,8 @@ class LintTool:
         crashes and its output is not valid JSON.
 
         Ruff exits with code 0 for no issues, 1 for diagnostics found,
-        and 2 for a fatal error.  We treat exit codes 0 and 1 as normal
-        (they both produce valid JSON); only truly malformed output triggers
-        ``None``.
+        and 2 for a fatal error.  Exit codes 0 and 1 are treated as normal;
+        only truly malformed output triggers ``None``.
         """
         proc = await asyncio.create_subprocess_exec(
             "ruff",
@@ -130,9 +126,6 @@ class LintTool:
 
         raw = stdout.decode(errors="replace").strip()
         if not raw:
-            # No output at all — treat as empty diagnostics list (clean code,
-            # but ruff may have exited with 2 on a real crash; for robustness
-            # we still return [] here and only fail on unparseable text).
             raw = "[]"
         try:
             data = json.loads(raw)
@@ -172,7 +165,6 @@ class LintTool:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            # pylint produced non-JSON (e.g. an error message) — return empty
             return [], None
 
         if not isinstance(data, list):

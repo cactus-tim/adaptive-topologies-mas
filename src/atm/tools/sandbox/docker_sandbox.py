@@ -74,9 +74,6 @@ class DockerSandbox:
         }
         self.image_digest: str | None = None
 
-        # Constructor still raises if docker daemon is unreachable —
-        # tests that need a working sandbox skip via fixture; we only soften
-        # the digest-capture path so missing/local-only images don't crash.
         self._client: docker.DockerClient = docker.from_env()
         try:
             python_image = self._image_map["python"]
@@ -129,7 +126,6 @@ class DockerSandbox:
         chmod'd 0o777 so that the container's non-root user (uid=1000:gid=1000)
         can both read inputs and write new files (e.g. via FileWriteTool).
         """
-        # Determine main filename by language
         if lang == "python":
             main_name = "main.py"
         elif lang == "node":
@@ -141,12 +137,10 @@ class DockerSandbox:
 
         if files:
             for filename, content in files.items():
-                # Allow nested subdirs inside /work (e.g. "pkg/mod.py")
                 target = work_dir / filename
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="utf-8")
 
-        # chmod 0o777 so container uid 1000 can rw regardless of host uid
         work_dir.chmod(0o777)
         for child in work_dir.rglob("*"):
             child.chmod(0o666 if child.is_file() else 0o777)
@@ -168,7 +162,6 @@ class DockerSandbox:
         elif lang == "node":
             return ["node", "main.js"]
         else:
-            # Custom language added via image_map override
             return [lang, f"main.{lang}"]
 
     def _execute_sync(
@@ -182,7 +175,6 @@ class DockerSandbox:
 
         Called via asyncio.to_thread to avoid blocking the event loop.
         """
-        # _build_command raises ValueError for unknown lang — validates before image lookup
         command = self._build_command(lang)
         image = self._image_map[lang]
 
@@ -196,21 +188,13 @@ class DockerSandbox:
         t0 = time.monotonic()
         timed_out = False
 
-        # /work is a host-bind-mounted tempdir (not tmpfs). Docker's put_archive
-        # refuses to write into a container with read_only=True rootfs even when
-        # the target path is a tmpfs mount (see moby#41037). Bind-mounting a
-        # freshly-chmodded host dir sidesteps this entirely while keeping rootfs
-        # read-only, /tmp tmpfs, network=none, cap_drop=ALL, and seccomp active.
         host_work_dir = Path(tempfile.mkdtemp(prefix="atm-sandbox-"))
         try:
             self._populate_work_dir(host_work_dir, code, lang, files)
 
-            # /tmp stays tmpfs; /work uses the host bind (remove from tmpfs if present)
             tmpfs_without_work = {k: v for k, v in cfg.tmpfs_mounts.items() if k != "/work"}
             volumes = {str(host_work_dir): {"bind": "/work", "mode": "rw"}}
 
-            # Create the container in stopped state first so we can stage code
-            # via the bind mount before the entrypoint runs.
             container = self._client.containers.create(
                 image,
                 command,
@@ -228,7 +212,6 @@ class DockerSandbox:
 
             container.start()
 
-            # Wait for container to finish; catch timeout
             try:
                 wait_result = container.wait(timeout=timeout)
                 exit_code: int = wait_result["StatusCode"]
@@ -241,9 +224,6 @@ class DockerSandbox:
                     container.kill()
                 exit_code = -1
 
-            # Gather output — fetch stdout and stderr separately so callers
-            # can distinguish between the two streams (e.g. TestRunTool parses
-            # stderr for unittest summary lines).
             try:
                 raw_stdout: bytes = container.logs(stdout=True, stderr=False)
                 stdout_str = raw_stdout.decode("utf-8", errors="replace")
@@ -255,7 +235,6 @@ class DockerSandbox:
             except Exception:
                 stderr_str = ""
 
-            # Check OOM
             try:
                 container.reload()
                 oom_killed: bool = bool(container.attrs.get("State", {}).get("OOMKilled", False))

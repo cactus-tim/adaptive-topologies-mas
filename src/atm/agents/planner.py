@@ -46,7 +46,6 @@ class Planner(Agent):
         """
         delta = await super().step(state)
 
-        # Read current shared state, merge any update already in delta
         shared: dict[str, Any] = dict(state.get("shared") or {})
         if "shared" in delta:
             shared.update(delta["shared"])

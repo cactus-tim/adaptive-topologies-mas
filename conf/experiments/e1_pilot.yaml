@@ -1,6 +1,6 @@
 # E1 Pilot — sanity-check pipeline before launching full E1 grid.
 #
-# Scope (experiment_plan.md §12 step 2): Star + Chain × HumanEval only ×
+# Scope: Star + Chain × HumanEval only ×
 # 50 tasks × 3 seeds = 300 runs. Budget ≈ $3 compute + $1–2 judge.
 #
 # Goal: verify writers (PG + Parquet), budget guards, real Cerebras LLM

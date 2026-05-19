@@ -4,7 +4,7 @@ TDD: these tests define the contract for RuleBasedTopologyRouter,
 LLMTopologyRouter, and OracleTopologyRouter.
 
 Coverage:
-  - RuleBasedTopologyRouter: each phase x signal combination from arch.md §7.7
+  - RuleBasedTopologyRouter: each phase x signal combination
   - LLMTopologyRouter: happy-path, malformed-JSON→fallback, unknown-topology→fallback,
     missing-field→fallback, cost bookkeeping
   - OracleTopologyRouter: known task_id, fallback to task_type, fallback to default
@@ -19,10 +19,6 @@ import pytest
 
 from atm.core.state import SharedState
 from atm.core.types import LLMResponse, Phase, TokenUsage, TopologyDecision
-
-# ---------------------------------------------------------------------------
-# Helpers to build minimal SharedState for testing
-# ---------------------------------------------------------------------------
 
 ORACLE_FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "oracle_table.json"
 
@@ -55,11 +51,6 @@ def _make_state(
     return state
 
 
-# ---------------------------------------------------------------------------
-# LLM helper — mirrors pattern from test_manager.py
-# ---------------------------------------------------------------------------
-
-
 def _make_fake_llm(text: str, cost_usd: float = 0.001):
     """Create an AsyncMock that returns an LLMResponse with the given text.
 
@@ -85,17 +76,8 @@ def _make_rule_fallback():
     return RuleBasedTopologyRouter()
 
 
-# ===========================================================================
-# TestRuleBasedTopologyRouter
-# ===========================================================================
-
-
 class TestRuleBasedTopologyRouter:
-    """Tests for RuleBasedTopologyRouter.decide() per arch.md §7.7 table."""
-
-    # -----------------------------------------------------------------------
-    # PLANNING phase — no topology switch rules
-    # -----------------------------------------------------------------------
+    """Tests for RuleBasedTopologyRouter.decide()."""
 
     @pytest.mark.asyncio
     async def test_planning_no_signals_keeps_current(self) -> None:
@@ -122,13 +104,8 @@ class TestRuleBasedTopologyRouter:
         )
         decision: TopologyDecision = await router.decide(state)
 
-        # PLANNING has no topology-switch rules
         assert decision.topology == "supervisor"
         assert decision.decided_by == "rule"
-
-    # -----------------------------------------------------------------------
-    # EXECUTION phase — Rule 1: stuck + early in topology → mesh
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_execution_stuck_early_switches_to_mesh(self) -> None:
@@ -136,7 +113,6 @@ class TestRuleBasedTopologyRouter:
         from atm.phases.topology_router import RuleBasedTopologyRouter
 
         router = RuleBasedTopologyRouter()
-        # iter_within_topology = iter_total - topology_started_at_iter = 5 - 2 = 3
         state = _make_state(
             phase=Phase.EXECUTION,
             signals={"stuck": True},
@@ -156,7 +132,6 @@ class TestRuleBasedTopologyRouter:
         from atm.phases.topology_router import RuleBasedTopologyRouter
 
         router = RuleBasedTopologyRouter()
-        # iter_within_topology = 10 - 0 = 10 > 5
         state = _make_state(
             phase=Phase.EXECUTION,
             signals={"stuck": True},
@@ -166,13 +141,8 @@ class TestRuleBasedTopologyRouter:
         )
         decision: TopologyDecision = await router.decide(state)
 
-        # Rule 1 doesn't fire (too late); rule 2: rejected_count=0 → no switch
         assert decision.topology == "linear"
         assert decision.decided_by == "rule"
-
-    # -----------------------------------------------------------------------
-    # EXECUTION phase — Rule 2: rejected_count >= 3 → debate
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_execution_rejected_count_3_switches_to_debate(self) -> None:
@@ -223,17 +193,12 @@ class TestRuleBasedTopologyRouter:
         assert decision.topology == "debate"
         assert decision.decided_by == "rule"
 
-    # -----------------------------------------------------------------------
-    # EXECUTION phase — Rule priority: stuck fires before rejected_count
-    # -----------------------------------------------------------------------
-
     @pytest.mark.asyncio
     async def test_execution_stuck_priority_over_rejected(self) -> None:
         """When both stuck=True (early) and rejected_count>=3, stuck rule wins (first match)."""
         from atm.phases.topology_router import RuleBasedTopologyRouter
 
         router = RuleBasedTopologyRouter()
-        # iter_within_topology = 5 - 2 = 3 <= 5 → stuck rule fires first
         state = _make_state(
             phase=Phase.EXECUTION,
             signals={"stuck": True, "rejected_count": 3},
@@ -245,10 +210,6 @@ class TestRuleBasedTopologyRouter:
 
         assert decision.topology == "mesh"
         assert decision.decided_by == "rule"
-
-    # -----------------------------------------------------------------------
-    # VERIFICATION phase — needs_revision → linear
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_verification_needs_revision_switches_to_linear(self) -> None:
@@ -282,10 +243,6 @@ class TestRuleBasedTopologyRouter:
         assert decision.topology == "debate"
         assert decision.decided_by == "rule"
 
-    # -----------------------------------------------------------------------
-    # DONE phase — terminal, no switches
-    # -----------------------------------------------------------------------
-
     @pytest.mark.asyncio
     async def test_done_phase_stays_current(self) -> None:
         """In DONE phase, topology router always keeps current topology."""
@@ -302,10 +259,6 @@ class TestRuleBasedTopologyRouter:
         assert decision.topology == "hierarchical"
         assert decision.decided_by == "rule"
 
-    # -----------------------------------------------------------------------
-    # Default topology when none is active
-    # -----------------------------------------------------------------------
-
     @pytest.mark.asyncio
     async def test_no_active_topology_defaults_to_linear(self) -> None:
         """When active_topology is None, default to 'linear'."""
@@ -320,24 +273,14 @@ class TestRuleBasedTopologyRouter:
             "topology_switch_count": 0,
             "topology_history": [],
         }
-        # active_topology is missing / None
         decision: TopologyDecision = await router.decide(state)
 
         assert decision.topology == "linear"
         assert decision.decided_by == "rule"
 
 
-# ===========================================================================
-# TestLLMTopologyRouter
-# ===========================================================================
-
-
 class TestLLMTopologyRouter:
     """Unit tests for LLMTopologyRouter.decide() using AsyncMock."""
-
-    # -----------------------------------------------------------------------
-    # Test 1: happy-path — valid JSON → correct TopologyDecision
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_happy_path_valid_json(self) -> None:
@@ -360,17 +303,12 @@ class TestLLMTopologyRouter:
         assert decision.reason == "brainstorm needed"
         assert decision.router_cost_usd == pytest.approx(0.001)
 
-        # Verify ainvoke called with list[Message]
         llm.ainvoke.assert_awaited_once()
         call_args = llm.ainvoke.call_args
         messages_arg = call_args[0][0]
         assert isinstance(messages_arg, list)
         assert len(messages_arg) == 1
         assert isinstance(messages_arg[0], Message)
-
-    # -----------------------------------------------------------------------
-    # Test 2: malformed JSON → fallback to rule
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_malformed_json_falls_back_to_rule(self) -> None:
@@ -388,10 +326,6 @@ class TestLLMTopologyRouter:
         assert decision.router_cost_usd == 0.0
         llm.ainvoke.assert_awaited_once()
 
-    # -----------------------------------------------------------------------
-    # Test 3: unknown topology → fallback to rule
-    # -----------------------------------------------------------------------
-
     @pytest.mark.asyncio
     async def test_unknown_topology_falls_back_to_rule(self) -> None:
         """LLM returns a topology name not in valid set → fallback (decided_by='rule')."""
@@ -408,10 +342,6 @@ class TestLLMTopologyRouter:
         assert decision.router_cost_usd == 0.0
         llm.ainvoke.assert_awaited_once()
 
-    # -----------------------------------------------------------------------
-    # Test 4: missing 'topology' field → fallback to rule
-    # -----------------------------------------------------------------------
-
     @pytest.mark.asyncio
     async def test_missing_topology_field_falls_back_to_rule(self) -> None:
         """LLM returns JSON without 'topology' key → fallback (decided_by='rule')."""
@@ -426,10 +356,6 @@ class TestLLMTopologyRouter:
 
         assert decision.decided_by == "rule"
         llm.ainvoke.assert_awaited_once()
-
-    # -----------------------------------------------------------------------
-    # Test 5: cost bookkeeping — router_cost_usd reflects LLM call cost
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_cost_bookkeeping_on_success(self) -> None:
@@ -449,10 +375,6 @@ class TestLLMTopologyRouter:
         assert decision.decided_by == "llm_router"
         assert decision.router_cost_usd == pytest.approx(0.042)
 
-    # -----------------------------------------------------------------------
-    # Test 6: LLM call exception → fallback to rule
-    # -----------------------------------------------------------------------
-
     @pytest.mark.asyncio
     async def test_llm_exception_falls_back_to_rule(self) -> None:
         """LLM raises an exception → fallback to rule (decided_by='rule')."""
@@ -469,17 +391,8 @@ class TestLLMTopologyRouter:
         assert decision.decided_by == "rule"
 
 
-# ===========================================================================
-# TestOracleTopologyRouter
-# ===========================================================================
-
-
 class TestOracleTopologyRouter:
     """Unit tests for OracleTopologyRouter using the fixture table."""
-
-    # -----------------------------------------------------------------------
-    # Test 1: known task_id → stable deterministic decision
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_known_task_id_returns_stable_decision(self) -> None:
@@ -493,18 +406,13 @@ class TestOracleTopologyRouter:
         )
         decision: TopologyDecision = await router.decide(state)
 
-        assert decision.topology == "debate"  # from fixture: task_abc123, execution
+        assert decision.topology == "debate"
         assert decision.decided_by == "oracle"
         assert decision.router_cost_usd == 0.0
         assert "task_abc123" in decision.reason
 
-        # Call again — must be deterministic
         decision2: TopologyDecision = await router.decide(state)
         assert decision2.topology == decision.topology
-
-    # -----------------------------------------------------------------------
-    # Test 2: unknown task_id but known task_type → fallback to task_type
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_unknown_task_id_falls_back_to_task_type(self) -> None:
@@ -519,13 +427,9 @@ class TestOracleTopologyRouter:
         )
         decision: TopologyDecision = await router.decide(state)
 
-        assert decision.topology == "mesh"  # fixture: by_task_type.programming.execution
+        assert decision.topology == "mesh"
         assert decision.decided_by == "oracle"
         assert "programming" in decision.reason
-
-    # -----------------------------------------------------------------------
-    # Test 3: unknown task_id + unknown task_type → fallback to _default
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_no_match_falls_back_to_default(self) -> None:
@@ -540,12 +444,8 @@ class TestOracleTopologyRouter:
         )
         decision: TopologyDecision = await router.decide(state)
 
-        assert decision.topology == "linear"  # fixture: _default = "linear"
+        assert decision.topology == "linear"
         assert decision.decided_by == "oracle"
-
-    # -----------------------------------------------------------------------
-    # Test 4: dict constructor works (for testing without file I/O)
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_dict_constructor(self) -> None:
@@ -563,10 +463,6 @@ class TestOracleTopologyRouter:
 
         assert decision.topology == "hierarchical"
         assert decision.decided_by == "oracle"
-
-    # -----------------------------------------------------------------------
-    # Test 5: different phases → different topology from oracle
-    # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_different_phase_returns_different_topology(self) -> None:
@@ -589,14 +485,8 @@ class TestOracleTopologyRouter:
         decision_plan = await router.decide(state_plan)
         decision_verify = await router.decide(state_verify)
 
-        # Fixture: programming.planning = "linear", programming.verification = "debate"
         assert decision_plan.topology == "linear"
         assert decision_verify.topology == "debate"
-
-
-# ===========================================================================
-# TestAdvisorHintConsumption — Rule 0 in RuleBasedTopologyRouter
-# ===========================================================================
 
 
 class TestAdvisorHintConsumption:
@@ -639,7 +529,6 @@ class TestAdvisorHintConsumption:
         )
 
         decision = await router.decide(state)
-        # No valid topology in hint → rule logic fires (stuck → mesh)
         assert decision.topology == "mesh"
         assert "stuck" in decision.reason
 
@@ -659,7 +548,6 @@ class TestAdvisorHintConsumption:
         )
 
         decision = await router.decide(state)
-        # Override-* hints are skipped → fall through to "no rule fired"
         assert decision.topology == "mesh"
         assert "no rule fired" in decision.reason or decision.topology == "mesh"
 
@@ -676,7 +564,6 @@ class TestAdvisorHintConsumption:
         )
 
         decision = await router.decide(state)
-        # Ambiguous → stay with current
         assert decision.topology == "linear"
 
     @pytest.mark.asyncio
@@ -684,7 +571,6 @@ class TestAdvisorHintConsumption:
         """LLMTopologyRouter must include signals['human_advisor_hint'] in its prompt."""
         from atm.phases.topology_router import LLMTopologyRouter
 
-        # Capture the prompt sent to the mock LLM
         llm = _make_fake_llm('{"topology": "mesh", "reason": "advised"}')
         router = LLMTopologyRouter(llm=llm, rule_fallback=_make_rule_fallback())
         state = _make_state(
@@ -696,11 +582,6 @@ class TestAdvisorHintConsumption:
         sent_messages = llm.ainvoke.call_args.args[0]
         prompt_text = sent_messages[0].content
         assert "switch to debate please" in prompt_text
-
-
-# ---------------------------------------------------------------------------
-# Import test
-# ---------------------------------------------------------------------------
 
 
 def test_import_public_symbols() -> None:

@@ -46,18 +46,9 @@ from atm.llm.wrapper import LLMWrapper
 from atm.tools.base import ToolRegistry
 from atm.topology.base import TopologyConfig
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _JUDGE_DECIDES_FIXTURE = _FIXTURES_DIR / "m7_debate_judge_decides.yaml"
 _MAX_ROUNDS_FIXTURE = _FIXTURES_DIR / "m7_debate_max_rounds.yaml"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_budget() -> BudgetTracker:
@@ -72,7 +63,6 @@ def _make_pricing() -> Pricing:
 
 
 def _make_llm(fixture_path: Path, agent_id: str | None = None) -> LLMWrapper:
-    """Build a scripted FakeLLM wrapper for a given fixture."""
     fake = FakeLLM(mode="scripted", fixture=fixture_path)
     return LLMWrapper(
         model_id="fake:scripted",
@@ -80,11 +70,6 @@ def _make_llm(fixture_path: Path, agent_id: str | None = None) -> LLMWrapper:
         budget=_make_budget(),
         llm=fake,
     )
-
-
-# ---------------------------------------------------------------------------
-# JudgeAgent — converts DRAFT outbox to DECISION (mirrors Critic pattern)
-# ---------------------------------------------------------------------------
 
 
 class JudgeAgent(Agent):
@@ -115,7 +100,6 @@ class JudgeAgent(Agent):
             content_lower = content.lower()
             approved: bool = "approve" in content_lower
 
-            # Parse winner from content: "winner=pro" or "winner=contra"
             winner = "pro"
             if "winner=contra" in content_lower:
                 winner = "contra"
@@ -158,11 +142,6 @@ class JudgeAgent(Agent):
         delta["messages"] = new_messages
 
         return delta
-
-
-# ---------------------------------------------------------------------------
-# Agent factory
-# ---------------------------------------------------------------------------
 
 
 def _make_planner(fixture_path: Path) -> Agent:
@@ -254,11 +233,6 @@ def _make_debate_cfg(*, max_rounds: int = 4, max_iterations: int = 12) -> Topolo
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 1: judge decides after loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_debate_judge_decides_after_loop() -> None:
     """E2E: DebateTopology runs 2 rounds, judge approves in round 2.
@@ -273,7 +247,6 @@ async def test_debate_judge_decides_after_loop() -> None:
     if not _JUDGE_DECIDES_FIXTURE.exists():
         pytest.skip(f"Fixture not found: {_JUDGE_DECIDES_FIXTURE}")
 
-    # Build agents with shared FakeLLM fixture
     fixture_path = _JUDGE_DECIDES_FIXTURE
     agents = {
         "planner": _make_planner(fixture_path),
@@ -284,8 +257,7 @@ async def test_debate_judge_decides_after_loop() -> None:
 
     cfg = _make_debate_cfg(max_rounds=4, max_iterations=20)
 
-    # Import and use DebateTopology
-    import atm.topology.debate  # noqa: F401 — triggers registration
+    import atm.topology.debate  # noqa: F401
     from atm.topology.debate import DebateTopology
 
     topology = DebateTopology()
@@ -294,24 +266,20 @@ async def test_debate_judge_decides_after_loop() -> None:
     initial_state = _make_initial_state()
     final_state = await graph.ainvoke(initial_state)
 
-    # ── Assertion 1: judge_decided == True ────────────────────────────────
     shared = final_state.get("shared", {})
     signals = shared.get("signals", {})
     assert signals.get("judge_decided") is True, (
         f"Expected signals['judge_decided']=True, got: {signals}"
     )
 
-    # ── Assertion 2: final_answer is non-empty ────────────────────────────
     final_answer = shared.get("final_answer", "")
     assert final_answer and final_answer != "<incomplete>", (
         f"Expected non-empty final_answer, got: {final_answer!r}"
     )
 
-    # ── Assertion 3: iter_total > 0 ───────────────────────────────────────
     iter_total = shared.get("iter_total", 0)
     assert iter_total > 0, f"Expected iter_total > 0, got {iter_total}"
 
-    # ── Assertion 4 (MC-3): all Message.id unique after fan-in ───────────
     messages: list[Any] = final_state.get("messages", [])
     if messages:
         msg_ids = [getattr(m, "id", None) for m in messages]
@@ -321,11 +289,6 @@ async def test_debate_judge_decides_after_loop() -> None:
             f"Duplicate Message.id detected after fan-in! "
             f"Total: {len(non_none_ids)}, Unique: {len(msg_ids_set)}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 2: max_rounds path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -352,10 +315,9 @@ async def test_debate_max_rounds() -> None:
         "judge": _make_judge(fixture_path),
     }
 
-    # max_rounds=2 so the fixture only needs 2 rounds of judge responses
     cfg = _make_debate_cfg(max_rounds=2, max_iterations=20)
 
-    import atm.topology.debate  # noqa: F401 — triggers registration
+    import atm.topology.debate  # noqa: F401
     from atm.topology.debate import DebateTopology
 
     topology = DebateTopology()
@@ -364,18 +326,15 @@ async def test_debate_max_rounds() -> None:
     initial_state = _make_initial_state()
     final_state = await graph.ainvoke(initial_state)
 
-    # ── Assertion 1: judge_decided is NOT True ────────────────────────────
     shared = final_state.get("shared", {})
     signals = shared.get("signals", {})
     assert signals.get("judge_decided") is not True, (
         f"Expected signals['judge_decided'] NOT True (max_rounds path), got: {signals}"
     )
 
-    # ── Assertion 2: iter_total > 0 ───────────────────────────────────────
     iter_total = shared.get("iter_total", 0)
     assert iter_total > 0, f"Expected iter_total > 0, got {iter_total}"
 
-    # ── Assertion 3 (MC-3): all Message.id unique after fan-in ───────────
     messages: list[Any] = final_state.get("messages", [])
     if messages:
         msg_ids = [getattr(m, "id", None) for m in messages]
@@ -386,7 +345,6 @@ async def test_debate_max_rounds() -> None:
             f"Total: {len(non_none_ids)}, Unique: {len(msg_ids_set)}"
         )
 
-    # ── Assertion 4: debate_round >= max_rounds (rounds exhausted) ────────
     debate_round = shared.get("debate_round", 0)
     assert debate_round >= 2, (
         f"Expected debate_round >= 2 (max_rounds=2), got debate_round={debate_round}"

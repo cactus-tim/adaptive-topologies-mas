@@ -31,10 +31,6 @@ from atm.topology.mesh import (
     MeshTopology,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_topology_cfg(
     *,
@@ -135,11 +131,6 @@ def _build_with_mock_graph(
     return mock_graph, mock_compiled
 
 
-# ---------------------------------------------------------------------------
-# Test 1: human_peer appears in conditional edges routing map when enabled
-# ---------------------------------------------------------------------------
-
-
 class TestHumanPeerAddedToAgentOrder:
     """human_peer is included in the dispatcher routing map when HITL enabled."""
 
@@ -154,7 +145,6 @@ class TestHumanPeerAddedToAgentOrder:
             agents, cfg, human_cfg=human_cfg, mock_gateway=mock_gw
         )
 
-        # Find the dispatcher conditional edge call
         dispatcher_call = None
         for call in mock_graph.add_conditional_edges.call_args_list:
             if call.args and call.args[0] == "dispatcher":
@@ -169,11 +159,6 @@ class TestHumanPeerAddedToAgentOrder:
         assert _HUMAN_PEER_ID in routing_map, (
             f"'{_HUMAN_PEER_ID}' missing from dispatcher routing map: {routing_map}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 2: human_peer node registered in graph when enabled
-# ---------------------------------------------------------------------------
 
 
 class TestHumanPeerNodeRegistered:
@@ -208,11 +193,6 @@ class TestHumanPeerNodeRegistered:
         )
 
 
-# ---------------------------------------------------------------------------
-# Test 3: dispatcher skips human_peer before activation_round
-# ---------------------------------------------------------------------------
-
-
 class TestDispatcherSkipsHumanPeerBeforeActivationRound:
     """Dispatcher skips human_peer when dispatch_round < activation_round."""
 
@@ -220,7 +200,6 @@ class TestDispatcherSkipsHumanPeerBeforeActivationRound:
     async def test_dispatcher_skips_human_peer_before_activation_round(self) -> None:
         """When dispatch_round=0 < activation_round=2, human_peer is NOT activated."""
         agent_order = ["planner", "researcher", "executor"]
-        # Make planner, researcher, executor each vote for "X"
         vote_counts_per_agent: dict[str, str] = {
             "planner": "X",
             "researcher": "X",
@@ -255,7 +234,6 @@ class TestDispatcherSkipsHumanPeerBeforeActivationRound:
                     }
                 }
 
-        # Human agent step (should be skipped in round 1)
         human_step_called = False
 
         class _TrackingHumanAgent:
@@ -268,15 +246,13 @@ class TestDispatcherSkipsHumanPeerBeforeActivationRound:
             aid: _VoteAgent(aid, vote) for aid, vote in vote_counts_per_agent.items()
         }
 
-        # Build with activation_round=2 — human should not fire in first round
         cfg = _make_topology_cfg(
             agent_order=agent_order,
-            consensus_threshold=10,  # high threshold so we loop
-            max_rounds=2,  # only run 2 rounds
+            consensus_threshold=10,
+            max_rounds=2,
         )
         human_cfg = _make_human_cfg(enabled=True, activation_round=2)
 
-        # Use a mock gateway that tracks calls
         from atm.human.gateway import HumanResponse
 
         gateway_called = False
@@ -328,25 +304,12 @@ class TestDispatcherSkipsHumanPeerBeforeActivationRound:
             "topology_transitions": [],
         }
 
-        # Run with max_rounds=2; activation_round=2 means human fires only at round 2
         final_state = await graph.ainvoke(initial_state)
 
         signals = final_state.get("shared", {}).get("signals", {})
         dispatch_round = int(signals.get("_mesh_dispatch_round", 0))
 
-        # Human should have been called at round 2 (dispatch_round reaches 2)
-        # activation_round=2 means fired when dispatch_round >= 2
-        # But max_rounds=2 means only 2 total rounds, and at round=2 the postprocess stops
-        # The key assertion: at dispatch_round=1 (first round), human not activated
-        # Depending on exact execution, gateway_called should be False for round<2
-        # We cannot assert gateway_called=False since rounds may reach 2 and then stop
-        # Instead assert dispatch_round >= 1 (ran at all)
         assert dispatch_round >= 1, f"Expected at least 1 dispatch round, got {dispatch_round}"
-
-
-# ---------------------------------------------------------------------------
-# Test 4: dispatcher activates human_peer at activation_round
-# ---------------------------------------------------------------------------
 
 
 class TestDispatcherActivatesHumanPeerAtActivationRound:
@@ -401,10 +364,9 @@ class TestDispatcherActivatesHumanPeerAtActivationRound:
 
         cfg = _make_topology_cfg(
             agent_order=agent_order,
-            consensus_threshold=10,  # won't reach consensus
+            consensus_threshold=10,
             max_rounds=2,
         )
-        # activation_round=1 → human fires from round 1 onwards
         human_cfg = _make_human_cfg(enabled=True, activation_round=1)
 
         topology = MeshTopology()
@@ -444,17 +406,10 @@ class TestDispatcherActivatesHumanPeerAtActivationRound:
 
         await graph.ainvoke(initial_state)
 
-        # With activation_round=1 and max_rounds=2, human_peer should fire
-        # at least once (round ≥ 1)
         assert gateway_call_count >= 1, (
             f"Expected human gateway to be called ≥1 time (activation_round=1), "
             f"got {gateway_call_count}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 5: consensus_pending signal set on split-vote
-# ---------------------------------------------------------------------------
 
 
 class TestConsensusPendingSignalOnSplitVote:
@@ -506,17 +461,16 @@ class TestConsensusPendingSignalOnSplitVote:
             )
         )
 
-        # planner votes "A", researcher votes "B" → split vote, threshold=3
         agents: dict[str, Any] = {
             "planner": _VoteAgent("planner", "A"),
             "researcher": _VoteAgent("researcher", "B"),
         }
         cfg = _make_topology_cfg(
             agent_order=agent_order,
-            consensus_threshold=3,  # won't reach with 1 vote each
+            consensus_threshold=3,
             max_rounds=2,
         )
-        human_cfg = _make_human_cfg(enabled=True, activation_round=99)  # human won't fire
+        human_cfg = _make_human_cfg(enabled=True, activation_round=99)
 
         topology = MeshTopology()
         with (
@@ -554,18 +508,12 @@ class TestConsensusPendingSignalOnSplitVote:
         final_state = await graph.ainvoke(initial_state)
         signals = final_state.get("shared", {}).get("signals", {})
 
-        # consensus_pending should be True since votes exist but no winner
         assert "consensus_pending" in signals, (
             f"Expected 'consensus_pending' in signals, got {signals}"
         )
         assert signals["consensus_pending"] is True, (
             f"Expected consensus_pending=True on split vote, got {signals['consensus_pending']!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 6: consensus_pending not set when no votes
-# ---------------------------------------------------------------------------
 
 
 class TestConsensusPendingNotSetWhenNoVotes:
@@ -636,15 +584,9 @@ class TestConsensusPendingNotSetWhenNoVotes:
         final_state = await graph.ainvoke(initial_state)
         signals = final_state.get("shared", {}).get("signals", {})
 
-        # With no DECISION votes, consensus_pending should be False
         assert signals.get("consensus_pending") is False, (
             f"Expected consensus_pending=False with no votes, got {signals.get('consensus_pending')!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 7: back-compat without human_cfg
-# ---------------------------------------------------------------------------
 
 
 class TestBackCompatWithoutHumanCfg:
@@ -674,7 +616,6 @@ class TestBackCompatWithoutHumanCfg:
 
         mock_graph, _ = _build_with_mock_graph(agents, cfg)
 
-        # Find dispatcher conditional edge
         dispatcher_call = None
         for call in mock_graph.add_conditional_edges.call_args_list:
             if call.args and call.args[0] == "dispatcher":
@@ -690,11 +631,6 @@ class TestBackCompatWithoutHumanCfg:
         )
 
 
-# ---------------------------------------------------------------------------
-# Test 8: on_consensus_pending skips human_peer when not pending
-# ---------------------------------------------------------------------------
-
-
 class TestOnConsensusPendingSkips:
     """on_consensus_pending=True: human_peer only activates when consensus_pending signal set."""
 
@@ -707,7 +643,6 @@ class TestOnConsensusPendingSkips:
                 self.agent_id = aid
 
             async def step(self, state: dict[str, Any]) -> dict[str, Any]:
-                # Vote for "X" — deterministic
                 msg = Message(
                     sender=self.agent_id,
                     kind=MessageKind.DECISION,
@@ -748,8 +683,6 @@ class TestOnConsensusPendingSkips:
 
         mock_gw.request = _mock_request
 
-        # threshold=1 → consensus reached immediately with 1 vote from planner
-        # With on_consensus_pending=True, human should not fire since no split vote
         cfg = _make_topology_cfg(
             agent_order=["planner"],
             consensus_threshold=1,
@@ -757,8 +690,8 @@ class TestOnConsensusPendingSkips:
         )
         human_cfg = _make_human_cfg(
             enabled=True,
-            activation_round=1,  # early activation
-            on_consensus_pending=True,  # only fires when pending
+            activation_round=1,
+            on_consensus_pending=True,
         )
 
         topology = MeshTopology()
@@ -802,20 +735,13 @@ class TestOnConsensusPendingSkips:
         final_state = await graph.ainvoke(initial_state)
         signals = final_state.get("shared", {}).get("signals", {})
 
-        # Consensus should be reached immediately (threshold=1)
         assert signals.get("consensus_reached") is True, (
             f"Expected consensus_reached=True, got {signals}"
         )
-        # Human peer should NOT have been called (consensus reached, no split vote → no pending)
         assert gateway_calls == 0, (
             f"Expected gateway_calls=0 with on_consensus_pending=True and immediate consensus, "
             f"got {gateway_calls}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 9: effective_agent_order includes human_peer
-# ---------------------------------------------------------------------------
 
 
 class TestEffectiveAgentOrderIncludesHumanPeer:
@@ -833,7 +759,6 @@ class TestEffectiveAgentOrderIncludesHumanPeer:
             agents, cfg, human_cfg=human_cfg, mock_gateway=mock_gw
         )
 
-        # Check that an edge from human_peer to mesh_broadcast was added
         edge_sources = [
             call.args[0]
             for call in mock_graph.add_edge.call_args_list
@@ -853,11 +778,6 @@ class TestEffectiveAgentOrderIncludesHumanPeer:
         assert _HUMAN_PEER_ID == "human_peer"
 
 
-# ---------------------------------------------------------------------------
-# Test 10: role_router back-compat — role_router=None uses human_cfg.role
-# ---------------------------------------------------------------------------
-
-
 class TestRoleRouterBackCompat:
     """role_router=None (or omitted) → human_cfg.role is used for HumanContext."""
 
@@ -871,7 +791,6 @@ class TestRoleRouterBackCompat:
         mock_gw = MagicMock()
 
         async def _mock_request(ctx: Any, *, request_id: str) -> HumanResponse:
-            # Capture the role from context
             role_val = ctx.role.value if hasattr(ctx.role, "value") else str(ctx.role)
             captured_roles.append(role_val)
             return HumanResponse(
@@ -886,11 +805,9 @@ class TestRoleRouterBackCompat:
 
         cfg = _make_topology_cfg(
             agent_order=["planner"],
-            consensus_threshold=10,  # won't reach consensus
+            consensus_threshold=10,
             max_rounds=2,
         )
-        # human_cfg.role = REVIEWER; no role_router → should stay REVIEWER
-        # activation_round=1 means human fires from dispatch_round >= 1 (second round)
         human_cfg = _make_human_cfg(enabled=True, activation_round=1)
         assert human_cfg.role == HumanRole.REVIEWER
 
@@ -899,7 +816,6 @@ class TestRoleRouterBackCompat:
             patch("atm.topology.mesh.LLMSimulatedGateway", return_value=mock_gw),
             patch("atm.topology.mesh.request_with_timeout", None),
         ):
-            # role_router not passed → defaults to None
             graph = topology.build(
                 {"planner": _make_mock_agent()},
                 cfg,
@@ -944,11 +860,6 @@ class TestRoleRouterBackCompat:
             )
 
 
-# ---------------------------------------------------------------------------
-# Test 11: role_router dynamic — FixedRoleRouter overrides human_cfg.role
-# ---------------------------------------------------------------------------
-
-
 class TestRoleRouterDynamic:
     """role_router=FixedRoleRouter(JUDGE) overrides human_cfg.role=REVIEWER."""
 
@@ -977,11 +888,9 @@ class TestRoleRouterDynamic:
 
         cfg = _make_topology_cfg(
             agent_order=["planner"],
-            consensus_threshold=10,  # won't reach consensus
+            consensus_threshold=10,
             max_rounds=2,
         )
-        # human_cfg.role = REVIEWER; role_router returns JUDGE
-        # activation_round=1 means human fires from dispatch_round >= 1 (second round)
         human_cfg = _make_human_cfg(enabled=True, activation_round=1)
         assert human_cfg.role == HumanRole.REVIEWER
 

@@ -13,11 +13,6 @@ def _make_policy(max_retries: int = 0) -> RetryPolicy:
     return RetryPolicy(max_retries=max_retries, base_delay_s=0.0, jitter=False)
 
 
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_with_tool_retry_preserves_ok_path() -> None:
     """When the wrapped function succeeds, the result is returned unchanged."""
@@ -41,17 +36,11 @@ async def test_with_tool_retry_passes_args_through() -> None:
     assert await add(2, b=3) == 5
 
 
-# ---------------------------------------------------------------------------
-# LLMError → ToolError conversion
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_with_tool_retry_converts_llmerror_to_toolerror() -> None:
     """LLMError exhausted from with_retry must be re-raised as ToolError."""
     call_count = 0
 
-    # A transient-flagged exception that with_retry will retry and exhaust
     class TransientErr(Exception):
         status_code = 429
 
@@ -67,7 +56,6 @@ async def test_with_tool_retry_converts_llmerror_to_toolerror() -> None:
     err = exc_info.value
     assert err.tool_name == "failing_tool"
     assert isinstance(err.__cause__, LLMError)
-    # with_retry should have tried initial + 1 retry = 2 calls
     assert call_count == 2
 
 
@@ -86,11 +74,6 @@ async def test_with_tool_retry_toolerror_message_contains_llmerror_text() -> Non
         await fail_once()
 
     assert exc_info.value.tool_name == "tool_x"
-
-
-# ---------------------------------------------------------------------------
-# Non-transient exceptions pass through unchanged
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

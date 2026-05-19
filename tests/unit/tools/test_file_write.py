@@ -10,10 +10,6 @@ import pytest
 
 from atm.tools.local_.file_write import FileWriteTool
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _tool(workspace: Path, create_parents: bool = False) -> FileWriteTool:
     return FileWriteTool(workspace=workspace, create_parents=create_parents)
@@ -21,11 +17,6 @@ def _tool(workspace: Path, create_parents: bool = False) -> FileWriteTool:
 
 async def _invoke(tool: FileWriteTool, args: dict[str, Any]):
     return await tool.ainvoke(args)
-
-
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -44,14 +35,8 @@ async def test_file_write_happy_path(tmp_path: Path) -> None:
     assert output["bytes_written"] == expected_bytes
     assert output["path"] == "hello.txt"
 
-    # Verify the file was actually written with correct content
     written = (tmp_path / "hello.txt").read_text(encoding="utf-8")
     assert written == content
-
-
-# ---------------------------------------------------------------------------
-# Reject absolute paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -65,11 +50,6 @@ async def test_file_write_rejects_absolute(tmp_path: Path) -> None:
     assert "absolute" in result.error.lower()
 
 
-# ---------------------------------------------------------------------------
-# Reject path traversal (outside workspace)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_file_write_rejects_traversal(tmp_path: Path) -> None:
     """Path traversal via ../ must be rejected with 'outside workspace' error."""
@@ -79,11 +59,6 @@ async def test_file_write_rejects_traversal(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.error is not None
     assert "outside workspace" in result.error.lower()
-
-
-# ---------------------------------------------------------------------------
-# Reject overwrite when overwrite=False (default)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -99,13 +74,7 @@ async def test_file_write_rejects_exists_no_overwrite(tmp_path: Path) -> None:
     assert result.error is not None
     assert "exists" in result.error.lower()
 
-    # Original file must be untouched
     assert target.read_text(encoding="utf-8") == "original content"
-
-
-# ---------------------------------------------------------------------------
-# Allow overwrite when overwrite=True
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -124,13 +93,7 @@ async def test_file_write_overwrite_true(tmp_path: Path) -> None:
     assert result.error is None
     assert result.output["bytes_written"] == len(new_content.encode("utf-8"))
 
-    # Verify the content was replaced
     assert target.read_text(encoding="utf-8") == new_content
-
-
-# ---------------------------------------------------------------------------
-# Reject missing parent when create_parents=False (default)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -143,13 +106,7 @@ async def test_file_write_parent_missing_no_create_parents(tmp_path: Path) -> No
     assert result.error is not None
     assert "parent" in result.error.lower()
 
-    # Ensure no partial directories were created
     assert not (tmp_path / "sub").exists()
-
-
-# ---------------------------------------------------------------------------
-# Create parents when create_parents=True
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -165,11 +122,6 @@ async def test_file_write_parent_created_when_create_parents_true(tmp_path: Path
     target = tmp_path / "sub" / "deep" / "x.txt"
     assert target.exists()
     assert target.read_text(encoding="utf-8") == content
-
-
-# ---------------------------------------------------------------------------
-# Atomic write — no partial file on failure
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -188,22 +140,14 @@ async def test_file_write_atomic_on_failure(
 
     result = await _invoke(tool, {"path": "atomic.txt", "content": "data"})
 
-    # The operation should fail (not ok)
     assert result.ok is False
 
-    # No .tmp file should remain
     tmp_files = list(tmp_path.glob("*.tmp.*"))
     assert tmp_files == [], f"Leftover tmp files found: {tmp_files}"
 
-    # The target file must not exist either
     assert not (tmp_path / "atomic.txt").exists()
 
     monkeypatch.setattr(os, "replace", original_replace)
-
-
-# ---------------------------------------------------------------------------
-# Tool metadata
-# ---------------------------------------------------------------------------
 
 
 def test_file_write_name_and_schema(tmp_path: Path) -> None:

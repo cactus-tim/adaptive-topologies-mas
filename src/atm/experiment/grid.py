@@ -50,11 +50,6 @@ from atm.storage.session import create_engine, create_session_factory, session_s
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Public dataclasses
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class GridProgress:
     """Live snapshot of grid-run progress, emitted to ``progress_callback``.
@@ -97,11 +92,6 @@ class GridResult:
     run_ids: list[UUID]
 
 
-# ---------------------------------------------------------------------------
-# Status aggregation
-# ---------------------------------------------------------------------------
-
-
 _TERMINAL_SUCCESS: frozenset[str] = frozenset({"completed"})
 _TERMINAL_FAILURE: frozenset[str] = frozenset({"failed", "budget_exceeded"})
 _TERMINAL: frozenset[str] = _TERMINAL_SUCCESS | _TERMINAL_FAILURE
@@ -123,7 +113,6 @@ def _aggregate_experiment_status(statuses: list[str]) -> str:
     if not statuses:
         raise ValueError("_aggregate_experiment_status: empty status list")
 
-    # Any non-terminal value -> experiment is still running.
     if any(s not in _TERMINAL for s in statuses):
         return "running"
 
@@ -135,11 +124,6 @@ def _aggregate_experiment_status(statuses: list[str]) -> str:
     if has_success:
         return "completed"
     return "failed"
-
-
-# ---------------------------------------------------------------------------
-# Worker entry point (top-level for picklability)
-# ---------------------------------------------------------------------------
 
 
 def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
@@ -165,20 +149,11 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
             "error":        str | None,
         }
     """
-    # Local imports keep parent's import graph minimal (faster pool spawn).
     import traceback
 
     from atm.experiment.config import ExperimentConfig
     from atm.experiment.runner import run_one
 
-    # Silence ``RuntimeError: Event loop is closed`` noise from late httpx
-    # ``AsyncClient.aclose()`` Tasks that fire after the worker's event loop
-    # is already closed. They originate inside langchain-cerebras /
-    # langchain-openai's pooled httpx clients and are harmless (the run has
-    # already returned its result by then) but flood stderr otherwise.
-    # Routed through asyncio's logger via ``Task.__del__ ->
-    # call_exception_handler -> default_exception_handler -> logger.error``.
-    # Scope: child process only — does not affect the parent or tests.
     class _HttpxAcloseFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
             msg = record.getMessage()
@@ -202,11 +177,6 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
             "error": f"config validation failed: {exc}",
         }
 
-    # Manage the event loop manually instead of using ``asyncio.run`` so we can
-    # drain pending Tasks (notably ``httpx.AsyncClient.aclose`` scheduled by
-    # langchain-cerebras / langchain-openai during model GC) BEFORE closing the
-    # loop. Otherwise those late aclose() coroutines fire after the loop is
-    # already closed and spam ``RuntimeError: Event loop is closed`` to stderr.
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
@@ -223,9 +193,6 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
                 "final_answer": "",
                 "error": traceback.format_exc()[:4000],
             }
-        # Drain any background Tasks (httpx aclose, etc.) that were scheduled
-        # during run_one but not awaited. Use a short timeout so a stuck task
-        # cannot wedge the worker.
         try:
             pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
             if pending:
@@ -256,11 +223,6 @@ def _run_cell_worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
         "final_answer": result.final_answer,
         "error": None,
     }
-
-
-# ---------------------------------------------------------------------------
-# Main driver
-# ---------------------------------------------------------------------------
 
 
 async def _update_experiment_status(
@@ -325,13 +287,9 @@ async def run_grid(
 
     total = len(configs)
 
-    # All cells share the same ExperimentConfig.name (load_grid_configs
-    # propagates it across the sweep), so we use the first cell to derive the
-    # PG DSN and look up exp_id after at least one worker has registered it.
     pg_dsn = configs[0].observability.pg_dsn
     exp_name = configs[0].name
 
-    # Pickle-safe cfg dicts (avoid Pydantic v2 pickle quirks).
     cfg_dicts = [cfg.model_dump(mode="python") for cfg in configs]
 
     counters = {
@@ -345,29 +303,12 @@ async def run_grid(
     started_monotonic = time.monotonic()
     loop = asyncio.get_running_loop()
 
-    # Pre-warm LangGraph PG checkpointer schema BEFORE spawning workers.
-    # AsyncPostgresSaver.setup() inserts into ``checkpoint_migrations``; when
-    # N workers call it concurrently they race on the pkey constraint, which
-    # surfaces as ``UniqueViolationError: checkpoint_migrations_pkey`` and
-    # kills a subset of cells. Running setup() once serially here keeps the
-    # subsequent per-worker setup() calls idempotent (IF NOT EXISTS / ON
-    # CONFLICT DO NOTHING).
-    #
-    # Wrapped in try/except so unit tests with fake DSNs aren't broken — if
-    # the warmup fails (DSN unreachable), workers will surface the real
-    # error themselves, and the pkey race only matters when there ARE real
-    # parallel workers hitting a real DB.
     try:
         _warm_saver, _warm_pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
         await _warm_pool.close()
     except Exception as exc:
         logger.debug("checkpointer warmup skipped (%s); workers will retry", exc)
 
-    # ProcessPoolExecutor created fresh per call to ensure clean state.
-    # mp_context="spawn" avoids inheriting parent's PG socket FDs (from the
-    # checkpointer warmup above + reconcile in the caller); under fork, workers
-    # share those FDs with the parent and any concurrent write garbles the
-    # wire protocol → PG closes connection → cascade of worker abrupt-deaths.
     executor = ProcessPoolExecutor(
         max_workers=parallelism,
         mp_context=mp.get_context("spawn"),
@@ -375,7 +316,6 @@ async def run_grid(
     cancelled = False
 
     try:
-        # Submit all futures eagerly; pool throttles concurrency to max_workers.
         futures = [
             loop.run_in_executor(executor, _run_cell_worker, cfg_dict) for cfg_dict in cfg_dicts
         ]
@@ -384,11 +324,8 @@ async def run_grid(
             try:
                 result = await fut
             except (asyncio.CancelledError, FuturesCancelledError):
-                # fail_fast cancellation — skip; do not count.
                 continue
             except Exception as exc:
-                # Worker raised through the pool boundary (should not happen —
-                # _run_cell_worker catches everything — but defensive).
                 logger.error("worker raised through pool: %s", exc)
                 counters["failed"] += 1
                 statuses.append("failed")
@@ -399,7 +336,6 @@ async def run_grid(
             if status in counters:
                 counters[status] += 1
             else:
-                # Unknown terminal status — treat as failed for aggregation.
                 counters["failed"] += 1
 
             rid_str = result.get("run_id")
@@ -407,7 +343,6 @@ async def run_grid(
                 with contextlib.suppress(Exception):
                     run_ids.append(UUID(rid_str))
 
-            # Emit live progress.
             done = sum(counters.values())
             failed_total = counters["failed"] + counters["budget_exceeded"]
             in_progress = total - done
@@ -423,10 +358,8 @@ async def run_grid(
                         )
                     )
                 except Exception:
-                    # Never let a callback bug crash the grid.
                     logger.exception("progress_callback raised; ignoring")
 
-            # fail_fast cancellation.
             if fail_fast and status in _TERMINAL_FAILURE and not cancelled:
                 cancelled = True
                 logger.warning(
@@ -434,9 +367,6 @@ async def run_grid(
                     rid_str,
                     status,
                 )
-                # Cancel any not-yet-started futures. Guard hasattr(done) to be
-                # robust against awaitables that aren't asyncio.Futures (e.g. when
-                # ``loop.run_in_executor`` is stubbed in unit tests).
                 for f in futures:
                     done_fn = getattr(f, "done", None)
                     cancel_fn = getattr(f, "cancel", None)
@@ -449,29 +379,18 @@ async def run_grid(
                         pass
                 executor.shutdown(wait=False, cancel_futures=True)
     finally:
-        # Always wait for in-flight workers to actually exit before returning.
-        # fail_fast's purpose is to stop submitting NEW work, not to abandon
-        # running cells — letting them complete prevents leaked subprocess PG
-        # connections from polluting downstream tests / next grid run.
         executor.shutdown(wait=True)
 
-    # Resolve exp_id by looking up the experiment row by name.
     exp_id = await _resolve_exp_id(pg_dsn, exp_name)
 
-    # Aggregate experiment-level status (must have at least one terminal).
     if statuses and exp_id is not None:
         agg = _aggregate_experiment_status(statuses)
-        # Only update PG if the aggregate is terminal — "running" implies
-        # we exited mid-flight (shouldn't happen for run_grid).
         if agg in _TERMINAL or agg == "partial":
             engine = create_engine(pg_dsn)
             try:
                 sf = create_session_factory(engine)
                 await _update_experiment_status(sf, exp_id, agg)
 
-                # Auto-snapshot aggregate PG rows (experiment + all runs) to
-                # parquet so the dataset is self-contained on disk.
-                # Idempotent. Failures are swallowed at debug — backup path.
                 try:
                     parquet_root = (
                         configs[0].observability.parquet_dir if configs else "data/experiments"

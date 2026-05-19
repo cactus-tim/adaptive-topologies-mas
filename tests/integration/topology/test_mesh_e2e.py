@@ -18,14 +18,10 @@ from typing import Any
 
 import pytest
 
-import atm.topology.mesh  # noqa: F401 — ensure MeshTopology is registered
+import atm.topology.mesh  # noqa: F401
 from atm.core.types import Message, MessageKind
 from atm.topology.base import TopologyConfig
 from atm.topology.mesh import MeshTopology
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_cfg(
@@ -78,7 +74,6 @@ def _make_initial_state(*, task_input: str = "What is 2+2?") -> dict[str, Any]:
 
 
 def _make_vote_agent(vote_for: str, agent_id: str) -> Any:
-    """Create a mock agent that writes a DECISION vote message to its outbox."""
     _aid = agent_id
     _vote = vote_for
 
@@ -112,11 +107,6 @@ def _make_vote_agent(vote_for: str, agent_id: str) -> Any:
     return _MockAgent()
 
 
-# ---------------------------------------------------------------------------
-# Test 1: consensus path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_mesh_consensus_path() -> None:
     """Consensus path: 3 agents vote for '4', threshold=3, final_answer=='4'.
@@ -130,7 +120,6 @@ async def test_mesh_consensus_path() -> None:
     """
     cfg = _make_cfg(consensus_threshold=3, max_rounds=6)
 
-    # All agents vote for "4"
     agents = {
         "planner": _make_vote_agent("4", "planner"),
         "researcher": _make_vote_agent("4", "researcher"),
@@ -147,30 +136,21 @@ async def test_mesh_consensus_path() -> None:
     shared: dict[str, Any] = final_state.get("shared", {})
     signals: dict[str, Any] = shared.get("signals", {})
 
-    # Verify consensus was reached
     assert signals.get("consensus_reached") is True, (
         f"Expected consensus_reached=True, got signals={signals}"
     )
 
-    # Verify final_answer is the consensus winner
     assert shared.get("final_answer") == "4", (
         f"Expected final_answer='4', got {shared.get('final_answer')!r}"
     )
 
-    # Verify the graph ran at least 1 iteration
     assert shared.get("iter_total", 0) > 0, "iter_total should be > 0"
 
-    # Verify broadcast_bus contains DECISION messages
     bus: list[Any] = shared.get("broadcast_bus", [])
     decision_msgs = [m for m in bus if getattr(m, "kind", None) == MessageKind.DECISION]
     assert len(decision_msgs) >= 3, (
         f"Expected >= 3 DECISION messages on bus, got {len(decision_msgs)}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 2: max_rounds path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -186,7 +166,6 @@ async def test_mesh_max_rounds_path() -> None:
     """
     cfg = _make_cfg(consensus_threshold=3, max_rounds=4, max_iterations=50)
 
-    # Each agent votes differently — no consensus possible
     agents = {
         "planner": _make_vote_agent("4", "planner"),
         "researcher": _make_vote_agent("5", "researcher"),
@@ -203,21 +182,16 @@ async def test_mesh_max_rounds_path() -> None:
     shared: dict[str, Any] = final_state.get("shared", {})
     signals: dict[str, Any] = shared.get("signals", {})
 
-    # Verify consensus was NOT reached
     assert signals.get("consensus_reached") is not True, (
         f"Expected no consensus, but signals={signals}"
     )
 
-    # Verify dispatch_round reached max_rounds
     dispatch_round: int = int(signals.get("_mesh_dispatch_round", 0))
     assert dispatch_round >= 4, f"Expected dispatch_round >= 4 (max_rounds), got {dispatch_round}"
 
-    # Verify iter_total is positive
     assert shared.get("iter_total", 0) > 0, "iter_total should be > 0"
 
-    # Verify broadcast_bus is not empty (agents ran)
     bus: list[Any] = shared.get("broadcast_bus", [])
     assert len(bus) > 0, "broadcast_bus should not be empty after running"
 
-    # Verify the bus is capped (not unbounded — MC-5)
     assert len(bus) <= 200, f"broadcast_bus exceeded cap: {len(bus)}"

@@ -1,14 +1,4 @@
-"""Data loaders — experiment artifacts from Postgres and Parquet into pandas DataFrames.
-
-Public surface (to be implemented in Steps 3-5):
-    load_experiment            — load a single experiment row as a dict
-    load_runs                  — load all Run rows for an experiment as a DataFrame
-    load_llm_calls             — load LLM call Parquet for a single run
-    load_llm_calls_for_experiment — concat LLM call Parquets for all runs in an experiment
-    load_topology_transitions  — load TopologyTransition rows (PG or Parquet)
-    load_phases                — load Phase rows (PG or Parquet)
-    load_human_interactions    — load HumanInteraction rows (PG only)
-"""
+"""Data loaders — experiment artifacts from Postgres and Parquet into pandas DataFrames."""
 
 from __future__ import annotations
 
@@ -26,18 +16,7 @@ async def load_experiment(
     *,
     session_factory: Any,
 ) -> dict[str, Any]:
-    """Load a single experiment row from Postgres as a plain dict.
-
-    Args:
-        exp_id:          Experiment UUID string.
-        session_factory: Async SQLAlchemy sessionmaker.
-
-    Returns:
-        Dict with experiment column values.
-
-    Raises:
-        KeyError: If no experiment with the given exp_id exists.
-    """
+    """Load a single experiment row from Postgres as a plain dict; raises KeyError if not found."""
     from sqlalchemy import select
 
     from atm.storage.models import Experiment
@@ -68,18 +47,7 @@ async def load_runs(
     *,
     session_factory: Any,
 ) -> pd.DataFrame:
-    """Load all Run rows for an experiment from Postgres.
-
-    The returned DataFrame includes a derived ``task_type`` column inferred
-    from ``task_id`` via ``_infer_task_type``.
-
-    Args:
-        exp_id:          Experiment UUID string.
-        session_factory: Async SQLAlchemy sessionmaker.
-
-    Returns:
-        DataFrame with one row per run.
-    """
+    """Load all Run rows for an experiment from Postgres; includes derived ``task_type`` column."""
     from sqlalchemy import select
 
     from atm.storage.models import Run
@@ -139,22 +107,7 @@ def load_llm_calls(
     *,
     parquet_dir: Path,
 ) -> pd.DataFrame:
-    """Load the LLM call Parquet for a single run.
-
-    The file is located by globbing for the run_id under all experiment
-    subdirectories:
-    ``parquet_dir/experiments/*/runs/{run_id}/llm_calls.parquet``
-
-    Args:
-        run_id:      Run UUID string (used to locate the Parquet file).
-        parquet_dir: Root directory containing per-run Parquet files.
-
-    Returns:
-        DataFrame with columns matching ``LLM_CALL_SCHEMA.names``.
-
-    Raises:
-        FileNotFoundError: If the Parquet file for ``run_id`` does not exist.
-    """
+    """Load the LLM call Parquet for a single run; raises FileNotFoundError if missing."""
     import pyarrow.parquet as pq
 
     pattern = f"experiments/*/runs/{run_id}/llm_calls.parquet"
@@ -176,26 +129,9 @@ def load_llm_calls_for_experiment(
     *,
     parquet_dir: Path,
 ) -> pd.DataFrame:
-    """Concatenate LLM call Parquets for all runs in an experiment.
-
-    Globs all run directories under the experiment and concatenates their
-    llm_calls.parquet files. The ``run_id`` column is injected from the
-    directory name when not already present in the parquet data.
-
-    File layout:
-        ``parquet_dir/experiments/{exp_id}/runs/{run_id}/llm_calls.parquet``
-
-    Args:
-        exp_id:      Experiment UUID string (used to glob matching files).
-        parquet_dir: Root directory containing per-run Parquet files.
-
-    Returns:
-        Concatenated DataFrame with one row per LLM call across all runs.
-        Returns an empty DataFrame when no runs exist for the experiment.
-    """
+    """Concatenate LLM call Parquets for all runs in an experiment; injects ``run_id`` from path."""
     import pyarrow.parquet as pq
 
-    # Validate exp_id as a UUID to prevent path traversal attacks.
     exp_uuid_str = str(uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id)
     exp_runs_dir = parquet_dir / "experiments" / exp_uuid_str / "runs"
     pattern = "*/llm_calls.parquet"
@@ -206,11 +142,9 @@ def load_llm_calls_for_experiment(
 
     frames: list[pd.DataFrame] = []
     for parquet_file in parquet_files:
-        # The run_id is the name of the parent directory (the run UUID)
         run_id_from_path = parquet_file.parent.name
         table = pq.read_table(parquet_file)  # type: ignore[no-untyped-call]
         df: pd.DataFrame = table.to_pandas()
-        # Ensure run_id column is present and reflects the directory-derived run_id
         df["run_id"] = run_id_from_path
         frames.append(df)
 
@@ -224,25 +158,7 @@ async def load_topology_transitions(
     session_factory: Any = None,
     parquet_dir: Path | None = None,
 ) -> pd.DataFrame:
-    """Load TopologyTransition rows for an experiment.
-
-    Supports two sources:
-    - ``"pg"``      : reads from Postgres (requires ``session_factory``).
-    - ``"parquet"`` : reads from Parquet files (requires ``parquet_dir``).
-
-    Both sources return identical column sets. JSONB/JSON-string fields
-    (``signals_snapshot``, ``considered_alternatives``, ``guards_applied``)
-    are decoded to native Python types (dict/list), never left as JSON strings.
-
-    Args:
-        exp_id:          Experiment UUID string.
-        source:          Data source selector.
-        session_factory: Async SQLAlchemy sessionmaker (required for ``"pg"``).
-        parquet_dir:     Root Parquet directory (required for ``"parquet"``).
-
-    Returns:
-        DataFrame with one row per topology transition.
-    """
+    """Load TopologyTransition rows for an experiment from Postgres or Parquet."""
     import json
 
     if source == "parquet":
@@ -250,7 +166,6 @@ async def load_topology_transitions(
             raise ValueError("parquet_dir is required when source='parquet'")
         import pyarrow.parquet as pq
 
-        # Validate exp_id as a UUID to prevent path traversal attacks.
         exp_uuid_str = str(uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id)
         exp_runs_dir = parquet_dir / "experiments" / exp_uuid_str / "runs"
         parquet_files = (
@@ -266,11 +181,9 @@ async def load_topology_transitions(
         for pq_file in parquet_files:
             table = pq.read_table(pq_file)  # type: ignore[no-untyped-call]
             df: pd.DataFrame = table.to_pandas()
-            # Decode JSON-string columns into native Python types
             df["signals_snapshot"] = df["signals_snapshot_json"].apply(json.loads)
             df["considered_alternatives"] = df["considered_alternatives_json"].apply(json.loads)
             df["guards_applied"] = df["guards_applied_json"].apply(json.loads)
-            # Drop the raw _json columns
             df = df.drop(
                 columns=[
                     "signals_snapshot_json",
@@ -293,7 +206,6 @@ async def load_topology_transitions(
         exp_uuid = uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id
 
         async with session_factory() as session:
-            # Join through runs to filter by experiment
             result = await session.execute(
                 select(TopologyTransition)
                 .join(Run, TopologyTransition.run_id == Run.id)
@@ -316,7 +228,6 @@ async def load_topology_transitions(
                     "iter_within_topology": t.iter_within_topology,
                     "decided_by": t.decided_by,
                     "reason": t.reason,
-                    # PG returns native Python types for ARRAY and JSONB
                     "considered_alternatives": list(t.considered_alternatives),
                     "guards_applied": list(t.guards_applied),
                     "signals_snapshot": dict(t.signals_snapshot),
@@ -337,25 +248,12 @@ async def load_phases(
     session_factory: Any = None,
     parquet_dir: Path | None = None,
 ) -> pd.DataFrame:
-    """Load Phase rows for an experiment.
-
-    Supports two sources (same contract as ``load_topology_transitions``).
-
-    Args:
-        exp_id:          Experiment UUID string.
-        source:          Data source selector.
-        session_factory: Async SQLAlchemy sessionmaker (required for ``"pg"``).
-        parquet_dir:     Root Parquet directory (required for ``"parquet"``).
-
-    Returns:
-        DataFrame with one row per phase.
-    """
+    """Load Phase rows for an experiment from Postgres or Parquet."""
     if source == "parquet":
         if parquet_dir is None:
             raise ValueError("parquet_dir is required when source='parquet'")
         import pyarrow.parquet as pq
 
-        # Validate exp_id as a UUID to prevent path traversal attacks.
         exp_uuid_str = str(uuid.UUID(exp_id) if not isinstance(exp_id, uuid.UUID) else exp_id)
         exp_runs_dir = parquet_dir / "experiments" / exp_uuid_str / "runs"
         parquet_files = list(exp_runs_dir.glob("*/phases.parquet")) if exp_runs_dir.exists() else []
@@ -413,18 +311,7 @@ async def load_human_interactions(
     *,
     session_factory: Any,
 ) -> pd.DataFrame:
-    """Load HumanInteraction rows for an experiment from Postgres.
-
-    The ``raw_tlx_score`` column is cast to float; NULL values become NaN.
-
-    Args:
-        exp_id:          Experiment UUID string.
-        session_factory: Async SQLAlchemy sessionmaker.
-
-    Returns:
-        DataFrame with columns: id, run_id, role, requested_at, answered_at,
-        raw_tlx_score, tlx_scores, request_id.
-    """
+    """Load HumanInteraction rows for an experiment from Postgres; NULL raw_tlx_score → NaN."""
     from sqlalchemy import select
 
     from atm.storage.models import HumanInteraction, Run
@@ -445,7 +332,6 @@ async def load_human_interactions(
     rows: list[dict[str, Any]] = []
     for hi in interactions:
         raw_tlx = hi.raw_tlx_score
-        # Cast to float; None (NULL in DB) becomes NaN
         raw_tlx_float = float("nan") if raw_tlx is None else float(raw_tlx)
 
         rows.append(

@@ -15,20 +15,9 @@ from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Skip all tests in this module unless Docker env var is set
-# (conftest.py also handles per-item skip; this module-level mark is backup)
-# ---------------------------------------------------------------------------
-
-
 pytestmark = pytest.mark.docker
 
 _SECCOMP_PATH = pathlib.Path(__file__).parents[3] / "conf" / "sandbox" / "seccomp.json"
-
-
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -52,11 +41,6 @@ def docker_sandbox(cfg, seccomp_str: str):
     from atm.tools.sandbox.docker_sandbox import DockerSandbox
 
     return DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestDockerAcceptance:
@@ -111,7 +95,7 @@ class TestDockerAcceptance:
             workspace=tmp_path / "workspace",
             corpus_dir=corpus_dir,
             sandbox=docker_sandbox,
-            prod_mode=True,  # DockerSandbox IS_ISOLATED=True
+            prod_mode=True,
         )
         (tmp_path / "workspace").mkdir(exist_ok=True)
 

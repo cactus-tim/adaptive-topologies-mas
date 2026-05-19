@@ -50,7 +50,6 @@ class TestDebaterProStance:
 
     def test_debater_pro_prompt_contains_pro(self) -> None:
         cfg = load_agent_config(CONF_DIR / "debater.yaml")
-        # Raw config must still have the placeholder
         assert "{{stance}}" in cfg.system_prompt
 
         resolved_cfg = cfg.model_copy(update={"params": {"stance": "pro"}})
@@ -61,9 +60,7 @@ class TestDebaterProStance:
             tools=_make_tools(),
         )
 
-        # After construction the placeholder must be gone
         assert "{{stance}}" not in debater.cfg.system_prompt
-        # The stance literal must appear in the resolved prompt
         assert "pro" in debater.cfg.system_prompt.lower()
 
     def test_debater_pro_prompt_contains_stance_literal(self) -> None:

@@ -14,7 +14,6 @@ def _make_fake_getaddrinfo(ip_address: str):
     """Return a monkeypatched getaddrinfo that always resolves to ip_address."""
 
     def fake_getaddrinfo(host, port, *args, **kwargs):
-        # Returns list of (family, type, proto, canonname, sockaddr)
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip_address, 80))]
 
     return fake_getaddrinfo
@@ -29,11 +28,6 @@ def _make_fake_getaddrinfo_ipv6(ip_address: str):
     return fake_getaddrinfo
 
 
-# ---------------------------------------------------------------------------
-# Scheme rejection
-# ---------------------------------------------------------------------------
-
-
 def test_safety_rejects_ftp_scheme() -> None:
     with pytest.raises(ToolError) as exc_info:
         resolve_and_validate_url("ftp://example.com/file.txt")
@@ -43,11 +37,6 @@ def test_safety_rejects_ftp_scheme() -> None:
 def test_safety_rejects_file_scheme() -> None:
     with pytest.raises(ToolError):
         resolve_and_validate_url("file:///etc/passwd")
-
-
-# ---------------------------------------------------------------------------
-# Private/reserved IP rejection
-# ---------------------------------------------------------------------------
 
 
 def test_safety_rejects_loopback(monkeypatch) -> None:
@@ -83,21 +72,11 @@ def test_safety_rejects_private_192(monkeypatch) -> None:
         resolve_and_validate_url("http://192.168.1.1/")
 
 
-# ---------------------------------------------------------------------------
-# Happy path with public IP
-# ---------------------------------------------------------------------------
-
-
 def test_safety_happy_path_public(monkeypatch) -> None:
     """A public IP (1.1.1.1) should pass."""
     monkeypatch.setattr(socket, "getaddrinfo", _make_fake_getaddrinfo("1.1.1.1"))
     url = resolve_and_validate_url("https://example.com/page")
     assert url == "https://example.com/page"
-
-
-# ---------------------------------------------------------------------------
-# allow_private=True permits private addresses
-# ---------------------------------------------------------------------------
 
 
 def test_safety_allow_private_true_permits_localhost(monkeypatch) -> None:

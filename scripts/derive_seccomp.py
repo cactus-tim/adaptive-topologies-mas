@@ -24,21 +24,11 @@ import json
 import pathlib
 import urllib.request
 
-# ---------------------------------------------------------------------------
-# Source URL — vendored copy inside moby/moby (the "profiles" sub-module was
-# moved from the top-level profiles/ directory to vendor/github.com/moby/profiles/).
-# Pinned to the master branch; update the SHA here when upstream changes.
-# ---------------------------------------------------------------------------
 UPSTREAM_URL = (
     "https://raw.githubusercontent.com/moby/moby/master"
     "/vendor/github.com/moby/profiles/seccomp/default.json"
 )
 
-# ---------------------------------------------------------------------------
-# Deny-list: syscalls that must NOT appear in the allowed set of the sandbox
-# profile.  These are dangerous capabilities that we explicitly prohibit even
-# if moby upstream allows them.
-# ---------------------------------------------------------------------------
 DENY_SET: frozenset[str] = frozenset(
     {
         "add_key",
@@ -85,16 +75,10 @@ def _remove_denied(profile: dict) -> dict:  # type: ignore[type-arg]
     new_syscalls = []
     for entry in profile.get("syscalls", []):
         if entry.get("action") != "SCMP_ACT_ALLOW":
-            # Keep non-allow entries unchanged (e.g. SCMP_ACT_ERRNO for clone3
-            # in upstream — but we will also ensure clone3 is gone from allow).
-            # Actually, for safety we skip any entry whose *names* overlap with
-            # the deny set and whose action is NOT already blocking.
             new_syscalls.append(entry)
             continue
-        # Filter the names list
         filtered_names = [n for n in entry.get("names", []) if n not in DENY_SET]
         if not filtered_names:
-            # Entry becomes empty — drop it entirely
             continue
         new_entry = {**entry, "names": filtered_names}
         new_syscalls.append(new_entry)
@@ -109,7 +93,6 @@ def main() -> None:
     print(f"Upstream syscall entries: {len(upstream.get('syscalls', []))}")
     hardened = _remove_denied(upstream)
 
-    # Verify
     allowed: set[str] = set()
     for entry in hardened.get("syscalls", []):
         if entry.get("action") == "SCMP_ACT_ALLOW":

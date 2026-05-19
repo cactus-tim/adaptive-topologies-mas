@@ -60,10 +60,6 @@ class FileReadTool:
         self._workspace = workspace.resolve()
         self._max_bytes = max_bytes
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     async def ainvoke(self, args: dict[str, Any]) -> ToolResult:
         """Execute the file read.
 
@@ -105,10 +101,6 @@ class FileReadTool:
             latency_ms=elapsed,
         )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _read(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         """Validate the path and read the file.
 
@@ -119,20 +111,16 @@ class FileReadTool:
         """
         raw_path: str = args.get("path", "")
 
-        # 1. Reject absolute paths in the input
         if raw_path.startswith("/"):
             return None, "absolute paths not allowed"
 
-        # 2. Resolve path relative to workspace
         resolved = (self._workspace / raw_path).resolve()
 
-        # 3. Ensure the resolved path stays within the workspace
         try:
             resolved.relative_to(self._workspace)
         except ValueError:
             return None, "path outside workspace"
 
-        # 4. Symlink detection: stat without following symlinks
         try:
             lstat = os.stat(resolved, follow_symlinks=False)
         except FileNotFoundError:
@@ -143,7 +131,6 @@ class FileReadTool:
         import stat as _stat
 
         if _stat.S_ISLNK(lstat.st_mode):
-            # Resolve the symlink target and verify it stays within the workspace
             try:
                 target = resolved.resolve(strict=True)
             except (OSError, RuntimeError):
@@ -154,7 +141,6 @@ class FileReadTool:
             except ValueError:
                 return None, "path outside workspace"
 
-            # Use the stat of the *target* for the size check
             try:
                 fstat = os.stat(resolved, follow_symlinks=True)
             except OSError as exc:
@@ -162,18 +148,15 @@ class FileReadTool:
         else:
             fstat = lstat
 
-        # 5. Size check — no silent truncation
         st_size: int = fstat.st_size
         if st_size > self._max_bytes:
             return None, f"file too large: {st_size} bytes exceeds limit of {self._max_bytes}"
 
-        # 6. Read the file
         try:
             content = resolved.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             return None, f"cannot read file: {exc}"
 
-        # Compute a clean relative path string (no leading ./)
         try:
             rel_path = str(resolved.relative_to(self._workspace))
         except ValueError:

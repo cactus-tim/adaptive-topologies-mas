@@ -24,10 +24,6 @@ import pytest
 from atm.core.types import HumanContext, HumanResponse, HumanRole
 from atm.human.runner import MaxInteractionsExceededError, run_with_human
 
-# ---------------------------------------------------------------------------
-# Helpers: Fake graph stubs
-# ---------------------------------------------------------------------------
-
 
 class _FakeNoInterruptGraph:
     """Graph that returns a fixed final state without any interrupt."""
@@ -36,7 +32,6 @@ class _FakeNoInterruptGraph:
         self._final_state = final_state
 
     async def ainvoke(self, state: Any, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        # The initial_state is echoed back (merged) — return just the final state.
         return dict(self._final_state)
 
 
@@ -55,9 +50,7 @@ class _FakeSingleInterruptGraph:
     async def ainvoke(self, state: Any, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
         self._call_count += 1
         if self._call_count == 1:
-            # First call: return state with __interrupt__
             return _make_interrupt_result(self._interrupt_payload)
-        # Second call (resume): return final state
         return dict(self._final_state)
 
 
@@ -100,7 +93,6 @@ class _FakeReplayInterruptGraph:
     async def ainvoke(self, state: Any, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
         self._call_count += 1
         if self._call_count <= 2:
-            # Both first and second calls emit the same interrupt (replayed)
             return _make_interrupt_result(self._interrupt_payload)
         return dict(self._final_state)
 
@@ -116,11 +108,6 @@ class _FakeMultiSimultaneousInterruptGraph:
                 _make_interrupt_obj({"request_id": "r2", "ctx": _ctx_dict()}),
             ],
         }
-
-
-# ---------------------------------------------------------------------------
-# Helpers: interrupt object / payload factories
-# ---------------------------------------------------------------------------
 
 
 class _FakeInterrupt:
@@ -163,11 +150,6 @@ def _make_gateway(action: str = "approve") -> AsyncMock:
     return gw
 
 
-# ---------------------------------------------------------------------------
-# 1. Passthrough — no interrupt
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_passthrough_no_interrupt_returns_final_state() -> None:
     """Graph with no interrupt → run_with_human returns the final state unchanged."""
@@ -202,11 +184,6 @@ async def test_passthrough_no_gateway_no_interrupt() -> None:
     assert result == final
 
 
-# ---------------------------------------------------------------------------
-# 2. Single interrupt/resume
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_single_interrupt_resolves_via_gateway() -> None:
     """Graph interrupts once; gateway returns approve; final state returned."""
@@ -226,7 +203,6 @@ async def test_single_interrupt_resolves_via_gateway() -> None:
     assert result == final
     gw.request.assert_called_once()
     call_kwargs = gw.request.call_args
-    # request_id should be passed through
     assert call_kwargs.kwargs["request_id"] == "req-001"
 
 
@@ -260,11 +236,6 @@ async def test_single_interrupt_ctx_is_validated() -> None:
     assert received_ctx[0].run_id == run_id
 
 
-# ---------------------------------------------------------------------------
-# 3. Multi interrupt/resume
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_multi_interrupt_all_resolved() -> None:
     """Graph interrupts twice; both are resolved; final state returned."""
@@ -289,20 +260,12 @@ async def test_multi_interrupt_all_resolved() -> None:
     assert gw.request.call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# 4. Max-interactions guard
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_max_interactions_exceeded_raises_error() -> None:
     """Exceeding max_interactions raises MaxInteractionsExceededError."""
     run_id = uuid.uuid4()
-    # Graph interrupts infinitely (different request_ids to bypass idempotency cache)
     payloads = [{"request_id": f"req-{i}", "ctx": _ctx_dict(run_id)} for i in range(20)]
     final = {"done": True}
-    # _FakeMultiInterruptGraph will produce `len(payloads)` interrupts,
-    # but max_interactions=3 should stop us before we reach final state.
     graph = _FakeMultiInterruptGraph(payloads, final)
     gw = _make_gateway("approve")
 
@@ -339,16 +302,10 @@ async def test_max_interactions_zero_raises_on_first_interrupt() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 5. Idempotency — same request_id on replay
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_idempotency_same_request_id_not_double_called() -> None:
     """If a replay emits the same interrupt twice, gateway is called only once."""
     run_id = uuid.uuid4()
-    # Same payload / request_id on both interrupts (simulated crash-recovery)
     payload = {"request_id": "req-idem", "ctx": _ctx_dict(run_id)}
     final = {"idempotent": True}
     graph = _FakeReplayInterruptGraph(payload, final)
@@ -363,13 +320,7 @@ async def test_idempotency_same_request_id_not_double_called() -> None:
     )
 
     assert result == final
-    # Gateway must have been called exactly once despite two interrupts with the same request_id
     gw.request.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# 6. >1 simultaneous interrupts → RuntimeError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -387,11 +338,6 @@ async def test_multiple_simultaneous_interrupts_raises_runtime_error() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 7. Interrupt with no gateway → ValueError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_interrupt_without_gateway_raises_value_error() -> None:
     """If the graph interrupts but gateway=None, ValueError is raised."""
@@ -407,11 +353,6 @@ async def test_interrupt_without_gateway_raises_value_error() -> None:
             thread_id="thread-no-gw",
             gateway=None,
         )
-
-
-# ---------------------------------------------------------------------------
-# 8. timeout_s parameter (F6)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -494,14 +435,12 @@ async def test_timeout_s_none_uses_direct_gateway_call() -> None:
             {},
             thread_id="thread-direct",
             gateway=gw,
-            timeout_s=None,  # explicit None → direct call
+            timeout_s=None,
         )
 
-    # request_with_timeout must NOT have been called
     assert len(timeout_calls) == 0, (
         "request_with_timeout must not be called when timeout_s=None (backward compat)"
     )
-    # But the gateway's request() must have been called directly
     gw.request.assert_called_once()
 
 
@@ -548,11 +487,6 @@ async def test_timeout_fallback_gateway_forwarded_to_request_with_timeout() -> N
     )
 
 
-# ---------------------------------------------------------------------------
-# 9. F5: human_request / human_response events dispatched around gateway call
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_f5_dispatch_events_around_gateway_call() -> None:
     """F5: run_with_human dispatches human_request BEFORE and human_response AFTER
@@ -588,10 +522,8 @@ async def test_f5_dispatch_events_around_gateway_call() -> None:
         )
 
     assert result == final
-    # Both events should have been attempted
     assert "human_request" in event_log, f"human_request not dispatched. Events: {event_log}"
     assert "human_response" in event_log, f"human_response not dispatched. Events: {event_log}"
-    # human_request must come before human_response
     assert event_log.index("human_request") < event_log.index("human_response"), (
         "human_request must be dispatched before human_response"
     )

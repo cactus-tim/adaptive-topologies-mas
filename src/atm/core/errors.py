@@ -1,8 +1,4 @@
-"""Exception hierarchy for the ATM framework.
-
-All custom exceptions inherit from AtmError. Designed for use with standard
-Python exception chaining: `raise ToolError(tool_name, "...") from original_exc`.
-"""
+"""Exception hierarchy for the ATM framework. All custom exceptions inherit from AtmError."""
 
 from __future__ import annotations
 

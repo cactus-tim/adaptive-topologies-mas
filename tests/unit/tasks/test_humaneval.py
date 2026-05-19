@@ -25,16 +25,7 @@ from atm.tasks.humaneval import (
     _strip_code_fences,
 )
 
-# ---------------------------------------------------------------------------
-# Fixture path
-# ---------------------------------------------------------------------------
-
 _FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "humaneval_sample.json"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _load_fixture_rows() -> list[dict[str, Any]]:
@@ -55,11 +46,6 @@ def _make_mock_hf_dataset(rows: list[dict[str, Any]]) -> MagicMock:
     mock_dataset = MagicMock()
     mock_dataset.__getitem__ = MagicMock(side_effect=lambda key: mock_split)
     return mock_dataset
-
-
-# ---------------------------------------------------------------------------
-# Test 1: loader_from_fixture
-# ---------------------------------------------------------------------------
 
 
 def test_loader_from_fixture(tmp_path: Path) -> None:
@@ -84,11 +70,6 @@ def test_loader_from_fixture(tmp_path: Path) -> None:
     assert "def check" in spec0.metadata["test"]
 
 
-# ---------------------------------------------------------------------------
-# Test 2: cache_hit_no_network
-# ---------------------------------------------------------------------------
-
-
 def test_cache_hit_no_network(tmp_path: Path) -> None:
     """Second load() call reads from Parquet cache — datasets.load_dataset not called again."""
     rows = _load_fixture_rows()
@@ -108,11 +89,6 @@ def test_cache_hit_no_network(tmp_path: Path) -> None:
 
     assert call_count == 1, f"Expected 1 network call, got {call_count}"
     assert len(specs_first) == len(specs_second)
-
-
-# ---------------------------------------------------------------------------
-# Test 3: evaluator_canonical_solution
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -138,11 +114,6 @@ async def test_evaluator_canonical_solution() -> None:
     assert result.error is None
 
 
-# ---------------------------------------------------------------------------
-# Test 4: evaluator_empty_answer
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_evaluator_empty_answer() -> None:
     """Empty answer yields passed=False and score=0.0."""
@@ -163,11 +134,6 @@ async def test_evaluator_empty_answer() -> None:
 
     assert result.passed is False
     assert result.score == 0.0
-
-
-# ---------------------------------------------------------------------------
-# Test 5: evaluator_syntax_error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -196,25 +162,16 @@ async def test_evaluator_syntax_error() -> None:
     assert "SyntaxError" in result.error or "SyntaxError" in result.details.get("stderr", "")
 
 
-# ---------------------------------------------------------------------------
-# Test 6: _strip_code_fences
-# ---------------------------------------------------------------------------
-
-
 def test_strip_code_fences() -> None:
     """_strip_code_fences removes markdown fences and leaves plain text unchanged."""
-    # ```python ... ```
     fenced_python = "```python\nprint('hello')\n```"
     assert _strip_code_fences(fenced_python) == "print('hello')"
 
-    # ``` ... ```  (no language tag)
     fenced_plain = "```\nsome code\n```"
     assert _strip_code_fences(fenced_plain) == "some code"
 
-    # Plain text — returned unchanged
     plain = "    return x + 1"
     assert _strip_code_fences(plain) == plain
 
-    # Only opening fence with no closing — returned unchanged
     only_open = "```python\nsome code"
     assert _strip_code_fences(only_open) == only_open

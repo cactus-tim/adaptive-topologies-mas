@@ -20,10 +20,6 @@ from uuid import uuid4
 import pyarrow.parquet as pq
 import pytest
 
-# ---------------------------------------------------------------------------
-# Helpers / fixtures
-# ---------------------------------------------------------------------------
-
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -114,11 +110,6 @@ def _sample_scratchpad_row(run_id: str) -> dict:  # type: ignore[type-arg]
     }
 
 
-# ---------------------------------------------------------------------------
-# Test 1: tz-aware round-trip
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_tz_aware_roundtrip(tmp_path: Path) -> None:
     """Write tz-aware row, flush, read back; column 'at' tzinfo must not be None."""
@@ -144,11 +135,6 @@ async def test_tz_aware_roundtrip(tmp_path: Path) -> None:
     assert at_value.tzinfo is not None, "tzinfo should not be None after round-trip"
 
 
-# ---------------------------------------------------------------------------
-# Test 2: 3 writes + flush → 3 rows
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_write_3_flush_read_3(tmp_path: Path) -> None:
     """3 write_llm_call + flush → parquet file has num_rows == 3."""
@@ -169,11 +155,6 @@ async def test_write_3_flush_read_3(tmp_path: Path) -> None:
     assert table.num_rows == 3
 
 
-# ---------------------------------------------------------------------------
-# Test 3: auto-flush on buffer_rows overflow
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_auto_flush_on_buffer_rows(tmp_path: Path) -> None:
     """buffer_rows=2, after 3 writes, first 2 rows already on disk before explicit flush."""
@@ -183,23 +164,16 @@ async def test_auto_flush_on_buffer_rows(tmp_path: Path) -> None:
     exp_id = uuid4()
     writer = ParquetWriter(tmp_path, run_id, exp_id, buffer_rows=2)
 
-    # Write 3 rows — after 2nd write, auto-flush should have occurred
     await writer.write_llm_call(_sample_llm_row(str(run_id)))
     await writer.write_llm_call(_sample_llm_row(str(run_id)))
     await writer.write_llm_call(_sample_llm_row(str(run_id)))
 
     path = tmp_path / "experiments" / str(exp_id) / "runs" / str(run_id) / "llm_calls.parquet"
-    # File must exist and have at least 2 rows (the auto-flushed batch)
     assert path.exists(), "File should exist after auto-flush"
     table = pq.read_table(path)
     assert table.num_rows >= 2, f"Expected >= 2 rows after auto-flush, got {table.num_rows}"
 
     await writer.close()
-
-
-# ---------------------------------------------------------------------------
-# Test 4: close idempotent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -213,12 +187,7 @@ async def test_close_idempotent(tmp_path: Path) -> None:
 
     await writer.write_llm_call(_sample_llm_row(str(run_id)))
     await writer.close()
-    await writer.close()  # must not raise
-
-
-# ---------------------------------------------------------------------------
-# Test 5: schema mismatch raises
-# ---------------------------------------------------------------------------
+    await writer.close()
 
 
 @pytest.mark.asyncio
@@ -233,23 +202,16 @@ async def test_schema_mismatch_raises(tmp_path: Path) -> None:
     writer = ParquetWriter(tmp_path, run_id, exp_id, buffer_rows=100)
 
     bad_row = _sample_llm_row(str(run_id))
-    # input_tokens should be int32; provide a string that can't be cast
     bad_row["input_tokens"] = "not-an-integer"
 
     with pytest.raises((pa.lib.ArrowInvalid, pa.lib.ArrowTypeError, TypeError, ValueError)):
         await writer.write_llm_call(bad_row)
         await writer.flush()
 
-    # cleanup — ignore errors during close since writer may be in bad state
     import contextlib
 
     with contextlib.suppress(Exception):
         await writer.close()
-
-
-# ---------------------------------------------------------------------------
-# Test 6: scratchpad per-agent file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -282,11 +244,6 @@ async def test_scratchpad_per_agent_file(tmp_path: Path) -> None:
     assert table_b.num_rows == 1
 
 
-# ---------------------------------------------------------------------------
-# Test 7: multi-stream concurrency
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_multi_stream_concurrency(tmp_path: Path) -> None:
     """Concurrent writes to different streams via asyncio.gather land correctly."""
@@ -315,11 +272,6 @@ async def test_multi_stream_concurrency(tmp_path: Path) -> None:
     assert pq.read_table(base / "tool_calls.parquet").num_rows == n
 
 
-# ---------------------------------------------------------------------------
-# Test 8: write_scratchpad rejects path traversal / unsafe agent_id
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_write_scratchpad_rejects_path_traversal(tmp_path: Path) -> None:
     """write_scratchpad must raise ValueError for agent_id values that fail safety regex."""
@@ -330,11 +282,6 @@ async def test_write_scratchpad_rejects_path_traversal(tmp_path: Path) -> None:
         with pytest.raises(ValueError):
             await writer.write_scratchpad(bad, _sample_scratchpad_row(str(uuid4())))
     await writer.close()
-
-
-# ---------------------------------------------------------------------------
-# Test 9: all stream write methods + flush work without error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

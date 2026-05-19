@@ -40,11 +40,6 @@ def _make_min_cfg(name: str = "grid-unit-test") -> ExperimentConfig:
     )
 
 
-# ---------------------------------------------------------------------------
-# GridProgress dataclass
-# ---------------------------------------------------------------------------
-
-
 def test_grid_progress_construction() -> None:
     p = GridProgress(total=10, done=3, failed=1, in_progress=2, eta_s=42.5)
     assert p.total == 10
@@ -63,11 +58,6 @@ def test_grid_progress_is_frozen() -> None:
 def test_grid_progress_eta_can_be_none() -> None:
     p = GridProgress(total=10, done=0, failed=0, in_progress=0, eta_s=None)
     assert p.eta_s is None
-
-
-# ---------------------------------------------------------------------------
-# GridResult dataclass
-# ---------------------------------------------------------------------------
 
 
 def test_grid_result_construction() -> None:
@@ -106,11 +96,6 @@ def test_grid_result_is_frozen() -> None:
         r.completed = 0  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# _aggregate_experiment_status
-# ---------------------------------------------------------------------------
-
-
 def test_aggregate_all_completed() -> None:
     statuses = ["completed", "completed", "completed"]
     assert _aggregate_experiment_status(statuses) == "completed"
@@ -122,7 +107,6 @@ def test_aggregate_all_failed() -> None:
 
 
 def test_aggregate_all_budget_exceeded() -> None:
-    # budget_exceeded is a terminal failure for experiment-aggregate purposes
     statuses = ["budget_exceeded", "budget_exceeded"]
     assert _aggregate_experiment_status(statuses) == "failed"
 
@@ -153,14 +137,8 @@ def test_aggregate_empty_raises() -> None:
 
 
 def test_aggregate_unknown_status_treated_as_running() -> None:
-    # Any non-terminal status -> still running
     statuses = ["completed", "queued"]
     assert _aggregate_experiment_status(statuses) == "running"
-
-
-# ---------------------------------------------------------------------------
-# run_grid driver — uses in-process executor stub via monkeypatch
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -206,7 +184,7 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     import atm.experiment.grid as grid_mod
 
     state: dict[str, Any] = {
-        "worker_fn": None,  # callable(cfg_dict) -> dict
+        "worker_fn": None,
         "calls": [],
         "executor_instance": None,
     }
@@ -218,23 +196,18 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(grid_mod, "ProcessPoolExecutor", _executor_factory)
 
-    # Intercept loop.run_in_executor by monkeypatching at the loop level.
     import asyncio
 
     async def fake_run_in_executor(self: Any, executor: Any, fn: Any, *args: Any) -> Any:
         state["calls"].append(args[0] if args else None)
         worker_fn = state["worker_fn"] or (lambda cfg_dict: {"status": "completed"})
-        # Run inline (no thread pool); a tiny yield so as_completed sees ordering.
         await asyncio.sleep(0)
         return worker_fn(args[0] if args else None)
 
-    # Patch run_in_executor on the BaseEventLoop class so it applies
-    # regardless of which loop pytest-asyncio constructs for the test.
     monkeypatch.setattr(
         asyncio.BaseEventLoop, "run_in_executor", fake_run_in_executor, raising=True
     )
 
-    # Stub PG update + resolve to avoid DB I/O.
     async def fake_update(*args: Any, **kwargs: Any) -> None:
         return None
 
@@ -244,9 +217,6 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(grid_mod, "_update_experiment_status", fake_update)
     monkeypatch.setattr(grid_mod, "_resolve_exp_id", fake_resolve)
 
-    # Stub auto-export hook — it would otherwise try to open a real PG
-    # session against the fake DSN and trigger an extra run_in_executor call
-    # (which the inline worker stub above would count as a fourth cell).
     async def fake_export_experiment(*args: Any, **kwargs: Any) -> Any:
         from pathlib import Path
 
@@ -254,9 +224,6 @@ def stub_pool(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(grid_mod, "export_experiment", fake_export_experiment)
 
-    # Stub LangGraph checkpointer pre-warmup so it doesn't try to connect to
-    # the fake DSN (`postgresql+asyncpg://x:y@localhost:5432/nowhere`) and
-    # hang for 30 s on PoolTimeout.
     async def fake_build_checkpointer(
         dsn: str, *, max_size: int = 1, min_size: int = 1
     ) -> tuple[Any, Any]:
@@ -358,7 +325,6 @@ async def test_run_grid_progress_callback_invoked(stub_pool: dict[str, Any]) -> 
     await run_grid(cfgs, parallelism=2, progress_callback=cb)
 
     assert len(seen) == 4
-    # Last snapshot must show all done.
     last = seen[-1]
     assert last.total == 4
     assert last.done == 4
@@ -389,14 +355,8 @@ async def test_run_grid_callback_exception_is_swallowed(
         raise RuntimeError("callback bug")
 
     cfgs = [_make_min_cfg()]
-    # Must not raise.
     r = await run_grid(cfgs, parallelism=1, progress_callback=boom)
     assert r.completed == 1
-
-
-# ---------------------------------------------------------------------------
-# fail_fast cancellation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -409,7 +369,6 @@ async def test_run_grid_fail_fast_shuts_down_executor(
 
     def worker(cfg_dict: dict[str, Any]) -> dict[str, Any]:
         call_count["n"] += 1
-        # First completes, second fails -> trigger cancel.
         if call_count["n"] == 1:
             st = "completed"
         elif call_count["n"] == 2:
@@ -432,11 +391,7 @@ async def test_run_grid_fail_fast_shuts_down_executor(
 
     result = await run_grid(cfgs, parallelism=2, fail_fast=True)
 
-    # We expect at least the failing cell to have been counted.
     assert result.failed >= 1
-    # Executor.shutdown(cancel_futures=True) must have been called.
     ex = stub_pool["executor_instance"]
     assert ex is not None
     assert ex.shutdown_called is True
-    # Either via fail_fast branch (cancel=True) or normal finally (cancel=False).
-    # Just assert shutdown happened at least once.

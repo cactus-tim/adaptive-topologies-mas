@@ -56,7 +56,6 @@ class Debater(Agent):
             summarizer_llm=summarizer_llm,
         )
 
-        # Invariant: no unresolved placeholder remains in the stored prompt
         assert "{{stance}}" not in self.cfg.system_prompt, (
             "Debater invariant violated: '{{stance}}' still present in system_prompt "
             "after resolution."

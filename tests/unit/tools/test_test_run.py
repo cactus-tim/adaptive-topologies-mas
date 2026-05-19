@@ -13,21 +13,12 @@ import pytest
 from atm.tools.local_.test_run import TestRunTool as _TestRunTool
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 _SANDBOX = SubprocessSandbox()
 
 
 @pytest.fixture
 def tool() -> _TestRunTool:
     return _TestRunTool(sandbox=_SANDBOX)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -46,7 +37,6 @@ async def test_test_run_passing(tool: _TestRunTool) -> None:
     assert isinstance(result.output, dict)
     assert result.output["passed"] is True
     assert result.output["summary"].startswith("OK")
-    # Output shape
     assert "stdout" in result.output
     assert "stderr" in result.output
     assert "exit_code" in result.output
@@ -85,10 +75,8 @@ async def test_test_run_summary_parse(tool: _TestRunTool) -> None:
     )
     result = await tool.ainvoke({"test_code": test_code})
     assert result.output["passed"] is False
-    # Summary must be non-empty and be the last non-empty line
     summary = result.output["summary"]
-    assert summary  # non-empty
-    # Check it matches the actual last non-empty line of stdout
+    assert summary
     stdout: str = result.output["stdout"]
     non_empty_lines = [line for line in stdout.splitlines() if line.strip()]
     if non_empty_lines:

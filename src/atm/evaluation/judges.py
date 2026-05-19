@@ -1,19 +1,4 @@
-"""LLM-as-judge protocols for post-hoc answer evaluation.
-
-Three judge classes:
-
-- ``RubricJudge``         — single rubric call; wraps ``_invoke_judge`` from M10.
-- ``SelfConsistentJudge`` — N calls with shuffled rubric per call; returns mean score.
-- ``PairwiseJudge``       — AB + BA swap test; declares winner only when both orderings agree.
-
-Score scale note: ``_invoke_judge`` normalises LLM output (0..10) → [0.0, 1.0].
-Arch §13.2 specifies 0..5 but M10 convention (0..10) is used throughout; see
-context.md Decision note.
-
-Position-bias mitigation follows arXiv 2406.07791: swap test (AB + BA), winner
-declared only when both orderings agree; explicit ``_to_answer_relative`` helper
-eliminates silent slot→answer translation bugs.
-"""
+"""LLM-as-judge protocols: RubricJudge, SelfConsistentJudge, PairwiseJudge."""
 
 from __future__ import annotations
 
@@ -34,10 +19,6 @@ __all__ = [
     "SelfConsistentJudge",
 ]
 
-# ---------------------------------------------------------------------------
-# PairwiseResult
-# ---------------------------------------------------------------------------
-
 
 class PairwiseResult(BaseModel):
     """Outcome of a pairwise comparison with swap-consistency check."""
@@ -48,11 +29,6 @@ class PairwiseResult(BaseModel):
     swap_consistent: bool
     reason_ab: str
     reason_ba: str
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _to_answer_relative(
@@ -76,7 +52,6 @@ def _to_answer_relative(
         return "tie"
     if not swapped:
         return "a" if slot_winner == "A" else "b"
-    # swapped: slot A holds answer_b, slot B holds answer_a
     return "b" if slot_winner == "A" else "a"
 
 
@@ -129,19 +104,8 @@ def _shuffle_rubric(rubric: str, seed: int) -> str:
     return "\n".join(shuffled)
 
 
-# ---------------------------------------------------------------------------
-# RubricJudge
-# ---------------------------------------------------------------------------
-
-
 class RubricJudge:
-    """Single-call LLM rubric judge.
-
-    Uses ``_invoke_judge`` (M10) for prompt construction, invocation, JSON
-    parsing, and normalisation. The score is in [0.0, 1.0].
-
-    agent_id for tracing: ``rubric_judge``.
-    """
+    """Single-call LLM rubric judge. Score in [0.0, 1.0]."""
 
     async def score(
         self,
@@ -160,19 +124,8 @@ class RubricJudge:
         return await _invoke_judge(judge_llm, prompt=prompt, agent_id="rubric_judge")
 
 
-# ---------------------------------------------------------------------------
-# SelfConsistentJudge
-# ---------------------------------------------------------------------------
-
-
 class SelfConsistentJudge:
-    """Self-consistency rubric judge — N calls with per-call shuffled rubric.
-
-    Each call uses a deterministic seed derived from ``(run_seed, i)`` so that
-    results are reproducible.  Mean of scalar scores is returned.
-
-    agent_id for tracing: ``self_consistency_judge``.
-    """
+    """Self-consistency rubric judge — N calls with shuffled rubric, returns mean score."""
 
     async def score(
         self,
@@ -184,19 +137,7 @@ class SelfConsistentJudge:
         run_seed: int,
         n: int = 3,
     ) -> float:
-        """Return mean rubric score across ``n`` independent judge calls.
-
-        Args:
-            spec_input: The task prompt / question shown to the agent.
-            rubric:     Evaluation criteria (may contain bullet lines).
-            answer:     The agent's answer to evaluate.
-            judge_llm:  LLM-like object used for judge calls.
-            run_seed:   Seed for this run; per-call seed = hash((run_seed, i)) & 0xFFFFFFFF.
-            n:          Number of independent judge calls (default 3).
-
-        Returns:
-            Mean normalised score in [0.0, 1.0].  Returns 0.0 if all calls fail.
-        """
+        """Return mean rubric score across ``n`` independent judge calls (0.0 if all fail)."""
         scores: list[float] = []
         for i in range(n):
             call_seed = hash((run_seed, i)) & 0xFFFFFFFF
@@ -212,22 +153,8 @@ class SelfConsistentJudge:
         return sum(scores) / len(scores)
 
 
-# ---------------------------------------------------------------------------
-# PairwiseJudge
-# ---------------------------------------------------------------------------
-
-
 class PairwiseJudge:
-    """Pairwise answer comparison with position-bias swap test.
-
-    Makes two calls:
-    - AB call (agent_id ``pairwise_judge_ab``): prompt presents answer_a first.
-    - BA call (agent_id ``pairwise_judge_ba``): prompt presents answer_b first (swapped).
-
-    ``_to_answer_relative`` translates slot-relative results back to answer-relative.
-    ``winner`` is declared only when both orderings agree (``swap_consistent=True``).
-    If they disagree, ``winner="tie"`` and ``swap_consistent=False``.
-    """
+    """Pairwise comparison with AB + BA swap test; winner only when both orderings agree."""
 
     async def compare(
         self,
@@ -238,19 +165,7 @@ class PairwiseJudge:
         *,
         judge_llm: LLMLike,
     ) -> PairwiseResult:
-        """Compare ``answer_a`` vs ``answer_b`` with swap-consistency check.
-
-        Args:
-            spec_input: The task prompt / question.
-            rubric:     Evaluation criteria.
-            answer_a:   First candidate answer.
-            answer_b:   Second candidate answer.
-            judge_llm:  LLM-like object used for judge calls.
-
-        Returns:
-            :class:`PairwiseResult` with winner, swap_consistent, and per-ordering reasons.
-        """
-        # AB ordering: slot A = answer_a, slot B = answer_b
+        """Compare ``answer_a`` vs ``answer_b``. Returns PairwiseResult."""
         prompt_ab = _build_pairwise_prompt(spec_input, rubric, answer_a, answer_b)
         response_ab = await judge_llm.ainvoke(
             [{"role": "user", "content": prompt_ab, "kind": "request"}],
@@ -259,7 +174,6 @@ class PairwiseJudge:
         slot_ab, reason_ab = _parse_pairwise_response(response_ab.text or "")
         winner_ab = _to_answer_relative(slot_ab, swapped=False)
 
-        # BA ordering: slot A = answer_b, slot B = answer_a (swapped)
         prompt_ba = _build_pairwise_prompt(spec_input, rubric, answer_b, answer_a)
         response_ba = await judge_llm.ainvoke(
             [{"role": "user", "content": prompt_ba, "kind": "request"}],
@@ -277,11 +191,6 @@ class PairwiseJudge:
             reason_ab=reason_ab,
             reason_ba=reason_ba,
         )
-
-
-# ---------------------------------------------------------------------------
-# Prompt builders
-# ---------------------------------------------------------------------------
 
 
 def _build_rubric_prompt(spec_input: str, rubric: str, answer: str) -> str:

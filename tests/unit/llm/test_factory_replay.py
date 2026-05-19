@@ -20,10 +20,6 @@ from atm.llm.factory import build_llm
 from atm.llm.fake import REPLAY_SCHEMA, FakeLLM
 from atm.llm.pricing import Pricing
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_replay_table(call_id: str, content: str) -> pa.Table:
     """Build a single-row replay-schema table."""
@@ -53,11 +49,6 @@ def _pricing() -> Pricing:
     return Pricing(version=1, models={})
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 def test_build_llm_replay_loads_parquet(tmp_path: Path) -> None:
     """build_llm(fake:replay, replay_source=...) loads the parquet table."""
     parquet_path = tmp_path / "llm_calls.parquet"
@@ -74,7 +65,6 @@ def test_build_llm_replay_loads_parquet(tmp_path: Path) -> None:
     assert wrapper.model_id == "fake:replay"
     inner = wrapper._llm  # type: ignore[attr-defined]
     assert isinstance(inner, FakeLLM)
-    # FakeLLM internal state should reflect a one-row table.
     assert inner._replay_table is not None  # type: ignore[attr-defined]
     assert inner._replay_table.num_rows == 1  # type: ignore[attr-defined]
 

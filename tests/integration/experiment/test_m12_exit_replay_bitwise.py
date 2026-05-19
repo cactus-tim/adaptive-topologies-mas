@@ -25,10 +25,6 @@ from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Module-level gate (also enforced by the ephemeral_pg_dsn fixture)
-# ---------------------------------------------------------------------------
-
 _PG_TESTS_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 
 pytestmark = [
@@ -36,23 +32,13 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-# ---------------------------------------------------------------------------
-# Paths to fixtures and reference config
-# ---------------------------------------------------------------------------
-
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _SMOKE_YAML = Path(__file__).parent.parent.parent.parent / "conf" / "experiments" / "smoke.yaml"
 
-# UUID pattern to extract from ``atm run`` / ``atm replay`` stdout.
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     re.IGNORECASE,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helper: build a self-contained YAML config for the subprocess invocations
-# ---------------------------------------------------------------------------
 
 
 def _write_run_config(
@@ -72,8 +58,6 @@ def _write_run_config(
     executor_fix = str(_FIXTURES_DIR / "m6_chain_executor.yaml")
     critic_fix = str(_FIXTURES_DIR / "m6_chain_critic.yaml")
 
-    # Pass the raw DSN (postgresql+asyncpg://...) — OmegaConf passes it through as-is
-    # and create_engine in runner.py accepts that scheme directly.
     pg_dsn_for_yaml = pg_dsn
 
     cfg_yaml = textwrap.dedent(
@@ -126,22 +110,12 @@ def _write_run_config(
     return cfg_path
 
 
-# ---------------------------------------------------------------------------
-# Helper: extract run_id (UUID) from ``atm`` stdout
-# ---------------------------------------------------------------------------
-
-
 def _extract_first_uuid(text: str) -> uuid.UUID | None:
     """Return the first UUID found in *text*, or None."""
     m = _UUID_RE.search(text)
     if m is None:
         return None
     return uuid.UUID(m.group(0))
-
-
-# ---------------------------------------------------------------------------
-# Main test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -164,7 +138,6 @@ async def test_replay_bitwise_via_subprocess(
 
     from atm.storage.session import create_engine
 
-    # ── Prerequisites ──────────────────────────────────────────────────────────
     if not _PG_TESTS_ENABLED:
         pytest.skip("ATM_ENABLE_PG_TESTS not set")
 
@@ -181,13 +154,10 @@ async def test_replay_bitwise_via_subprocess(
 
     cfg_path = _write_run_config(tmp_path, pg_dsn=ephemeral_pg_dsn, parquet_dir=parquet_dir)
 
-    # Env for subprocesses: ATM_PG_DSN is consumed by ``atm replay`` / ``atm reconcile``
-    # (those commands do not take a --config flag); PG_DSN is consumed by alembic.
     env = os.environ.copy()
     env["ATM_PG_DSN"] = ephemeral_pg_dsn
     env["PG_DSN"] = ephemeral_pg_dsn
 
-    # ── Step 1: ``atm run`` ─────────────────────────────────────────────────────
     run_proc = subprocess.run(
         ["uv", "run", "atm", "run", "--config", str(cfg_path), "--yes"],
         capture_output=True,
@@ -196,8 +166,6 @@ async def test_replay_bitwise_via_subprocess(
         timeout=120,
     )
 
-    # If --yes is not supported yet (pre-merge state without estimate-status-cli),
-    # fall back to running without --yes. Detection: non-zero exit + option-error text.
     _opt_error_markers = ("Got unexpected extra argument", "No such option", "no such option")
     if run_proc.returncode != 0 and any(m in (run_proc.stderr or "") for m in _opt_error_markers):
         run_proc = subprocess.run(
@@ -219,8 +187,6 @@ async def test_replay_bitwise_via_subprocess(
         f"Could not parse run_id UUID from atm run stdout:\n{run_proc.stdout}"
     )
 
-    # ── Step 2: ``atm replay`` ─────────────────────────────────────────────────
-    # NOTE (OQ1): atm replay does NOT have a --yes flag. Do not pass one.
     replay_proc = subprocess.run(
         ["uv", "run", "atm", "replay", str(orig_run_id), "--mode", "deterministic"],
         capture_output=True,
@@ -235,11 +201,9 @@ async def test_replay_bitwise_via_subprocess(
         f"stderr: {replay_proc.stderr}"
     )
 
-    # ── Step 3: Query DB for replay row ────────────────────────────────────────
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine.connect() as conn:
-            # Fetch the original run row.
             orig_row = (
                 await conn.execute(
                     sa.text(
@@ -260,7 +224,6 @@ async def test_replay_bitwise_via_subprocess(
     finally:
         await engine.dispose()
 
-    # ── Assertion: exactly one replay row ──────────────────────────────────────
     assert orig_row is not None, f"Original run row not found for run_id={orig_run_id}"
     assert len(replay_rows) == 1, (
         f"Expected exactly 1 replay row, found {len(replay_rows)} (replay_of = {orig_run_id})"
@@ -270,17 +233,12 @@ async def test_replay_bitwise_via_subprocess(
     replay_run_id: uuid.UUID = replay_row[0]
     orig_exp_id: uuid.UUID = orig_row[1]
 
-    # ── Assertion: model_version_snapshot equality ─────────────────────────────
     orig_mvs = orig_row[2]
     replay_mvs = replay_row[2]
     assert orig_mvs == replay_mvs, (
         f"model_version_snapshot mismatch:\n  orig:   {orig_mvs}\n  replay: {replay_mvs}"
     )
 
-    # ── Assertion: messages.parquet content equality ────────────────────────────
-    # File layout: {parquet_dir}/experiments/{exp_id}/runs/{run_id}/messages.parquet
-    # NOTE (OQ4): the parquet schema uses column name ``at``, not ``created_at``.
-    # Drop columns: ['run_id', 'message_id', 'at'] before comparing.
     _drop_cols = {"run_id", "message_id", "at"}
 
     orig_msg_path = (
@@ -300,17 +258,12 @@ async def test_replay_bitwise_via_subprocess(
         / "messages.parquet"
     )
 
-    # If messages.parquet was not written (FakeLLM may not emit message_emit events
-    # depending on the topology wiring — see NOTE-4 in test_m6_e2e.py), skip the
-    # parquet comparison rather than fail.
     if not orig_msg_path.exists() or not replay_msg_path.exists():
-        # Accept: bitwise parity of model_version_snapshot already proven above.
         return
 
     orig_tbl = pq.read_table(orig_msg_path)
     replay_tbl = pq.read_table(replay_msg_path)
 
-    # Drop non-deterministic identity/timing columns before comparing.
     orig_cols = [c for c in orig_tbl.column_names if c not in _drop_cols]
     replay_cols = [c for c in replay_tbl.column_names if c not in _drop_cols]
 

@@ -31,11 +31,6 @@ def _ok_result(status: str = "completed") -> RunResult:
     )
 
 
-# ---------------------------------------------------------------------------
-# atm resume
-# ---------------------------------------------------------------------------
-
-
 def test_resume_success_exit_0() -> None:
     with patch("atm.experiment.cli.resume_one") as mock_resume:
         mock_resume.return_value = _ok_result("completed")
@@ -72,7 +67,6 @@ def test_resume_force_flag_threaded() -> None:
     with patch("atm.experiment.cli.resume_one") as mock_resume:
         mock_resume.return_value = _ok_result()
         runner.invoke(app, ["resume", "--run-id", str(_RID), "--force"])
-        # force=True should be passed through.
         _, kwargs = mock_resume.call_args
         assert kwargs.get("force") is True
 
@@ -82,11 +76,6 @@ def test_resume_budget_exceeded_exit_2() -> None:
         mock_resume.return_value = _ok_result("budget_exceeded")
         result = runner.invoke(app, ["resume", "--run-id", str(_RID)])
     assert result.exit_code == 2
-
-
-# ---------------------------------------------------------------------------
-# atm replay
-# ---------------------------------------------------------------------------
 
 
 def test_replay_success_exit_0() -> None:
@@ -143,11 +132,6 @@ def test_replay_value_error_exit_3() -> None:
     assert result.exit_code == 3
 
 
-# ---------------------------------------------------------------------------
-# atm reconcile
-# ---------------------------------------------------------------------------
-
-
 def test_reconcile_requires_atm_pg_dsn(monkeypatch) -> None:
     monkeypatch.delenv("ATM_PG_DSN", raising=False)
     result = runner.invoke(app, ["reconcile", "--exp-id", str(_EID)])
@@ -174,11 +158,9 @@ def test_reconcile_success_emits_json(monkeypatch) -> None:
     async def _stub(*a, **kw):
         return fake_report
 
-    # MagicMock engine whose .dispose() is async (awaited by CLI).
     fake_engine = MagicMock()
     fake_engine.dispose = AsyncMock()
 
-    # Patch the inner async fn import path
     with (
         patch("atm.experiment.reconcile.reconcile_zombies", side_effect=_stub),
         patch("atm.storage.session.create_engine", return_value=fake_engine),
@@ -196,7 +178,6 @@ def test_reconcile_dry_run_flag(monkeypatch) -> None:
     fake_report = ReconcileReport(scanned=0)
 
     async def _stub(session_factory, exp_id, *, allow_force_resume=False, current_host=None):
-        # Verify dry_run propagated as allow_force_resume=True.
         assert allow_force_resume is True
         return fake_report
 

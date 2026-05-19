@@ -108,19 +108,7 @@ class TestRunTool:
 
         effective_timeout = timeout_s if timeout_s is not None else self._default_timeout_s
 
-        # The test file is written via the files dict; the main code runs the
-        # unittest discovery command with stderr merged into stdout.
         test_filename = f"{module_name}.py"
-
-        # Build the runner harness: a small wrapper that invokes unittest and
-        # ensures stderr output (the summary line) reaches stdout via 2>&1.
-        # We achieve this by writing the test code as a file, then running:
-        #   python -c "import subprocess, sys; ..."
-        # However, SubprocessSandbox uses a fixed main.py entry-point.
-        # The cleanest approach: make main.py a shell-like harness that
-        # spawns unittest as a subprocess with stderr→stdout merge.
-        # But SubprocessSandbox only supports python and node, so we use
-        # Python's subprocess module inside the main.py to run unittest.
 
         runner_code = (
             "import subprocess, sys\n"
@@ -134,7 +122,6 @@ class TestRunTool:
             f"sys.exit(result.returncode)\n"
         )
 
-        # Add the test file to the extra files
         extra_files[test_filename] = test_code
 
         exec_result = await self._sandbox.execute(
@@ -149,7 +136,6 @@ class TestRunTool:
         exit_code = exec_result.exit_code
         timed_out = exec_result.timed_out
 
-        # Parse summary: last non-empty line of stdout
         non_empty_lines = [line for line in stdout.splitlines() if line.strip()]
         summary = non_empty_lines[-1] if non_empty_lines else ""
 

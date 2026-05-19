@@ -16,10 +16,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from atm.core.types import Message, MessageKind
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def make_request_message() -> Message:
     return Message(sender="agent_a", kind=MessageKind.REQUEST, content="hello world")
@@ -41,11 +37,6 @@ def make_phase_emit_message() -> Message:
     return Message(sender="coord", kind=MessageKind.PHASE_EMIT, content="advance to execution")
 
 
-# ---------------------------------------------------------------------------
-# 1. to_lc no longer raises
-# ---------------------------------------------------------------------------
-
-
 def test_to_lc_does_not_raise_for_request() -> None:
     msg = make_request_message()
     result = msg.to_lc()
@@ -56,11 +47,6 @@ def test_to_lc_does_not_raise_for_decision() -> None:
     msg = make_decision_message()
     result = msg.to_lc()
     assert result is not None
-
-
-# ---------------------------------------------------------------------------
-# 2. to_lc returns correct LC message types
-# ---------------------------------------------------------------------------
 
 
 def test_request_maps_to_human_message() -> None:
@@ -96,7 +82,6 @@ def test_broadcast_maps_to_human_message_with_metadata() -> None:
     lc = msg.to_lc()
     assert isinstance(lc, HumanMessage)
     assert lc.content == "broadcast msg"
-    # broadcast should have metadata indicating channel
     assert lc.response_metadata.get("channel") == "broadcast" or (
         hasattr(lc, "additional_kwargs") and lc.additional_kwargs.get("channel") == "broadcast"
     )
@@ -107,11 +92,6 @@ def test_phase_emit_maps_to_system_message() -> None:
     lc = msg.to_lc()
     assert isinstance(lc, SystemMessage)
     assert lc.content == "advance to execution"
-
-
-# ---------------------------------------------------------------------------
-# 3. Round-trip tests: Message → LC → Message
-# ---------------------------------------------------------------------------
 
 
 def test_request_roundtrip() -> None:
@@ -154,11 +134,6 @@ def test_phase_emit_roundtrip() -> None:
     assert reconstructed.kind == original.kind
 
 
-# ---------------------------------------------------------------------------
-# 4. from_lc from raw LC messages
-# ---------------------------------------------------------------------------
-
-
 def test_from_lc_human_message() -> None:
     """from_lc converts HumanMessage → Message with correct content."""
     lc = HumanMessage(content="user query")
@@ -191,11 +166,6 @@ def test_from_lc_stores_lc_extra_in_payload() -> None:
     lc = AIMessage(content="answer", additional_kwargs={"some_key": "some_val"})
     msg = Message.from_lc(lc, sender="agent", kind=MessageKind.DECISION)
     assert "_lc" in msg.payload
-
-
-# ---------------------------------------------------------------------------
-# 5. AIMessage tool_calls round-trip
-# ---------------------------------------------------------------------------
 
 
 def test_decision_with_tool_calls_to_ai_message() -> None:

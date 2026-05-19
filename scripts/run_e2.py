@@ -88,9 +88,7 @@ def _on_progress(p: GridProgress) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config", type=Path, default=Path("conf/experiments/e2_full.yaml")
-    )
+    parser.add_argument("--config", type=Path, default=Path("conf/experiments/e2_full.yaml"))
     parser.add_argument("--top3", type=Path, default=Path("analysis/e1_top3.json"))
     parser.add_argument("--parallelism", type=int, default=None)
     parser.add_argument(
@@ -101,9 +99,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.top3.exists():
-        sys.stderr.write(
-            f"{args.top3} not found. Run analysis/e1_top3.py first.\n"
-        )
+        sys.stderr.write(f"{args.top3} not found. Run analysis/e1_top3.py first.\n")
         return 2
 
     top3 = _load_top3(args.top3)
@@ -121,8 +117,6 @@ def main() -> int:
         sys.stderr.write("Empty grid after filtering.\n")
         return 3
 
-    # Per-(task, topology) cell counts (sanity check; expect 5 roles x 15 sh
-    # x 3 seed = 225 each, minus dropped bad combos).
     by_pair: dict[tuple[str, str], int] = {}
     for cfg in configs:
         by_pair[(cfg.task.name, cfg.topology.name)] = (
@@ -136,8 +130,10 @@ def main() -> int:
         print("\n--dry-run: not launching.")
         return 0
 
-    parallelism = args.parallelism if args.parallelism is not None else (
-        configs[0].grid.parallelism if configs[0].grid is not None else 30
+    parallelism = (
+        args.parallelism
+        if args.parallelism is not None
+        else (configs[0].grid.parallelism if configs[0].grid is not None else 30)
     )
     print(f"\nLaunching run_grid (parallelism={parallelism}, fail_fast=False) …")
 

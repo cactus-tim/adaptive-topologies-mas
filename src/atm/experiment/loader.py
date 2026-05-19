@@ -54,7 +54,6 @@ def _merge_includes(cfg: DictConfig, base_dir: Path) -> DictConfig:
                 f"include path '{inc_path_str}' escapes config directory {base_resolved}"
             )
         inc_cfg: DictConfig = OmegaConf.load(inc_path)  # type: ignore[assignment]
-        # include contents are the base; main cfg values take precedence
         merged = OmegaConf.merge(inc_cfg, merged)  # type: ignore[assignment]
 
     return merged
@@ -66,7 +65,7 @@ def load_config(
 ) -> ExperimentConfig:
     """Load and validate an experiment config from a YAML file.
 
-    Pipeline (arch.md §12.2):
+    Pipeline:
       1. OmegaConf.load(path)
       2. Merge ``include`` files (simplified include mechanism)
       3. OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides))
@@ -89,20 +88,15 @@ def load_config(
     cfg_path = Path(path)
     base_dir = cfg_path.parent
 
-    # Step 1: load base YAML
     cfg: DictConfig = OmegaConf.load(cfg_path)  # type: ignore[assignment]
 
-    # Step 2: merge includes
     cfg = _merge_includes(cfg, base_dir)
 
-    # Step 3: apply CLI overrides
     if overrides:
-        # Strip leading '+' — OmegaConf.from_dotlist does not support it
         clean_overrides = [o.lstrip("+") for o in overrides]
         override_cfg = OmegaConf.from_dotlist(clean_overrides)
         cfg = OmegaConf.merge(cfg, override_cfg)  # type: ignore[assignment]
 
-    # Step 4 + 5: resolve and convert to plain dict, then validate with Pydantic
     data: Any = OmegaConf.to_container(cfg, resolve=True)
     return ExperimentConfig.model_validate(data)
 
@@ -150,7 +144,6 @@ def load_grid_configs(
     if grid is None:
         return [base_cfg]
 
-    # Validate sweep values are all scalars (str/int/float/bool).
     _scalar_types = (str, int, float, bool)
     for key, values in grid.sweep.items():
         for v in values:
@@ -160,7 +153,6 @@ def load_grid_configs(
                     f"(str/int/float/bool), got {type(v).__name__}: {v!r}"
                 )
 
-    # Sorted keys for deterministic ordering.
     sweep_keys = sorted(grid.sweep.keys())
     sweep_value_lists = [grid.sweep[k] for k in sweep_keys]
 
@@ -168,18 +160,14 @@ def load_grid_configs(
 
     for sweep_combo in itertools.product(*sweep_value_lists):
         for seed in grid.seeds:
-            # Start from a fresh copy of the base dict each cell.
             cell_dict: dict[str, Any] = base_cfg.model_dump(mode="python")
             cell_oc: DictConfig = OmegaConf.create(cell_dict)
 
-            # Apply sweep overrides.
             for key, value in zip(sweep_keys, sweep_combo, strict=False):
                 OmegaConf.update(cell_oc, key, value, merge=True)
 
-            # Apply seed override.
             OmegaConf.update(cell_oc, "seed", seed, merge=True)
 
-            # Resolve and validate.
             cell_data: Any = OmegaConf.to_container(cell_oc, resolve=True)
             cell_cfg = ExperimentConfig.model_validate(cell_data)
             configs.append(cell_cfg)

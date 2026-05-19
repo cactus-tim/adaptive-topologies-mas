@@ -1,11 +1,4 @@
-"""RQ1/RQ2/RQ3/RQ4 plot functions for ATM analysis.
-
-All functions accept pre-loaded DataFrames and return matplotlib Figure objects.
-
-IMPORTANT: matplotlib.use("Agg") MUST be the first matplotlib call so that
-headless CI environments do not trigger GUI backend warnings (which become errors
-under filterwarnings=["error"]).
-"""
+"""RQ1/RQ2/RQ3/RQ4 plot functions — accept DataFrames, return matplotlib Figures."""
 
 from __future__ import annotations
 
@@ -29,10 +22,6 @@ __all__ = [
     "plot_topology_task_heatmap",
     "plot_transition_timeline_quality",
 ]
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 _RNG_SEED = 42
 _N_BOOTSTRAP = 1000
@@ -65,11 +54,6 @@ def _bootstrap_ci(
     return lower, upper
 
 
-# ---------------------------------------------------------------------------
-# RQ1 plots
-# ---------------------------------------------------------------------------
-
-
 def plot_pareto(
     runs_df: pd.DataFrame,
     *,
@@ -80,25 +64,7 @@ def plot_pareto(
     n_bootstrap: int = _N_BOOTSTRAP,
     figsize: tuple[float, float] = (8, 6),
 ) -> matplotlib.figure.Figure:
-    """Plot quality vs cost Pareto scatter with bootstrap confidence bands.
-
-    Each group (topology) is plotted as a point at (mean cost, mean quality).
-    Bootstrap 95% CI bands are drawn as error bars for each group.
-    The adaptive topology group (if present) is highlighted with a distinct marker.
-
-    Args:
-        runs_df:        DataFrame with at minimum ``group_col``, ``quality_col``,
-                        and ``cost_col`` columns.
-        group_col:      Column used to split runs into groups. Default: "topology".
-        quality_col:    Column for quality metric. Default: "quality_score".
-        cost_col:       Column for cost metric. Default: "budget_spent_usd".
-        adaptive_label: Topology label treated as "adaptive" (highlighted marker).
-        n_bootstrap:    Number of bootstrap resamples for CI computation.
-        figsize:        Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (quality vs cost scatter + error bars).
-    """
+    """Plot quality vs cost Pareto scatter per topology with 95% bootstrap CI error bars."""
     fig, ax = plt.subplots(figsize=figsize)
 
     required_cols = {group_col, quality_col, cost_col}
@@ -144,7 +110,6 @@ def plot_pareto(
     ax.set_xlabel(f"Mean {cost_col}")
     ax.set_ylabel(f"Mean {quality_col}")
     ax.set_title("Quality vs Cost (Pareto)")
-    # Only add legend if there are labeled artists (avoid UserWarning on empty data)
     handles, _labels = ax.get_legend_handles_labels()
     if handles:
         ax.legend(loc="best")
@@ -162,20 +127,7 @@ def plot_topology_task_heatmap(
     figsize: tuple[float, float] = (8, 5),
     cmap: str = "YlOrRd",
 ) -> matplotlib.figure.Figure:
-    """Plot a topology x task_type heatmap of mean quality score.
-
-    Args:
-        runs_df:       DataFrame with topology, task_type, and quality_score columns.
-        topology_col:  Column for topology labels. Default: "topology".
-        task_type_col: Column for task type labels. Default: "task_type".
-        value_col:     Column to aggregate. Default: "quality_score".
-        aggfunc:       Aggregation function name (passed to pivot_table). Default: "mean".
-        figsize:       Figure (width, height) in inches.
-        cmap:          Colormap name.
-
-    Returns:
-        matplotlib Figure with one Axes (heatmap).
-    """
+    """Plot a topology x task_type heatmap aggregated by ``aggfunc`` on ``value_col``."""
     import seaborn as sns  # type: ignore[import-untyped]  # lazy import — seaborn is optional for headless
 
     fig, ax = plt.subplots(figsize=figsize)
@@ -225,20 +177,7 @@ def plot_phase_timeline(
     ended_col: str = "ended_at",
     figsize: tuple[float, float] = (10, 4),
 ) -> matplotlib.figure.Figure:
-    """Plot a horizontal Gantt-style timeline of phases for a single run.
-
-    Args:
-        phases_df:   DataFrame with phase records including timing columns.
-        run_id:      Filter to this run_id value (must be present in ``run_id`` column).
-        phase_col:   Column for phase name. Default: "phase_name" (matches
-                     ``load_phases`` output column name).
-        started_col: Column for phase start timestamp. Default: "started_at".
-        ended_col:   Column for phase end timestamp. Default: "ended_at".
-        figsize:     Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (horizontal bar / broken_barh Gantt chart).
-    """
+    """Plot a horizontal Gantt-style broken_barh phase timeline for a single run."""
     fig, ax = plt.subplots(figsize=figsize)
 
     if "run_id" not in phases_df.columns:
@@ -257,10 +196,8 @@ def plot_phase_timeline(
         ax.set_title(f"plot_phase_timeline: missing columns {missing}")
         return fig
 
-    # Convert timestamps to numeric (seconds from first event) for plotting
     run_phases = run_phases.sort_values(started_col).reset_index(drop=True)
 
-    # Get reference time as earliest started_at
     t0 = pd.to_datetime(run_phases[started_col]).min()
 
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -303,32 +240,13 @@ def plot_phase_timeline(
     return fig
 
 
-# ---------------------------------------------------------------------------
-# RQ2 / G11 plots
-# ---------------------------------------------------------------------------
-
-
 def plot_transition_timeline_quality(
     transitions_df: pd.DataFrame,
     *,
     run_id: str,
     figsize: tuple[float, float] = (10, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot quality-weighted topology transition timeline for a single run.
-
-    Renders a step plot of topology transitions over time, with quality score
-    overlaid as a secondary line (if ``quality_score`` column is present).
-
-    Args:
-        transitions_df: DataFrame with topology transition records including
-                        ``run_id``, ``at`` (datetime), ``to_topology``, and
-                        optionally ``quality_score`` columns.
-        run_id:         Filter to this run_id value.
-        figsize:        Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes showing the timeline.
-    """
+    """Plot topology step-transitions over time for a run, with quality overlaid on twin axis."""
     fig, ax = plt.subplots(figsize=figsize)
 
     if "run_id" not in transitions_df.columns:
@@ -355,7 +273,6 @@ def plot_transition_timeline_quality(
     t0 = run_df["at"].min()
     times_s = [(t - t0).total_seconds() for t in run_df["at"]]
 
-    # Encode topology as integer y-axis for step plot
     topos = run_df["to_topology"].tolist()
     unique_topos = sorted(set(topos))
     topo_idx = {t: i for i, t in enumerate(unique_topos)}
@@ -367,7 +284,6 @@ def plot_transition_timeline_quality(
     ax.set_xlabel("Time (seconds from start)")
     ax.set_ylabel("Topology")
 
-    # Overlay quality score if available
     if "quality_score" in run_df.columns:
         q_vals = pd.to_numeric(run_df["quality_score"], errors="coerce")
         if q_vals.notna().any():
@@ -395,20 +311,7 @@ def plot_guard_override_rate(
     *,
     figsize: tuple[float, float] = (7, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot guard override rate per destination topology as a bar chart.
-
-    Computes fraction of transitions decided by ``"guard_override"`` for each
-    ``to_topology``.  An empty ``transitions_df`` or missing ``decided_by``
-    column returns a graceful empty figure.
-
-    Args:
-        transitions_df: DataFrame with at least ``decided_by`` and
-                        ``to_topology`` columns.
-        figsize:        Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (horizontal bar chart).
-    """
+    """Plot horizontal bar chart of guard_override fraction per destination topology."""
     fig, ax = plt.subplots(figsize=figsize)
 
     required = {"decided_by", "to_topology"}
@@ -452,23 +355,7 @@ def plot_router_cost_share(
     *,
     figsize: tuple[float, float] = (7, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot router LLM cost share vs worker cost share as a stacked bar chart.
-
-    Router calls are identified by ``role == "router"`` in ``llm_calls_df``.
-    Total cost per run comes from ``llm_calls_df["cost_usd"]``; fallback is
-    ``runs_df["budget_spent_usd"]``.
-
-    An empty input returns a graceful empty figure.
-
-    Args:
-        runs_df:      DataFrame with run-level records (used for fallback cost).
-        llm_calls_df: DataFrame with LLM call records including ``role`` and
-                      ``cost_usd`` columns.
-        figsize:      Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (stacked bar chart).
-    """
+    """Plot stacked bar chart of router vs worker LLM cost per run."""
     fig, ax = plt.subplots(figsize=figsize)
 
     if llm_calls_df.empty or "cost_usd" not in llm_calls_df.columns:
@@ -483,7 +370,6 @@ def plot_router_cost_share(
     df["is_router"] = df.get("role", pd.Series(dtype=str)) == "router"
 
     if "run_id" not in df.columns:
-        # No run_id column — aggregate globally
         router_cost = float(df.loc[df["is_router"], "cost_usd"].sum())
         worker_cost = float(df.loc[~df["is_router"], "cost_usd"].sum())
         labels = ["all_runs"]
@@ -519,28 +405,9 @@ def plot_time_per_topology(
     duration_col: str = "duration_seconds",
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot mean wall-clock time per topology as a bar chart.
-
-    Uses ``duration_seconds`` (or ``duration_col``) from ``runs_df``.
-    If neither column is present, falls back to counting the number of
-    rows per topology (i.e., number of runs).
-
-    Works with both a ``runs_df`` (one row per run with topology + duration)
-    and a ``transitions_df`` (one row per transition event with ``to_topology``),
-    as long as ``topology_col`` resolves.
-
-    Args:
-        runs_df:       DataFrame with topology and optional duration column.
-        topology_col:  Column for topology name. Default: "topology".
-        duration_col:  Column for duration in seconds. Default: "duration_seconds".
-        figsize:       Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (bar chart).
-    """
+    """Plot mean duration per topology; falls back to run count if duration_col absent."""
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Support transitions_df path: use to_topology if topology col is missing
     if topology_col not in runs_df.columns and "to_topology" in runs_df.columns:
         topology_col = "to_topology"
 
@@ -558,7 +425,6 @@ def plot_time_per_topology(
         agg = df.groupby(topology_col)[duration_col].mean().dropna().sort_values(ascending=False)
         ylabel = "Mean Duration (s)"
     else:
-        # Fallback: count rows per topology
         agg = df.groupby(topology_col).size().sort_values(ascending=False).astype(float)
         ylabel = "Run Count"
 
@@ -587,31 +453,13 @@ def plot_oracle_gap_loo(
     *,
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot oracle gap (LOO) distribution as a histogram with a reference line at 0.
-
-    Positive values mean the oracle topology beats the router; negative means
-    the router outperforms the leave-one-out oracle for that task.
-
-    Args:
-        runs_df:     DataFrame with run-level records (used for context; not
-                     directly plotted, but kept for API symmetry with the
-                     metrics function).
-        oracle_gap:  Pre-computed oracle gap values.  Either:
-                     - ``pd.Series`` (indexed by task_id, values are float), or
-                     - ``pd.DataFrame`` with an ``oracle_gap_loo`` column.
-        figsize:     Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (histogram + vline at 0).
-    """
+    """Plot oracle gap LOO histogram with a zero-reference line."""
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Normalise input to a Series of float gap values
     if isinstance(oracle_gap, pd.DataFrame):
         if "oracle_gap_loo" in oracle_gap.columns:
             gap_series = pd.to_numeric(oracle_gap["oracle_gap_loo"], errors="coerce")
         else:
-            # Try the first numeric column
             numeric_cols = oracle_gap.select_dtypes(include="number").columns
             if len(numeric_cols) == 0:
                 gap_series = pd.Series(dtype=float)
@@ -642,11 +490,6 @@ def plot_oracle_gap_loo(
     return fig
 
 
-# ---------------------------------------------------------------------------
-# RQ3/RQ4 plots (stubs for Steps 9+)
-# ---------------------------------------------------------------------------
-
-
 def plot_cognitive_load_boxplot(
     runs_df: pd.DataFrame,
     human_interactions_df: pd.DataFrame,
@@ -654,32 +497,9 @@ def plot_cognitive_load_boxplot(
     role: str | None = None,
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot cognitive load (TLX proxy) boxplot per topology.
-
-    Produces a two-panel figure:
-    - Left Axes: boxplot of ``raw_tlx_score`` from ``human_interactions_df``
-      grouped by topology.
-    - Right Axes: boxplot of ``cognitive_load_proxy`` from ``runs_df``
-      grouped by topology.
-
-    Args:
-        runs_df:               DataFrame with run-level records including
-                               ``topology`` and ``cognitive_load_proxy`` columns.
-        human_interactions_df: DataFrame with human interaction records including
-                               ``raw_tlx_score`` and ``topology`` columns.
-        role:                  If given, filter ``human_interactions_df`` to rows
-                               where ``role == role`` before plotting.  ``None``
-                               means all rows are included.
-        figsize:               Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with two Axes (TLX boxplot | cognitive_load_proxy boxplot).
-    """
+    """Plot two-panel boxplot: raw TLX score and cognitive_load_proxy, both per topology."""
     fig, (ax_tlx, ax_proxy) = plt.subplots(1, 2, figsize=figsize)
 
-    # ------------------------------------------------------------------
-    # Helper: draw a boxplot on a given axes using pure matplotlib
-    # ------------------------------------------------------------------
     def _draw_boxplot(
         ax: matplotlib.axes.Axes,
         df: pd.DataFrame,
@@ -692,7 +512,6 @@ def plot_cognitive_load_boxplot(
         data = [
             df.loc[df[group_col] == g, value_col].dropna().to_numpy(dtype=float) for g in groups
         ]
-        # Filter out empty groups
         valid = [(g, d) for g, d in zip(groups, data, strict=False) if len(d) > 0]
         if not valid:
             ax.set_title(f"{title} (no data)")
@@ -707,12 +526,8 @@ def plot_cognitive_load_boxplot(
         ax.set_ylabel(ylabel)
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
 
-    # ------------------------------------------------------------------
-    # Left Axes: raw_tlx_score from human_interactions_df
-    # ------------------------------------------------------------------
     hi_df = human_interactions_df.copy()
 
-    # Apply role filter if requested
     if role is not None and "role" in hi_df.columns:
         hi_df = hi_df[hi_df["role"] == role]
 
@@ -731,9 +546,6 @@ def plot_cognitive_load_boxplot(
             "Raw TLX Score",
         )
 
-    # ------------------------------------------------------------------
-    # Right Axes: cognitive_load_proxy from runs_df
-    # ------------------------------------------------------------------
     if (
         runs_df.empty
         or "cognitive_load_proxy" not in runs_df.columns

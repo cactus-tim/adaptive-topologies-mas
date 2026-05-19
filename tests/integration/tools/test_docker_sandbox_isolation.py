@@ -20,7 +20,6 @@ from atm.tools.sandbox.docker_sandbox import DockerSandbox
 
 _SECCOMP_PATH = pathlib.Path(__file__).parents[3] / "conf" / "sandbox" / "seccomp.json"
 
-# A stable host file whose hash we can compare before and after rm -rf /
 _HOST_SENTINEL = pathlib.Path("/etc/hostname")
 
 
@@ -35,14 +34,8 @@ def sandbox(seccomp_str: str) -> DockerSandbox:
         mem_limit="256m",
         pids_limit=128,
         timeout_s=30.0,
-        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     return DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
-
-
-# ---------------------------------------------------------------------------
-# rm -rf / does not affect host
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.docker
@@ -59,7 +52,6 @@ async def test_rm_rf_root_does_not_affect_host(sandbox: DockerSandbox) -> None:
     code = textwrap.dedent("""\
         import subprocess
         import sys
-        # Attempt to destroy the filesystem
         r = subprocess.run(
             ['sh', '-c', 'rm -rf / 2>/dev/null; echo done'],
             capture_output=True,
@@ -68,7 +60,6 @@ async def test_rm_rf_root_does_not_affect_host(sandbox: DockerSandbox) -> None:
         print("rm attempt finished:", r.returncode)
     """)
 
-    # Even if this fails it's fine — we just want host to be untouched
     with contextlib.suppress(Exception):
         await sandbox.execute(lang="python", code=code)
 
@@ -76,11 +67,6 @@ async def test_rm_rf_root_does_not_affect_host(sandbox: DockerSandbox) -> None:
     assert host_hash_before == host_hash_after, (
         "Host /etc/hostname hash changed after rm -rf / inside container — isolation breach!"
     )
-
-
-# ---------------------------------------------------------------------------
-# Fork bomb — killed by pids_limit
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.docker
@@ -92,9 +78,8 @@ async def test_fork_bomb_killed_by_pids_limit(seccomp_str: str) -> None:
     """
     cfg = SandboxConfig(
         mem_limit="256m",
-        pids_limit=10,  # very tight PID limit
+        pids_limit=10,
         timeout_s=25.0,
-        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     sb = DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
 
@@ -110,7 +95,6 @@ async def test_fork_bomb_killed_by_pids_limit(seccomp_str: str) -> None:
     )
     wall_time = time.monotonic() - t0
 
-    # Either non-zero exit OR wall time well under 30s (meaning it was killed)
     assert result.exit_code != 0 or wall_time < 30.0, (
         f"Fork bomb should have been killed — exit={result.exit_code}, wall={wall_time:.1f}s"
     )

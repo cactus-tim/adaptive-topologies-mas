@@ -12,10 +12,6 @@ from urllib.parse import urlsplit, urlunsplit
 import pytest
 import pytest_asyncio
 
-# ---------------------------------------------------------------------------
-# ephemeral_pg_dsn — per-test disposable PostgreSQL DSN
-# ---------------------------------------------------------------------------
-
 _PG_TESTS_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_PG_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 
@@ -73,7 +69,6 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
     from atm.storage.models import Base
     from atm.storage.session import create_engine
 
-    # Build maintenance DSN pointing to the `postgres` admin DB.
     maint_dsn, target_db = _swap_database(dsn, "postgres")
     if not target_db:
         raise RuntimeError(
@@ -81,8 +76,6 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
             "expected …/<dbname> at the end"
         )
 
-    # DROP DATABASE / CREATE DATABASE must run with AUTOCOMMIT (no txn block)
-    # and cannot target the current DB → use a maintenance connection.
     maint_engine = create_async_engine(
         maint_dsn,
         echo=False,
@@ -97,7 +90,6 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
     finally:
         await maint_engine.dispose()
 
-    # Now the target DB is brand-new and empty — apply the model schema.
     engine = create_engine(dsn, echo=False, pool_size=2, max_overflow=1)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -105,7 +97,4 @@ async def ephemeral_pg_dsn() -> AsyncGenerator[str, None]:
     try:
         yield dsn
     finally:
-        # No teardown DROP needed — the next test (or a final pytest-session
-        # hook, if added later) will nuke this DB again. We only dispose
-        # the engine here to release this test's connections promptly.
         await engine.dispose()

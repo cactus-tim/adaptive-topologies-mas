@@ -36,17 +36,7 @@ from atm.tools.base import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
-# Cap stored ToolResult.output size when accumulating into agent state.
-# See the comment at the truncation call site in _run_tool_loop for rationale.
-# 4 KB is generous for downstream consumers (finalize uses 1.2 KB, agent
-# verifiers use only call_id/ok) and keeps a 12-iteration x 4-agent run with
-# many file_read calls well under the PG wire-protocol message limit.
 _TOOL_RESULT_OUTPUT_MAX_CHARS: int = 4096
-
-
-# ---------------------------------------------------------------------------
-# _StepOutcome — result of one _run_tool_loop() execution
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -66,11 +56,6 @@ class _StepOutcome:
     scratchpad_events: list[dict[str, Any]]
     tool_calls: list[ToolCall]
     tool_results: list[ToolResult]
-
-
-# ---------------------------------------------------------------------------
-# AgentView — immutable snapshot of state for one step
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -95,15 +80,7 @@ class AgentView:
     inbox: tuple[Message, ...]
     scratchpad: tuple[dict[str, Any], ...]
     summary_before_window: str | None
-    # Most recent peer message per (sender, kind) from state["messages"], used
-    # by chain/star/etc. topologies that don't (yet) populate inbox via an
-    # explicit routing node. Empty tuple when no peers have spoken yet.
     peer_messages: tuple[Message, ...] = ()
-
-
-# ---------------------------------------------------------------------------
-# Agent — base class
-# ---------------------------------------------------------------------------
 
 
 class Agent:
@@ -133,10 +110,6 @@ class Agent:
         self.tools = tools
         self.summarizer_llm = summarizer_llm
 
-    # ------------------------------------------------------------------
-    # Public API — LangGraph node entry point
-    # ------------------------------------------------------------------
-
     async def step(self, state: GraphState) -> dict[str, Any]:
         """Execute one agent step and return a delta to merge into GraphState.
 
@@ -158,18 +131,11 @@ class Agent:
         self_state: AgentState = cast(AgentState, agents_state.get(self.agent_id) or {})
         shared: dict[str, Any] = cast(dict[str, Any], state.get("shared") or {})
 
-        # Reconstruct inbox and scratchpad from current state (already accumulated)
         inbox_raw: list[Any] = list(self_state.get("inbox") or [])
         scratchpad_raw: list[dict[str, Any]] = list(self_state.get("scratchpad") or [])
         summary_before_window: str | None = self_state.get("summary_before_window") or None
         step_count: int = int(self_state.get("step_count") or 0) + 1
 
-        # Collect the most recent peer message per (sender, kind) from the
-        # global messages channel. Required for chain/star/mesh/debate where
-        # no routing node copies outbox→inbox: without this, every agent runs
-        # blind and never sees the previous agent's draft/decision.
-        # Self-emitted messages are excluded; the agent already has its own
-        # context via scratchpad. Order: chronological (oldest first).
         global_messages: list[Any] = list(state.get("messages") or [])
         latest_per_key: dict[tuple[str, Any], Message] = {}
         for _m in global_messages:
@@ -190,16 +156,12 @@ class Agent:
             peer_messages=peer_messages_tuple,
         )
 
-        # Optional pre-loop summarization (policy C)
         view = await self._maybe_summarize(view)
 
-        # Build prompt for the tool loop
         prompt_messages = self._build_prompt(view)
 
-        # Execute tool-calling loop
         outcome: _StepOutcome = await self._run_tool_loop(prompt_messages)
 
-        # Build DRAFT outbox message from final response
         response_text = outcome.response.text or ""
         draft_msg = Message(
             sender=self.agent_id,
@@ -207,18 +169,16 @@ class Agent:
             content=response_text,
         )
 
-        # Compute cumulative token and cost stats
         usage = outcome.response.usage
         prev_tokens = int(self_state.get("tokens_spent") or 0)
         prev_cost = float(self_state.get("cost_spent_usd") or 0.0)
         new_tokens = prev_tokens + usage.total_tokens
         new_cost = prev_cost + outcome.response.cost_usd
 
-        # Build per-agent state delta
         agent_delta: AgentState = {
             "agent_id": self.agent_id,
             "role": self.cfg.role,
-            "inbox": [],  # delta — inbox consumed (empty delta = no new inbox)
+            "inbox": [],
             "outbox": [draft_msg],
             "scratchpad": outcome.scratchpad_events,
             "tool_calls": outcome.tool_calls,
@@ -234,10 +194,6 @@ class Agent:
             "messages": [draft_msg],
             "llm_calls": [outcome.response],
         }
-
-    # ------------------------------------------------------------------
-    # Prompt building — scratchpad policy C
-    # ------------------------------------------------------------------
 
     def _build_prompt(self, view: AgentView) -> list[Message]:
         """Assemble the LLM prompt using scratchpad policy C.
@@ -259,7 +215,6 @@ class Agent:
         """
         messages: list[Message] = []
 
-        # 1. System message
         messages.append(
             Message(
                 sender="system",
@@ -268,7 +223,6 @@ class Agent:
             )
         )
 
-        # 2. Task description
         task_input: str = view.shared.get("task_input") or ""
         if task_input:
             messages.append(
@@ -279,7 +233,6 @@ class Agent:
                 )
             )
 
-        # 3. Summary before window (if present)
         if view.summary_before_window:
             messages.append(
                 Message(
@@ -289,15 +242,9 @@ class Agent:
                 )
             )
 
-        # 4. Inbox messages (explicitly routed by topology — empty for
-        #    chain/star/mesh which rely on the peer_messages fallback below).
         for msg in view.inbox:
             messages.append(msg)
 
-        # 4b. Peer fallback: most recent message from each peer agent. Provides
-        #     critic↔executor↔planner visibility in chain/star where no
-        #     routing node populates inbox. Skipped if inbox already contains
-        #     an explicit delivery from that sender (avoids double-prompting).
         if view.peer_messages:
             seen_inbox_senders = {getattr(m, "sender", "") for m in view.inbox}
             for msg in view.peer_messages:
@@ -305,7 +252,6 @@ class Agent:
                     continue
                 messages.append(msg)
 
-        # 5. Scratchpad window tail (read-only slice — does not mutate)
         window: tuple[dict[str, Any], ...] = view.scratchpad[-self.cfg.window_size :]
         for event in window:
             kind = event.get("kind", "reasoning")
@@ -336,10 +282,6 @@ class Agent:
 
         return messages
 
-    # ------------------------------------------------------------------
-    # Summarizer (policy C trigger)
-    # ------------------------------------------------------------------
-
     async def _maybe_summarize(self, view: AgentView) -> AgentView:
         """Optionally summarize pre-window scratchpad events.
 
@@ -364,14 +306,12 @@ class Agent:
         if self.summarizer_llm is None:
             return view
 
-        # Build a provisional prompt and estimate its size
         provisional = self._build_prompt(view)
         estimated = estimate_prompt_tokens(provisional, self.llm.model_id)
 
         if estimated <= self.cfg.context_token_budget:
             return view
 
-        # Summarization triggered — build a prompt for the summarizer
         pre_window_events = (
             view.scratchpad[: -self.cfg.window_size]
             if len(view.scratchpad) > self.cfg.window_size
@@ -380,10 +320,8 @@ class Agent:
         window_events = view.scratchpad[-self.cfg.window_size :]
 
         if not pre_window_events:
-            # Nothing before the window to summarize
             return view
 
-        # Build summarizer messages
         summary_content_parts = []
         for event in pre_window_events:
             summary_content_parts.append(str(event))
@@ -408,22 +346,15 @@ class Agent:
 
         new_summary = summarizer_response.text or ""
 
-        # Return a new view with updated summary and truncated scratchpad
-        # (only window events remain in the prompt-building view)
         return AgentView(
             agent_id=view.agent_id,
             self_state=view.self_state,
             shared=view.shared,
             inbox=view.inbox,
-            # Prompt-building view only has window events; full scratchpad returned in delta
             scratchpad=window_events,
             summary_before_window=new_summary,
             peer_messages=view.peer_messages,
         )
-
-    # ------------------------------------------------------------------
-    # Tool-calling loop
-    # ------------------------------------------------------------------
 
     async def _run_tool_loop(self, messages: list[Message]) -> _StepOutcome:
         """Execute the tool-calling loop up to ``cfg.max_tool_iters`` iterations.
@@ -443,14 +374,13 @@ class Agent:
         bloat the prompt. Currently mitigated by truncating observation
         preview to 2000 chars.
         """
-        tool_calls_accum: list[ToolCall] = []  # CRITICAL: accumulated across ALL iterations
+        tool_calls_accum: list[ToolCall] = []
         tool_results: list[ToolResult] = []
         scratchpad_events: list[dict[str, Any]] = []
-        current_messages = list(messages)  # working copy
+        current_messages = list(messages)
 
         tools_schema = self._build_tools_schema()
 
-        # Last response placeholder — will be set on first iteration at minimum
         response: LLMResponse | None = None
 
         for loop_iter in range(
@@ -462,7 +392,6 @@ class Agent:
                 agent_id=self.agent_id,
             )
 
-            # Record reasoning event
             scratchpad_events.append(
                 {
                     "kind": "reasoning",
@@ -471,16 +400,12 @@ class Agent:
                 }
             )
 
-            # Check if we should continue the loop
             if response.finish_reason != "tool_calls" or not response.tool_calls:
                 break
 
-            # Process each tool call
             for tool_call in response.tool_calls:
-                # CRITICAL C1: accumulate across all iterations
                 tool_calls_accum.append(tool_call)
 
-                # Record tool_call event
                 scratchpad_events.append(
                     {
                         "kind": "tool_call",
@@ -491,7 +416,6 @@ class Agent:
                     }
                 )
 
-                # Invoke the tool — only ToolError is caught; BudgetExceededError propagates
                 try:
                     result = await self.tools.ainvoke_by_name(tool_call.tool_name, tool_call)
                 except ToolError as exc:
@@ -503,19 +427,6 @@ class Agent:
                         latency_ms=0,
                     )
 
-                # Truncate output BEFORE appending to tool_results — the field
-                # is checkpointed via LangGraph and grows unboundedly across
-                # iterations (list-concat reducer).  Without this cap, a
-                # file_read returning 1 MB of CSV x 12 iterations x 4 agents
-                # produces 100s of MB of agent state per checkpoint, and the
-                # serialized blob hits PG's wire-protocol message size limits
-                # ("invalid message length") on long adaptive runs (dabench).
-                # Downstream consumers of tool_results only use call_id/ok
-                # (chain/star/debate verifiers, executor stuck-streak counter)
-                # or take the LAST few entries with their own truncation
-                # (finalize._format_tool_history: last 6 @ 1200 chars).  The
-                # LLM in the current iteration sees the full data via
-                # output_preview below, which is already 2000-char capped.
                 _truncated_output: Any = result.output
                 if _truncated_output is not None:
                     _s = str(_truncated_output)
@@ -534,7 +445,6 @@ class Agent:
                     )
                 )
 
-                # Record observation event (truncated to 2000 chars)
                 output_preview = str(result.output)[:2000]
                 scratchpad_events.append(
                     {
@@ -546,7 +456,6 @@ class Agent:
                     }
                 )
 
-                # Append synthetic tool-result message to working conversation
                 current_messages.append(
                     Message(
                         sender="tool",
@@ -556,11 +465,9 @@ class Agent:
                     )
                 )
 
-            # If max_tool_iters reached on this iteration, stop
             if loop_iter >= self.cfg.max_tool_iters - 1:
                 break
 
-        # Guaranteed non-None after at least one ainvoke call above
         assert response is not None, "Tool loop ran 0 iterations — this should not happen"
 
         return _StepOutcome(
@@ -569,10 +476,6 @@ class Agent:
             tool_calls=tool_calls_accum,
             tool_results=tool_results,
         )
-
-    # ------------------------------------------------------------------
-    # Tool schema builder
-    # ------------------------------------------------------------------
 
     def _build_tools_schema(self) -> list[dict[str, Any]] | None:
         """Build the tools schema list for LLMWrapper.ainvoke.

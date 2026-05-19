@@ -39,19 +39,10 @@ from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -189,11 +180,6 @@ def _make_critic_agent_with_approval() -> Any:
     return agent
 
 
-# ---------------------------------------------------------------------------
-# Scenario: Star HITL end-to-end (PG required)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_star_hitl_reviewer_e2e_writes_human_interaction(
     ephemeral_pg_dsn: str, tmp_path: Path
@@ -209,7 +195,6 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
     This test uses LLMSimulatedGateway with a scripted FakeLLM fixture so that the
     human reviewer node fires deterministically in the verification phase.
     """
-    # Check required fixtures exist
     reviewer_fixture = FIXTURES_DIR / "m91_star_human_reviewer.yaml"
     if not reviewer_fixture.exists():
         pytest.skip(f"Fixture not found: {reviewer_fixture}")
@@ -227,32 +212,26 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
 
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
 
-        # Build LLMSimulatedGateway with scripted FakeLLM fixture
         from atm.human.llm_simulated import LLMSimulatedGateway
 
         gateway_llm_wrapper = _make_llm_wrapper("m91_star_human_reviewer.yaml")
         gateway = LLMSimulatedGateway(gateway_llm_wrapper)
 
-        # Build human_cfg
         human_cfg = _make_human_cfg()
 
-        # Build agents: planner/executor as mocks, critic approves on first call
         agents = {
             "planner": _make_mock_agent("planner"),
             "executor": _make_mock_agent("executor"),
             "critic": _make_critic_agent_with_approval(),
         }
 
-        # Build topology cfg with tight phase caps so graph terminates quickly
         topo_cfg = _make_topology_cfg()
 
-        # Build and compile the star graph with HITL
         star_cls = TopologyRegistry.get("star")
         star = star_cls()
 
         from langgraph.checkpoint.memory import MemorySaver
 
-        # Patch LLMSimulatedGateway to return our pre-built gateway
         with patch("atm.topology.star.LLMSimulatedGateway", return_value=gateway):
             graph = star.build(
                 agents,
@@ -262,7 +241,6 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
                 human_gateway_llm=gateway_llm_wrapper,
             )
 
-        # Build initial state with run_id for the HITL node
         initial_state: dict[str, Any] = {
             "shared": {
                 "run_id": run_id,
@@ -289,7 +267,6 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
             "topology_transitions": [],
         }
 
-        # Run the graph with the callback handler
         result = await graph.ainvoke(
             initial_state,
             config={
@@ -299,10 +276,8 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
             },
         )
 
-        # Allow async background operations to complete
         await asyncio.sleep(0.2)
 
-        # Assert: at least 1 human_interaction row written to PG
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -316,7 +291,6 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
             f"got {count}. The star HITL node must dispatch human_request + human_response."
         )
 
-        # Assert: runs.human_role == 'reviewer'
         async with session_scope(factory) as session:
             run_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_result.scalar_one_or_none()
@@ -326,7 +300,6 @@ async def test_star_hitl_reviewer_e2e_writes_human_interaction(
             f"Expected runs.human_role='reviewer', got {run_row.human_role!r}"
         )
 
-        # Assert: graph completed (result is non-None)
         assert result is not None, "Graph should have completed and returned a final state"
 
     finally:
@@ -428,7 +401,6 @@ async def test_star_hitl_human_approved_state_is_true(
         await asyncio.sleep(0.1)
 
         assert result is not None
-        # After approve response, human_approved should be True in final state
         shared_final = result.get("shared", {})
         assert shared_final.get("human_approved") is True, (
             f"Expected shared['human_approved']=True after approve response; "

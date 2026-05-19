@@ -50,11 +50,6 @@ from atm.storage.session import create_engine, create_session_factory
 app = typer.Typer(name="atm", no_args_is_help=True)
 
 
-# ---------------------------------------------------------------------------
-# atm run
-# ---------------------------------------------------------------------------
-
-
 @app.command("run")
 def run(
     config: Annotated[
@@ -82,14 +77,12 @@ def run(
     ] = False,
 ) -> None:
     """Run a single experiment from a YAML config file."""
-    # Load and validate config
     try:
         cfg = load_config(str(config), overrides=override or [])
     except (ValidationError, FileNotFoundError, Exception) as exc:
         typer.echo(f"Config error: {exc}", err=True)
         raise typer.Exit(3) from exc
 
-    # Optional pre-flight estimate + confirm gate
     if estimate:
         pricing = _load_pricing()
         engine: AsyncEngine | None = None
@@ -121,7 +114,6 @@ def run(
                 typer.echo("Aborted by user.", err=True)
                 raise typer.Exit(3)
 
-    # Run the experiment
     result = asyncio.run(run_one(cfg))
 
     typer.echo(
@@ -138,11 +130,6 @@ def run(
         raise typer.Exit(2)
     else:
         raise typer.Exit(1)
-
-
-# ---------------------------------------------------------------------------
-# atm estimate
-# ---------------------------------------------------------------------------
 
 
 @app.command("estimate")
@@ -194,11 +181,6 @@ def estimate_cmd(
 
     _print_estimate_table(grid_est)
     raise typer.Exit(0)
-
-
-# ---------------------------------------------------------------------------
-# atm grid — M12 parallel sweep driver
-# ---------------------------------------------------------------------------
 
 
 @app.command("grid")
@@ -269,7 +251,6 @@ def grid(
     zombie reconciliation, cost-estimation pre-flight, and optional resume of
     incomplete runs before launching new cells.
     """
-    # Step 1: load and expand configs.
     try:
         configs = load_grid_configs(str(config), overrides=override or [])
     except (ValidationError, FileNotFoundError, Exception) as exc:
@@ -283,7 +264,6 @@ def grid(
     n_cells = len(configs)
     base_cfg = configs[0]
 
-    # Resolve effective parallelism: CLI flag > cfg.grid.parallelism > default 4.
     effective_parallelism: int = (
         parallelism
         if parallelism is not None
@@ -298,8 +278,6 @@ def grid(
         f"fail_fast={effective_fail_fast}"
     )
 
-    # Step 2: pre-flight phases (reconcile / estimate / resume-incomplete).
-    # All three need a shared session_factory against cfg.observability.pg_dsn.
     asyncio.run(
         _grid_preflight(
             configs=configs,
@@ -311,21 +289,12 @@ def grid(
         )
     )
 
-    # Step 2.5: warm task-dataset caches sequentially. Each TaskLoader.load()
-    # writes data/cache/tasks/{name}.parquet via .tmp + os.replace; when N
-    # parallel workers race on the same key the first os.replace wins and
-    # the rest raise FileNotFoundError on a now-missing .tmp. Pre-warming
-    # in the parent ensures workers read from the cache (no network, no
-    # write) regardless of parallelism.
     _prefetch_task_caches(configs)
 
-    # Step 3: interactive confirm (skipped with --yes or in non-TTY).
     if not yes and sys.stdin.isatty() and not typer.confirm("Proceed?", default=True):
         typer.echo("Aborted.", err=True)
         raise typer.Exit(3)
 
-    # Step 4: drive run_grid with live-progress callback.
-    # Imported lazily so `atm grid --help` doesn't require sqlalchemy etc.
     from atm.experiment.grid import GridProgress, run_grid
 
     def _on_progress(p: GridProgress) -> None:
@@ -346,7 +315,6 @@ def grid(
         )
     )
 
-    # Final newline after the \r-overwrite progress line.
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -356,7 +324,6 @@ def grid(
         f"failed={result.failed} budget_exceeded={result.budget_exceeded}"
     )
 
-    # Exit code: 0=all completed, 1=partial, 2=all failed, 3 already handled.
     failed_total = result.failed + result.budget_exceeded
     if result.completed == result.total:
         raise typer.Exit(0)
@@ -380,7 +347,6 @@ def _prefetch_task_caches(configs: list[Any]) -> None:
     Loaders are imported lazily via the side-effect import below so this
     runs even if `atm grid` is the first command in the session.
     """
-    # Side-effect import: registers every @TASKS.register loader class.
     import atm.tasks  # noqa: F401
     from atm.tasks.base import TASKS
 
@@ -431,7 +397,6 @@ async def _grid_preflight(
     session_factory = create_session_factory(engine)
 
     try:
-        # Look up experiment_id by name (used by reconcile and resume-incomplete).
         exp_id: uuid.UUID | None = None
         async with session_factory() as session:
             row = (
@@ -442,7 +407,6 @@ async def _grid_preflight(
             if row is not None:
                 exp_id = row[0]
 
-        # Phase A — reconcile.
         if not no_reconcile:
             if exp_id is None:
                 typer.echo(
@@ -465,7 +429,6 @@ async def _grid_preflight(
                     action = report.actions.get(zr.run_id, "kept_force_resume")
                     typer.echo(f"  zombie run {zr.run_id} ({zr.reason}) → {action}")
 
-        # Phase B — cost estimation pre-flight.
         if not no_estimate:
             pricing = _load_pricing()
             grid_est = await estimate_grid(
@@ -490,13 +453,11 @@ async def _grid_preflight(
                     typer.echo("Aborted by user.", err=True)
                     raise typer.Exit(3)
 
-        # Phase C — resume incomplete runs.
         if resume_incomplete and exp_id is not None:
             from atm.experiment.runner import resume_one
             from atm.storage.checkpointer import build_checkpointer
             from atm.storage.models import Run
 
-            # Idempotent setup of LangGraph checkpoint tables (saver.setup()).
             _saver, pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
             try:
                 async with session_factory() as session:
@@ -533,27 +494,13 @@ async def _grid_preflight(
             finally:
                 await pool.close()
 
-        # Phase D — checkpointer schema warmup (always).
-        #
-        # LangGraph's AsyncPostgresSaver.setup() inserts a row into
-        # ``checkpoint_migrations`` on first call. When N grid cells launch
-        # in parallel (ProcessPoolExecutor workers), they all invoke setup()
-        # concurrently → race on ``checkpoint_migrations_pkey`` →
-        # UniqueViolationError, killing some cells. Running setup() once
-        # here, before workers spawn, makes the per-worker setup() a no-op
-        # (CREATE TABLE IF NOT EXISTS + INSERT … ON CONFLICT DO NOTHING).
-        if not resume_incomplete:  # Phase C already ran setup() if it executed.
+        if not resume_incomplete:
             from atm.storage.checkpointer import build_checkpointer
 
             _warm_saver, _warm_pool = await build_checkpointer(pg_dsn, max_size=1, min_size=1)
             await _warm_pool.close()
     finally:
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# atm status
-# ---------------------------------------------------------------------------
 
 
 @app.command("status")
@@ -587,8 +534,6 @@ def status_cmd(
         )
         raise typer.Exit(3)
 
-    # Validate --exp-id as UUID early to avoid leaking DB error messages back
-    # to the user. UUID parsing is purely string-based; no DB call yet.
     if exp_id is not None:
         try:
             uuid.UUID(exp_id)
@@ -614,11 +559,6 @@ def status_cmd(
         _print_status_table(row)
 
     raise typer.Exit(0)
-
-
-# ---------------------------------------------------------------------------
-# m12-resume-replay: atm resume / atm replay / atm reconcile
-# ---------------------------------------------------------------------------
 
 
 @app.command("resume")
@@ -844,11 +784,6 @@ def reconcile(
     raise typer.Exit(0)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _maybe_open_session(
     pg_dsn: str,
 ) -> tuple[AsyncEngine | None, async_sessionmaker[Any] | None]:
@@ -901,7 +836,6 @@ async def _query_status(
 ) -> dict[str, Any] | None:
     """Run the aggregated SELECT and return a plain dict (or None)."""
     async with factory() as session:
-        # Resolve the experiment row first (single experiment).
         exp_stmt = select(Experiment)
         if exp_id is not None:
             exp_stmt = exp_stmt.where(Experiment.id == exp_id)
@@ -914,8 +848,6 @@ async def _query_status(
         if exp is None:
             return None
 
-        # Aggregate over runs. We use ``case`` expressions (parameterized,
-        # no string interpolation) to count rows per status.
         completed_expr = func.sum(case((Run.status == "completed", 1), else_=0)).label("completed")
         failed_expr = func.sum(case((Run.status == "failed", 1), else_=0)).label("failed")
         running_expr = func.sum(case((Run.status == "running", 1), else_=0)).label("running")
@@ -981,11 +913,6 @@ def _print_status_table(row: dict[str, Any]) -> None:
     else:
         typer.echo("  avg quality: n/a")
     typer.echo(f"  total cost : ${row['total_cost']:.4f}")
-
-
-# ---------------------------------------------------------------------------
-# atm export-exp — snapshot PG aggregate rows to parquet
-# ---------------------------------------------------------------------------
 
 
 @app.command("export-exp")
@@ -1056,11 +983,6 @@ def export_exp(
     typer.echo(f"Snapshot written to {out_dir}/")
     typer.echo(f"  experiment.json  ({(out_dir / 'experiment.json').stat().st_size} bytes)")
     typer.echo(f"  _runs.parquet    ({(out_dir / '_runs.parquet').stat().st_size} bytes)")
-
-
-# ---------------------------------------------------------------------------
-# atm oracle build — generate leave-one-out oracle JSON for E3 router
-# ---------------------------------------------------------------------------
 
 
 @app.command("oracle")

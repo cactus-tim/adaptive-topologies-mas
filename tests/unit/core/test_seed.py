@@ -9,10 +9,6 @@ import pytest
 
 from atm.core.seed import seed_all
 
-# ---------------------------------------------------------------------------
-# Test 1: Determinism — Python random
-# ---------------------------------------------------------------------------
-
 
 class TestSeedAllPythonRandom:
     """Two calls with the same seed produce the same random.random() value."""
@@ -30,11 +26,6 @@ class TestSeedAllPythonRandom:
         seed_all(7)
         val_7 = random.random()
         assert val_42 != val_7
-
-
-# ---------------------------------------------------------------------------
-# Test 2: Determinism — numpy (skip if not installed)
-# ---------------------------------------------------------------------------
 
 
 class TestSeedAllNumpy:
@@ -57,11 +48,6 @@ class TestSeedAllNumpy:
         assert val_42 != val_7
 
 
-# ---------------------------------------------------------------------------
-# Test 3: PYTHONHASHSEED env var is set
-# ---------------------------------------------------------------------------
-
-
 class TestSeedAllEnv:
     """os.environ["PYTHONHASHSEED"] is set to str(seed) after call."""
 
@@ -76,26 +62,17 @@ class TestSeedAllEnv:
         assert os.environ.get("PYTHONHASHSEED") == "99"
 
 
-# ---------------------------------------------------------------------------
-# Test 4: Does not raise when torch is absent (monkeypatched)
-# ---------------------------------------------------------------------------
-
-
 class TestSeedAllTorchAbsent:
     """seed_all() must not raise ImportError even when torch is not installed."""
 
     def test_no_raise_when_torch_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import sys
 
-        # Force ImportError on torch import by temporarily hiding it
         real_torch = sys.modules.pop("torch", None)
-        # Insert a sentinel that raises ImportError when accessed
         sys.modules["torch"] = None  # type: ignore[assignment]
         try:
-            # Should not raise
             seed_all(42)
         finally:
-            # Restore original state
             if real_torch is not None:
                 sys.modules["torch"] = real_torch
             else:
@@ -104,12 +81,7 @@ class TestSeedAllTorchAbsent:
     def test_idempotent_double_call(self) -> None:
         """Calling seed_all twice with the same seed is safe (idempotent)."""
         seed_all(42)
-        seed_all(42)  # Must not raise
-
-
-# ---------------------------------------------------------------------------
-# Test 5: Re-export from atm.core
-# ---------------------------------------------------------------------------
+        seed_all(42)
 
 
 class TestSeedAllPublicApi:

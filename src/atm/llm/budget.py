@@ -3,8 +3,6 @@
 BudgetTracker enforces per-call, per-run, and per-experiment USD ceilings using
 asyncio.Lock for concurrency safety. A callback (sync or async) can be registered
 to receive BudgetSignal notifications on warn (≥warn_fraction of limit) and exceed.
-
-Architecture: §4.2 of arch.md.
 """
 
 from __future__ import annotations
@@ -41,7 +39,6 @@ class BudgetSignal(BaseModel):
     at: datetime
 
 
-# Callback type alias: accepts sync or async callables
 _OnEvent = Callable[[BudgetSignal], "Awaitable[None] | None"]
 
 
@@ -87,7 +84,6 @@ class BudgetTracker:
             BudgetLevel.RUN: 0.0,
             BudgetLevel.EXPERIMENT: 0.0,
         }
-        # Track which levels have already fired a warn event to avoid re-firing.
         self._warned: set[BudgetLevel] = set()
         self._lock = asyncio.Lock()
 

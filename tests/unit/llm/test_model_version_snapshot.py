@@ -20,10 +20,6 @@ from atm.llm.budget import BudgetTracker
 from atm.llm.pricing import ModelPricing, Pricing
 from atm.llm.wrapper import LLMWrapper, _extract_model_version
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_pricing() -> Pricing:
     return Pricing(
@@ -110,11 +106,6 @@ def _openai_ai_msg(
     )
 
 
-# ---------------------------------------------------------------------------
-# 1. _extract_model_version helper
-# ---------------------------------------------------------------------------
-
-
 class TestExtractModelVersion:
     def test_anthropic_model_key(self) -> None:
         """Anthropic uses 'model' key — extracted directly."""
@@ -159,20 +150,10 @@ class TestExtractModelVersion:
         assert _extract_model_version({"model": "   "}) is None
 
 
-# ---------------------------------------------------------------------------
-# 2. Wrapper attribute starts None
-# ---------------------------------------------------------------------------
-
-
 def test_last_model_version_starts_none() -> None:
     """last_model_version attribute is None on a freshly created wrapper."""
     wrapper = _make_wrapper()
     assert wrapper.last_model_version is None
-
-
-# ---------------------------------------------------------------------------
-# 3. Anthropic response captures model
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -190,11 +171,6 @@ async def test_anthropic_model_captured() -> None:
     assert wrapper.last_model_version == "claude-3-5-sonnet-20241022"
 
 
-# ---------------------------------------------------------------------------
-# 4. OpenAI system_fingerprint captured
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_openai_system_fingerprint_captured() -> None:
     """OpenAI response_metadata['system_fingerprint'] is stored."""
@@ -206,11 +182,6 @@ async def test_openai_system_fingerprint_captured() -> None:
     await wrapper.ainvoke(_make_messages())
 
     assert wrapper.last_model_version == "fp_abc123"
-
-
-# ---------------------------------------------------------------------------
-# 5. OpenAI fallback: no fingerprint → model_name
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -226,11 +197,6 @@ async def test_openai_model_name_fallback_captured() -> None:
     assert wrapper.last_model_version == "gpt-4o"
 
 
-# ---------------------------------------------------------------------------
-# 6. OpenAI fallback: no fingerprint, no model_name → model
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_openai_model_key_fallback_captured() -> None:
     """When system_fingerprint and model_name absent, 'model' key is stored."""
@@ -244,15 +210,9 @@ async def test_openai_model_key_fallback_captured() -> None:
     assert wrapper.last_model_version == "gpt-4o-2024-08-06"
 
 
-# ---------------------------------------------------------------------------
-# 7. Empty / missing response_metadata leaves last_model_version as None
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_empty_response_metadata_leaves_version_none() -> None:
     """Missing/empty response_metadata does not update last_model_version."""
-    # AIMessage with usage_metadata (OpenAI shape) but no version info in response_metadata
     ai_msg = AIMessage(
         content="hi",
         usage_metadata={
@@ -262,7 +222,6 @@ async def test_empty_response_metadata_leaves_version_none() -> None:
             "input_token_details": {"cache_read": 0},
         },
         response_metadata={"finish_reason": "stop"},
-        # No 'model', 'system_fingerprint', or 'model_name' keys
     )
     fake_llm = AsyncMock()
     fake_llm.ainvoke = AsyncMock(return_value=ai_msg)
@@ -271,11 +230,6 @@ async def test_empty_response_metadata_leaves_version_none() -> None:
     await wrapper.ainvoke(_make_messages())
 
     assert wrapper.last_model_version is None
-
-
-# ---------------------------------------------------------------------------
-# 8. Multiple sequential calls — updates to latest non-None value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -296,16 +250,10 @@ async def test_multiple_calls_update_to_latest() -> None:
     assert wrapper.last_model_version == "claude-3-5-sonnet-20250101"
 
 
-# ---------------------------------------------------------------------------
-# 9. None response_metadata on second call does NOT overwrite existing value
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_none_result_does_not_overwrite_existing() -> None:
     """If a second call yields no extractable version, the previous value is kept."""
     ai_msg_v1 = _anthropic_ai_msg(model="claude-3-5-sonnet-20241022")
-    # Second message has no model version info
     ai_msg_empty = AIMessage(
         content="hi",
         usage_metadata={
@@ -326,5 +274,4 @@ async def test_none_result_does_not_overwrite_existing() -> None:
     assert wrapper.last_model_version == "claude-3-5-sonnet-20241022"
 
     await wrapper.ainvoke(_make_messages())
-    # Should retain the previous value, not reset to None
     assert wrapper.last_model_version == "claude-3-5-sonnet-20241022"

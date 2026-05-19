@@ -17,16 +17,11 @@ from pathlib import Path
 
 import nbformat
 
-# ---------------------------------------------------------------------------
-# Locate the generator script (importable as module)
-# ---------------------------------------------------------------------------
-
 SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
 GENERATOR_PATH = SCRIPTS_DIR / "gen_analysis_notebook.py"
 NOTEBOOKS_DIR = Path(__file__).resolve().parents[3] / "notebooks"
 COMMITTED_NB_PATH = NOTEBOOKS_DIR / "analysis_template.ipynb"
 
-# 7 RQ2 metric symbols that must appear somewhere in RQ2 cells
 _RQ2_REQUIRED_SYMBOLS = [
     "compute_hurt_rate",
     "compute_oracle_gap_manual",
@@ -44,15 +39,9 @@ def _import_generator() -> object:
     assert spec is not None, f"Could not build spec for {GENERATOR_PATH}"
     assert spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    # Stash in sys.modules so relative imports (if any) resolve correctly
     sys.modules["gen_analysis_notebook"] = mod
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _cell_sources(nb: nbformat.NotebookNode) -> list[str]:
@@ -65,7 +54,7 @@ def _rq2_sources(nb: nbformat.NotebookNode) -> str:
 
     We detect RQ2 cells by looking for the string "RQ2" (case-insensitive) in
     the cell source.  This is intentionally broad so that a markdown header
-    like ``## RQ2`` and subsequent code cells are both matched.
+    like ``
     """
     rq2_start = False
     rq3_start = False
@@ -74,22 +63,15 @@ def _rq2_sources(nb: nbformat.NotebookNode) -> str:
     for cell in nb.cells:
         src: str = cell["source"]
         src_upper = src.upper()
-        # Start collecting when we see an RQ2 section marker
         if "## RQ2" in src_upper or "# RQ2" in src_upper:
             rq2_start = True
             rq3_start = False
-        # Stop collecting when RQ3 starts
         if rq2_start and ("## RQ3" in src_upper or "# RQ3" in src_upper):
             rq3_start = True
         if rq2_start and not rq3_start:
             collected.append(src)
 
     return "\n".join(collected)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestNotebookGenerator:
@@ -113,7 +95,6 @@ class TestNotebookGenerator:
         """nbformat.validate() must pass without raising ValidationError."""
         mod = _import_generator()
         nb = mod.generate_notebook()  # type: ignore[union-attr]
-        # raises nbformat.ValidationError on failure
         nbformat.validate(nb)
 
     def test_committed_notebook_matches_generator(self) -> None:

@@ -26,11 +26,6 @@ def close_all_figures() -> None:  # type: ignore[return]
     plt.close("all")
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def runs_df() -> pd.DataFrame:
     """Minimal runs DataFrame for plot_oracle_vs_router."""
@@ -66,11 +61,6 @@ def oracle_table_empty() -> OracleTable:
         by_task_id={},
         **{"_default": "linear"},
     )
-
-
-# ---------------------------------------------------------------------------
-# TestPlotOracleVsRouter
-# ---------------------------------------------------------------------------
 
 
 class TestPlotOracleVsRouter:
@@ -152,11 +142,6 @@ class TestPlotOracleVsRouter:
         )
         fig = plot_oracle_vs_router(df, oracle_table)
         assert isinstance(fig, matplotlib.figure.Figure)
-
-
-# ---------------------------------------------------------------------------
-# Export check
-# ---------------------------------------------------------------------------
 
 
 class TestOracleExports:

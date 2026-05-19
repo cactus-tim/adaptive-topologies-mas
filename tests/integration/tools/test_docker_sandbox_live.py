@@ -14,10 +14,6 @@ import pytest
 from atm.tools.sandbox.base import SandboxConfig
 from atm.tools.sandbox.docker_sandbox import DockerSandbox
 
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
-
 _SECCOMP_PATH = pathlib.Path(__file__).parents[3] / "conf" / "sandbox" / "seccomp.json"
 
 
@@ -32,19 +28,12 @@ def sandbox(seccomp_str: str) -> DockerSandbox:
         mem_limit="256m",
         pids_limit=64,
         timeout_s=15.0,
-        # Use SandboxConfig defaults for tmpfs — they include uid=1000,gid=1000
-        # which is required for the unprivileged user inside the container.
     )
     return DockerSandbox(
         config=cfg,
         seccomp_json_str=seccomp_str,
         prefetch=False,
     )
-
-
-# ---------------------------------------------------------------------------
-# Basic execution
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.docker
@@ -62,11 +51,6 @@ async def test_exit_code_nonzero(sandbox: DockerSandbox) -> None:
     """Code that raises an exception should have a non-zero exit code."""
     result = await sandbox.execute(lang="python", code="raise ValueError('boom')")
     assert result.exit_code != 0
-
-
-# ---------------------------------------------------------------------------
-# Filesystem isolation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.docker
@@ -114,11 +98,6 @@ async def test_work_dir_writable(sandbox: DockerSandbox) -> None:
     assert "in work dir" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# Multi-file
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.docker
 async def test_multi_file_execution(sandbox: DockerSandbox) -> None:
     """Files dict should be uploaded and accessible from main code."""
@@ -132,11 +111,6 @@ async def test_multi_file_execution(sandbox: DockerSandbox) -> None:
     result = await sandbox.execute(lang="python", code=code, files=files)
     assert result.exit_code == 0, f"Multi-file execution failed: {result.stderr}"
     assert "Hello, world!" in result.stdout
-
-
-# ---------------------------------------------------------------------------
-# Network isolation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.docker
@@ -174,28 +148,17 @@ async def test_network_disabled_urllib(sandbox: DockerSandbox) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Timeout
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.docker
 async def test_timeout_infinite_loop(seccomp_str: str) -> None:
     """An infinite loop should be killed after timeout and timed_out=True."""
     cfg = SandboxConfig(
         mem_limit="128m",
         pids_limit=64,
-        timeout_s=3.0,  # short timeout for test speed
-        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
+        timeout_s=3.0,
     )
     sb = DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
     result = await sb.execute(lang="python", code="while True: pass", timeout=2.0)
     assert result.timed_out is True, "timed_out must be True for infinite loop with short timeout"
-
-
-# ---------------------------------------------------------------------------
-# OOM kill
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.docker
@@ -205,10 +168,8 @@ async def test_oom_killed(seccomp_str: str) -> None:
         mem_limit="64m",
         pids_limit=64,
         timeout_s=30.0,
-        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     sb = DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
-    # Allocate ~512MB — far beyond 64m limit
     result = await sb.execute(
         lang="python",
         code="x = bytearray(512 * 1024 * 1024)",

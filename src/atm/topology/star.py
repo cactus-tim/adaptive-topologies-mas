@@ -1,55 +1,4 @@
-"""StarTopology — coordinator-centered LangGraph with phase-advance semantics.
-
-Architecture (arch.md §7.2):
-  - Graph: coordinator → {planner|executor|critic} → coordinator → ... → END
-  - Entry point: "coordinator"
-  - Coordinator is a rule-based (not LLM) async node.
-  - Phase-advance semantics:
-      planning → execution → verification → done
-  - Phase-advance triggers:
-      planning:     signals.ready_for_execution OR iter_within_phase >= planning_max_iter
-      execution:    signals.ready_for_verification OR iter_within_phase >= exec_max_iter
-      verification: signals.critic_approved == True OR iter_within_phase >= verify_max_iter → done
-      verification: otherwise → critic (loop)
-  - Global guard: _should_stop(iter_total >= max_iterations) → END
-
-With HITL enabled (human_cfg.enabled=True, default role=reviewer):
-  After critic_postprocess, a human_reviewer node is inserted before routing.
-  Reviewer mode (default): human reviews critic output; approve → continue, reject → loop back.
-
-  Coordinator-override mode (extra["override_coordinator"]=True):
-    DEFERRED to M9.2 — only reviewer mode is wired up in M9.1.
-    ``extra.override_coordinator`` and ``signals["human_phase_override"]`` reader in
-    _route_from_coord exist as scaffolding for M9.2.  No built-in code path currently
-    writes ``human_phase_override`` from inside the topology.
-
-  _route_from_coord FIRST checks signals["human_phase_override"] as scaffolding for M9.2;
-  # known-limitation: no M9.1 code path writes this signal — it will only become
-  # functional when the coordinator-override custom apply_decision is wired in M9.2.
-  Falls through to normal phase-based routing if signal is absent/None.
-
-Nodes (HITL disabled — back-compat):
-  coordinator, planner, executor, critic, critic_postprocess
-
-Nodes (HITL enabled):
-  coordinator, planner, executor, critic, critic_postprocess, human_reviewer
-
-Edges:
-  START → coordinator
-  coordinator → conditional via _route_from_coord
-  planner → coordinator
-  executor → coordinator
-  critic → critic_postprocess → [human_reviewer →] coordinator
-
-TopologyConfig.extra defaults (under namespaced extras.star):
-  planning_max_iter: 2   — mirrors ``_DEFAULT_PLANNING_MAX_ITER``
-  exec_max_iter: 5       — mirrors ``_DEFAULT_EXEC_MAX_ITER``
-  verify_max_iter: 3     — mirrors ``_DEFAULT_VERIFY_MAX_ITER``
-
-  Legacy flat keys (e.g. ``extra: {planning_max_iter: 2}``) are auto-remapped
-  to ``extras.star.*`` with a ``DeprecationWarning`` by the bw-compat validator
-  in ``atm.experiment.config.TopologyCfg``.
-"""
+"""StarTopology — coordinator-centered LangGraph with phase-advance semantics."""
 
 from __future__ import annotations
 
@@ -66,10 +15,6 @@ if TYPE_CHECKING:
     from atm.experiment.config import HumanCfg
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Module-level lazy imports for HITL — patchable in tests
-# ---------------------------------------------------------------------------
 
 LLMSimulatedGateway: Any
 CLIGateway: Any
@@ -90,47 +35,22 @@ try:
 except ImportError:  # pragma: no cover
     build_human_node_factory = None
 
-# ---------------------------------------------------------------------------
-# Constants — default phase caps
-# ---------------------------------------------------------------------------
-
 _DEFAULT_PLANNING_MAX_ITER = 2
 _DEFAULT_EXEC_MAX_ITER = 5
 _DEFAULT_VERIFY_MAX_ITER = 3
 
-# Route sentinels used in conditional edge map
 _ROUTE_PLANNER = "planner"
 _ROUTE_EXECUTOR = "executor"
 _ROUTE_CRITIC = "critic"
 _ROUTE_END = "__end__"
 
 
-# ---------------------------------------------------------------------------
-# _critic_postprocess adapter node
-# ---------------------------------------------------------------------------
-
-
 async def _critic_postprocess(state: GraphState) -> dict[str, Any]:
-    """Parse the last DECISION-kind message from critic.outbox.
-
-    Sets shared.signals["critic_approved"]:
-      - True  if payload["approved"] == True
-      - False if payload["approved"] == False OR message is malformed
-
-    Malformed = no MessageKind.DECISION messages OR missing payload["approved"].
-    Malformed is treated as rejected with a WARNING log (no exception raised).
-
-    Args:
-        state: GraphState dict.
-
-    Returns:
-        Delta dict updating shared.signals["critic_approved"].
-    """
+    """Parse critic's last DECISION and update signals['critic_approved']."""
     agents: dict[str, Any] = dict(state.get("agents") or {})
     critic_state: dict[str, Any] = dict(agents.get("critic") or {})
     outbox: list[Any] = list(critic_state.get("outbox") or [])
 
-    # Find last DECISION-kind message
     decision_msg = None
     for msg in reversed(outbox):
         kind = getattr(msg, "kind", None)
@@ -162,7 +82,6 @@ async def _critic_postprocess(state: GraphState) -> dict[str, Any]:
                 )
                 approved = False
 
-    # Return delta: update shared.signals["critic_approved"]
     existing_shared: dict[str, Any] = dict(state.get("shared") or {})
     existing_signals: dict[str, Any] = dict(existing_shared.get("signals") or {})
     existing_signals["critic_approved"] = approved
@@ -171,31 +90,9 @@ async def _critic_postprocess(state: GraphState) -> dict[str, Any]:
     return {"shared": existing_shared}
 
 
-# ---------------------------------------------------------------------------
-# StarTopology
-# ---------------------------------------------------------------------------
-
-
 @TopologyRegistry.register("star")
 class StarTopology:
-    """Coordinator-centered LangGraph topology.
-
-    Graph structure:
-      START → coordinator → conditional routing →
-        planner → coordinator (loop)
-        executor → coordinator (loop)
-        critic → critic_postprocess → coordinator (loop)
-        END
-
-    The coordinator node:
-      1. Increments iter_total and iteration.
-      2. Computes iter_within_phase = iter_total - phase_started_at_iter.
-      3. Applies phase-advance rules (plan → exec → verify → done).
-      4. On verification→done: populates shared.final_answer from last Executor DRAFT.
-      5. Updates shared with new counters and phase_history.
-
-    _route_from_coord() reads the updated state and returns the next node name.
-    """
+    """Coordinator-centered topology: START → coordinator → {planner|executor|critic} → loop."""
 
     name = "star"
 
@@ -205,42 +102,24 @@ class StarTopology:
         cfg: TopologyConfig,
         **kwargs: Any,
     ) -> Any:
-        """Compile and return a CompiledStateGraph.
-
-        Args:
-            agents: Dict mapping agent_id → Agent instance with async .step() method.
-            cfg:    TopologyConfig holding max_iterations and extra phase caps.
-            **kwargs: Optional; checkpointer=... is forwarded to graph.compile().
-                      human_cfg: HumanCfg | None — HITL configuration (M9.1).
-                      human_gateway_llm: LLM wrapper for LLMSimulatedGateway.
-
-        Returns:
-            CompiledStateGraph ready for ainvoke.
-        """
+        """Build and compile the Star LangGraph."""
         checkpointer = kwargs.get("checkpointer")
 
-        # Extract phase caps from per-topology extras bucket with defaults
         extras = get_topology_extras(cfg, "star")
         planning_max_iter: int = int(extras.get("planning_max_iter", _DEFAULT_PLANNING_MAX_ITER))
         exec_max_iter: int = int(extras.get("exec_max_iter", _DEFAULT_EXEC_MAX_ITER))
         verify_max_iter: int = int(extras.get("verify_max_iter", _DEFAULT_VERIFY_MAX_ITER))
 
-        # ----------------------------------------------------------------
-        # Build coordinator node (closure captures cfg + phase caps)
-        # ----------------------------------------------------------------
-
         async def coordinator_node(state: GraphState) -> dict[str, Any]:
             """Rule-based coordinator: increments counters + advances phase."""
             shared: dict[str, Any] = dict(state.get("shared") or {})
 
-            # Increment global counters
             old_iter_total: int = int(shared.get("iter_total") or 0)
             new_iter_total = old_iter_total + 1
             new_iteration = int(shared.get("iteration") or 0) + 1
             shared["iter_total"] = new_iter_total
             shared["iteration"] = new_iteration
 
-            # Current phase and phase tracking
             phase_started_at: int = int(shared.get("phase_started_at_iter") or 0)
             iter_within_phase = new_iter_total - phase_started_at
             current_phase = shared.get("phase") or Phase.PLANNING
@@ -249,10 +128,7 @@ class StarTopology:
             signals: dict[str, Any] = dict(shared.get("signals") or {})
             phase_history: list[Any] = list(shared.get("phase_history") or [])
 
-            # ---- Phase-advance logic ----
-
             if current_phase_str == "planning":
-                # Advance to execution if signal or iter cap reached
                 if signals.get("ready_for_execution") or iter_within_phase >= planning_max_iter:
                     phase_history = list(phase_history)
                     phase_history.append(Phase.PLANNING)
@@ -261,7 +137,6 @@ class StarTopology:
                     shared["phase_history"] = phase_history
 
             elif current_phase_str == "execution":
-                # Advance to verification if signal or iter cap reached
                 if signals.get("ready_for_verification") or iter_within_phase >= exec_max_iter:
                     phase_history = list(phase_history)
                     phase_history.append(Phase.EXECUTION)
@@ -278,18 +153,9 @@ class StarTopology:
                     shared["phase"] = Phase.DONE
                     shared["phase_history"] = phase_history
 
-                    # Populate final_answer from last Executor DRAFT message
                     final_answer = _extract_final_answer(state)
                     shared["final_answer"] = final_answer
 
-            # Always populate final_answer with whatever the executor has
-            # produced so far. The coordinator runs every tick, so this keeps
-            # shared.final_answer current right up to the moment _should_stop
-            # cuts the run off (global iter cap, budget exceeded). Without
-            # this, hitting the cap before the verification→done branch
-            # leaves the field empty and the evaluator scores 0 even on
-            # otherwise-correct work. The verification→done branch above is
-            # still authoritative for "approved" runs.
             if not shared.get("final_answer"):
                 _provisional = _extract_final_answer(state)
                 if _provisional and _provisional != "<incomplete>":
@@ -298,32 +164,12 @@ class StarTopology:
             shared["signals"] = signals
             return {"shared": shared}
 
-        # ----------------------------------------------------------------
-        # Build _route_from_coord (closure captures cfg)
-        # ----------------------------------------------------------------
-
         def _route_from_coord(state: GraphState) -> str:
-            """Routing function — returns next node name after coordinator.
-
-            FIRST checks signals["human_phase_override"] (set by human_coordinator mode).
-            If set to one of {"advance","stay","finalize"}, forces the routing decision:
-              - "advance" → next phase (executor/critic based on current phase + 1)
-              - "stay"    → keep current phase (same routing as normal)
-              - "finalize" → END
-            After reading, clears: shared.signals["human_phase_override"] = None
-            (mutates state in-place so the next coordinator tick sees it cleared).
-            Falls through to normal phase-based routing if unset/None.
-            """
-            # Access shared directly (mutable reference) to allow signal clearing
+            """Return next node name; checks human_phase_override signal first."""
             shared_raw: dict[str, Any] = cast(dict[str, Any], state).get("shared") or {}
             signals_raw: dict[str, Any] = shared_raw.get("signals") or {}
             current_phase = shared_raw.get("phase") or Phase.PLANNING
 
-            # ---- Human phase override (coordinator mode scaffolding) ----
-            # known-limitation (M9.2 deferral): coordinator-override mode is not
-            # implemented in M9.1.  No built-in code path writes this signal.
-            # The read+clear logic below is scaffolding for M9.2 where a custom
-            # apply_decision callback will populate human_phase_override.
             override = signals_raw.get("human_phase_override")
             if override is not None and override in ("advance", "stay", "finalize"):
                 # Clear the signal in the original signals dict (consumed)
@@ -338,12 +184,8 @@ class StarTopology:
                         return _ROUTE_EXECUTOR
                     if phase_str == "execution":
                         return _ROUTE_CRITIC
-                    # verification or done → end
                     return _ROUTE_END
 
-                # override == "stay" → fall through to normal routing below
-
-            # Global stop guard
             stop, _reason = _should_stop(
                 cast(dict[str, Any], state),
                 cfg,
@@ -353,7 +195,6 @@ class StarTopology:
             if stop:
                 return _ROUTE_END
 
-            # Phase-based routing
             phase_str = str(current_phase)
 
             if phase_str == "planning":
@@ -368,13 +209,8 @@ class StarTopology:
             if phase_str == "done":
                 return _ROUTE_END
 
-            # Fallback: END (should not happen)
             logger.warning("star coordinator: unknown phase %r, routing to END", current_phase)
             return _ROUTE_END
-
-        # ----------------------------------------------------------------
-        # Agent node wrappers
-        # ----------------------------------------------------------------
 
         planner_agent = agents.get("planner")
         executor_agent = agents.get("executor")
@@ -398,30 +234,19 @@ class StarTopology:
             result: dict[str, Any] = await critic_agent.step(state)
             return result
 
-        # ----------------------------------------------------------------
-        # HITL configuration — extract from kwargs
-        # ----------------------------------------------------------------
-
         human_cfg: HumanCfg | None = kwargs.get("human_cfg")
         hitl_enabled = human_cfg is not None and human_cfg.enabled
 
-        # ----------------------------------------------------------------
-        # Assemble the graph
-        # ----------------------------------------------------------------
-
         graph: StateGraph[GraphState] = StateGraph(GraphState)
 
-        # Add nodes
         graph.add_node("coordinator", coordinator_node)
         graph.add_node("planner", planner_node)
         graph.add_node("executor", executor_node)
         graph.add_node("critic", critic_node)
         graph.add_node("critic_postprocess", _critic_postprocess)
 
-        # Entry point
         graph.add_edge(START, "coordinator")
 
-        # Coordinator → conditional routing
         graph.add_conditional_edges(
             "coordinator",
             _route_from_coord,
@@ -433,27 +258,18 @@ class StarTopology:
             },
         )
 
-        # Agent → coordinator edges
         graph.add_edge("planner", "coordinator")
         graph.add_edge("executor", "coordinator")
 
-        # Critic pipeline: critic → critic_postprocess → [human_reviewer →] coordinator
         graph.add_edge("critic", "critic_postprocess")
 
         if hitl_enabled:
             assert human_cfg is not None  # narrowing for mypy
-            # known-limitation (M9.2 deferral): extra.override_coordinator is read here
-            # as scaffolding but coordinator-override mode is not implemented in M9.1.
-            # When M9.2 is implemented, pass a custom apply_decision to
-            # build_human_node_factory that maps action → signals["human_phase_override"].
-            # _override_coordinator = bool((human_cfg.extra or {}).get("override_coordinator"))
 
-            # Build gateway
             gateway_llm: Any = kwargs.get("human_gateway_llm")
             if human_cfg.gateway == "cli":
                 gateway_instance: Any = CLIGateway() if CLIGateway is not None else None
             else:
-                # default: llm_simulated
                 gateway_instance = (
                     LLMSimulatedGateway(llm=gateway_llm)
                     if LLMSimulatedGateway is not None
@@ -466,7 +282,6 @@ class StarTopology:
                     "Ensure atm.human is installed."
                 )
 
-            # Build human_reviewer node using build_human_node_factory (module-level import)
             def _star_question_extractor(state: dict[str, Any]) -> str:
                 """Extract question from critic's latest DECISION message."""
                 agents_s: dict[str, Any] = state.get("agents", {})
@@ -492,50 +307,16 @@ class StarTopology:
             graph.add_edge("critic_postprocess", "human_reviewer")
             graph.add_edge("human_reviewer", "coordinator")
         else:
-            # Default path (back-compat): critic_postprocess → coordinator
             graph.add_edge("critic_postprocess", "coordinator")
 
         return graph.compile(checkpointer=checkpointer)
-
-
-# ---------------------------------------------------------------------------
-# Helper: extract final_answer from state
-# ---------------------------------------------------------------------------
 
 
 _CODE_TASKS: set[str] = {"humaneval"}
 
 
 def _extract_final_answer(state: GraphState) -> str:
-    """Extract final_answer from the executor's output in state.
-
-    Task-aware preference (mirrors atm.topology.chain post-d585bbb):
-
-    * CODE tasks (``shared.task_id`` in ``_CODE_TASKS``, currently
-      ``humaneval``): prefer a written file artifact — tool-using executors
-      emit short DRAFT messages ("Solution written to solution.py") while
-      the actual code lives inside a ``file_write`` tool call.
-
-    * NON-CODE tasks (``gsm8k`` / ``commongen`` / ``dabench``): prefer the
-      DRAFT message. ``executor.yaml`` unconditionally tells the model to
-      dump "programming tasks" to ``solution.py``, so non-code executors
-      still write a ``solution.py`` — but it contains Python intermediates
-      (problem restatement, helper functions, debug prints) rather than
-      the human-readable answer. The DRAFT message is where the executor
-      actually states its answer in plain form.
-
-    Strategy order, applied within the task-aware preference:
-
-      1. Last successful ``file_write`` to ``solution.py`` / ``main.py``,
-         then any ``.py`` path (filtered by ``ToolResult.ok`` so a
-         rejected ``overwrite=False`` second write does not shadow the
-         valid first write).
-      2. Last DRAFT message in ``state["agents"]["executor"]["outbox"]``.
-      3. Last DRAFT from ``executor`` in ``state["messages"]`` (text-only
-         executors with no tool use).
-      4. Any non-python file artifact (last resort).
-      5. Fallback: ``"<incomplete>"``.
-    """
+    """Extract final_answer from executor output; code tasks prefer file artifact, others DRAFT."""
     agents: dict[str, Any] = dict(state.get("agents") or {})
     executor_state: dict[str, Any] = dict(agents.get("executor") or {})
 
@@ -543,7 +324,6 @@ def _extract_final_answer(state: GraphState) -> str:
     task_id: str = str(shared.get("task_id") or "").lower()
     is_code_task: bool = task_id in _CODE_TASKS
 
-    # Collect file_write candidates (Strategy 1 + 4).
     tool_calls: list[Any] = list(executor_state.get("tool_calls") or [])
     tool_results: list[Any] = list(executor_state.get("tool_results") or [])
     ok_call_ids: set[Any] = {
@@ -569,10 +349,9 @@ def _extract_final_answer(state: GraphState) -> str:
                 py_any = str(content)
             if py_solution is None and (path.endswith("solution.py") or path.endswith("main.py")):
                 py_solution = str(content)
-                break  # best-quality match — stop early
+                break
     file_artifact: str | None = py_solution or py_any
 
-    # Collect DRAFT candidates (Strategy 2 + 3).
     draft: str | None = None
     outbox: list[Any] = list(executor_state.get("outbox") or [])
     for msg in reversed(outbox):
@@ -593,7 +372,6 @@ def _extract_final_answer(state: GraphState) -> str:
                     draft = str(content)
                     break
 
-    # Task-aware preference.
     if is_code_task:
         primary, secondary = file_artifact, draft
     else:

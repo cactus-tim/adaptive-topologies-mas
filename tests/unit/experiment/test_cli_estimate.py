@@ -46,27 +46,16 @@ def _fake_grid_estimate() -> GridEstimate:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 1: --help works
-# ---------------------------------------------------------------------------
-
-
 def test_estimate_help_exits_zero() -> None:
     result = runner.invoke(app, ["estimate", "--help"])
     assert result.exit_code == 0
     assert "--config" in result.output or "config" in result.output.lower()
 
 
-# ---------------------------------------------------------------------------
-# Test 2: success path → exit 0, table rendered
-# ---------------------------------------------------------------------------
-
-
 def test_estimate_renders_table_and_total(tmp_path: Path) -> None:
     cfg_file = tmp_path / "smoke.yaml"
     cfg_file.write_text("name: test\n")
 
-    # Mock cfg with .observability.pg_dsn + .estimate.use_historical
     mock_cfg = MagicMock()
     mock_cfg.observability.pg_dsn = "postgresql+asyncpg://x"
     mock_cfg.estimate.use_historical = False
@@ -86,25 +75,14 @@ def test_estimate_renders_table_and_total(tmp_path: Path) -> None:
     assert "chain" in result.output
     assert "TOTAL" in result.output
     assert "0.0546" in result.output
-    # source column rendered
     assert "historical_avg" in result.output
     assert "heuristic" in result.output
-
-
-# ---------------------------------------------------------------------------
-# Test 3: missing config file → exit 3
-# ---------------------------------------------------------------------------
 
 
 def test_estimate_missing_config_exits_3(tmp_path: Path) -> None:
     missing = tmp_path / "nope.yaml"
     result = runner.invoke(app, ["estimate", "--config", str(missing)])
     assert result.exit_code == 3
-
-
-# ---------------------------------------------------------------------------
-# Test 4: empty config list → exit 0 with "no configs" message
-# ---------------------------------------------------------------------------
 
 
 def test_estimate_empty_configs_exits_zero(tmp_path: Path) -> None:
@@ -116,11 +94,6 @@ def test_estimate_empty_configs_exits_zero(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "no configs" in result.output.lower()
-
-
-# ---------------------------------------------------------------------------
-# Test 5: use_historical=True → session_factory is passed through
-# ---------------------------------------------------------------------------
 
 
 def test_estimate_historical_opens_session(tmp_path: Path) -> None:
@@ -144,7 +117,6 @@ def test_estimate_historical_opens_session(tmp_path: Path) -> None:
         patch("atm.experiment.cli.create_engine") as mock_create,
         patch("atm.experiment.cli.create_session_factory") as mock_factory,
     ):
-        # The CLI calls engine.dispose() via asyncio.run; provide an async dispose.
         mock_engine = MagicMock()
 
         async def _dispose() -> None:
@@ -158,5 +130,4 @@ def test_estimate_historical_opens_session(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert seen_factory == [next((f for f in seen_factory if f is not None), seen_factory[0])]
-    # session_factory should be the sentinel
     assert seen_factory[0] is not None

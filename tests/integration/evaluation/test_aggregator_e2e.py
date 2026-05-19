@@ -31,13 +31,8 @@ from atm.storage.models import Run
 from atm.storage.session import create_session_factory, session_scope
 from atm.tasks.base import TaskSpec
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 
-# Pre-built GSM8K TaskSpec with expected="42" — no HuggingFace fetch needed.
 _GSM8K_SPEC = TaskSpec(
     id="gsm8k/e2e/0",
     type="reasoning",
@@ -114,11 +109,6 @@ def _make_cfg(pg_dsn: str, parquet_dir: str) -> object:
     )
 
 
-# ---------------------------------------------------------------------------
-# E2E test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_gsm8k_run_quality_score_is_one(
     pg_engine_fast: AsyncEngine,
@@ -135,7 +125,6 @@ async def test_gsm8k_run_quality_score_is_one(
       5. Assert ``runs.quality_score == 1.0`` via SQLAlchemy read.
     """
     pg_dsn: str = pg_engine_fast.url.render_as_string(hide_password=False)
-    # asyncpg DSN must include the driver suffix
     if "+asyncpg" not in pg_dsn:
         pg_dsn = pg_dsn.replace("postgresql://", "postgresql+asyncpg://")
 
@@ -146,16 +135,13 @@ async def test_gsm8k_run_quality_score_is_one(
     with patch("atm.experiment.runner.resolve_spec", return_value=_GSM8K_SPEC):
         result = await run_one(cfg)  # type: ignore[arg-type]
 
-    # The run must complete successfully
     assert result.status == "completed", f"Expected status='completed', got {result.status!r}"
 
-    # quality_score in RunResult metrics
     quality = result.metrics.get("quality_score")
     assert quality == pytest.approx(1.0), (
         f"Expected quality_score=1.0 in RunResult.metrics, got {quality!r}"
     )
 
-    # Verify the value is persisted to PostgreSQL
     factory = create_session_factory(pg_engine_fast)
     async with session_scope(factory) as session:
         row_result = await session.execute(select(Run).where(Run.id == result.run_id))

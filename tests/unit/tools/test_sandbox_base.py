@@ -8,11 +8,6 @@ from pydantic import ValidationError
 from atm.tools.sandbox.base import ExecResult, SandboxConfig
 
 
-# ---------------------------------------------------------------------------
-# ExecResult tests
-# ---------------------------------------------------------------------------
-
-
 def test_exec_result_frozen_fields() -> None:
     result = ExecResult(
         stdout="hello\n",
@@ -27,7 +22,6 @@ def test_exec_result_frozen_fields() -> None:
     assert result.timed_out is False
     assert result.oom_killed is False
 
-    # Must be frozen — assignment should raise (Pydantic v2 raises ValidationError)
     with pytest.raises((TypeError, AttributeError, ValidationError)):
         result.stdout = "other"  # type: ignore[misc]
 
@@ -44,11 +38,6 @@ def test_exec_result_all_fields_present() -> None:
     assert result.stderr == "err"
     assert result.duration_ms == 500
     assert result.timed_out is True
-
-
-# ---------------------------------------------------------------------------
-# SandboxConfig tests
-# ---------------------------------------------------------------------------
 
 
 def test_sandbox_config_tmpfs_defaults_include_tmp() -> None:

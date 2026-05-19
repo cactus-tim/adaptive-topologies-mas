@@ -13,15 +13,9 @@ from unittest.mock import MagicMock, patch
 from atm.tasks import resolve_spec
 from atm.tasks.base import TASKS, TaskSpec
 
-# ---------------------------------------------------------------------------
-# 1. Registered dataset name → TaskSpec
-# ---------------------------------------------------------------------------
-
 
 def test_resolve_spec_registered_name_returns_task_spec() -> None:
     """resolve_spec returns a TaskSpec for a registered dataset (gsm8k post-M10)."""
-    # gsm8k is registered by M10 via atm.tasks.gsm8k side-effect import
-    # We patch TASKS.get/sample to avoid needing actual dataset files
     fake_spec = TaskSpec(
         id="mmlu/test/0",
         type="reasoning",
@@ -45,11 +39,6 @@ def test_resolve_spec_registered_name_returns_task_spec() -> None:
     assert result.id == "mmlu/test/0"
 
 
-# ---------------------------------------------------------------------------
-# 2. Inline-prompt / unknown name → None
-# ---------------------------------------------------------------------------
-
-
 def test_resolve_spec_unknown_name_returns_none() -> None:
     """resolve_spec returns None when task name is not in TASKS registry."""
     mock_task_cfg = MagicMock()
@@ -57,15 +46,9 @@ def test_resolve_spec_unknown_name_returns_none() -> None:
     mock_task_cfg.shuffle_seed = 0
     mock_task_cfg.input = "Write fib(n)"
 
-    # Do not patch TASKS — "nonexistent_m6_inline_task" should not be registered
     result = resolve_spec(mock_task_cfg)
 
     assert result is None
-
-
-# ---------------------------------------------------------------------------
-# 3. Seed determinism — same seed returns same TaskSpec id
-# ---------------------------------------------------------------------------
 
 
 def test_resolve_spec_seed_determinism() -> None:

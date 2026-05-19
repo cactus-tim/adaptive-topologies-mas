@@ -20,20 +20,10 @@ from atm.llm.pricing import ModelPricing, Pricing
 PRICING_YAML = "conf/pricing.yaml"
 
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def pricing() -> Pricing:
     """Load pricing from the real conf/pricing.yaml file."""
     return Pricing.from_yaml(PRICING_YAML)
-
-
-# ---------------------------------------------------------------------------
-# Test 1: YAML loader
-# ---------------------------------------------------------------------------
 
 
 def test_from_yaml_returns_pricing_instance(pricing: Pricing) -> None:
@@ -80,11 +70,6 @@ def test_from_yaml_openai_rates_loaded_correctly(pricing: Pricing) -> None:
     assert mp.cached_input_per_1k == pytest.approx(0.000075)
 
 
-# ---------------------------------------------------------------------------
-# Test 2: Unknown model raises LLMError
-# ---------------------------------------------------------------------------
-
-
 def test_cost_unknown_model_raises_llm_error(pricing: Pricing) -> None:
     """cost() raises LLMError for an unknown model_id."""
     usage = TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
@@ -98,14 +83,8 @@ def test_cost_unknown_model_error_has_model_info(pricing: Pricing) -> None:
     with pytest.raises(LLMError) as exc_info:
         pricing.cost("anthropic:nonexistent", usage)
     err = exc_info.value
-    # LLMError carries provider and model attributes
     assert hasattr(err, "provider")
     assert hasattr(err, "model")
-
-
-# ---------------------------------------------------------------------------
-# Test 3: OpenAI no-cache cost
-# ---------------------------------------------------------------------------
 
 
 def test_cost_openai_no_cache(pricing: Pricing) -> None:
@@ -133,11 +112,6 @@ def test_cost_openai_gpt4o_no_cache(pricing: Pricing) -> None:
     usage = TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
     cost = pricing.cost("openai:gpt-4o", usage)
     assert cost == pytest.approx(0.00075, rel=1e-9)
-
-
-# ---------------------------------------------------------------------------
-# Test 4: OpenAI cache-hit cost
-# ---------------------------------------------------------------------------
 
 
 def test_cost_openai_cache_hit(pricing: Pricing) -> None:
@@ -169,13 +143,7 @@ def test_cost_openai_all_cached(pricing: Pricing) -> None:
         total_tokens=1000,
     )
     cost = pricing.cost("openai:gpt-4o-mini", usage)
-    # 1000 * 0.000075 / 1000 = 0.000075
     assert cost == pytest.approx(0.000075, rel=1e-9)
-
-
-# ---------------------------------------------------------------------------
-# Test 5: Anthropic cache cost
-# ---------------------------------------------------------------------------
 
 
 def test_cost_anthropic_cache(pricing: Pricing) -> None:
@@ -215,13 +183,7 @@ def test_cost_anthropic_no_cache(pricing: Pricing) -> None:
         total_tokens=1500,
     )
     cost = pricing.cost("anthropic:claude-3-5-sonnet-latest", usage)
-    # 1000 * 0.003 / 1000 + 500 * 0.015 / 1000 = 0.003 + 0.0075 = 0.0105
     assert cost == pytest.approx(0.0105, rel=1e-9)
-
-
-# ---------------------------------------------------------------------------
-# Test 6: Fake/zero-cost model
-# ---------------------------------------------------------------------------
 
 
 def test_cost_fake_is_zero(pricing: Pricing) -> None:
@@ -234,11 +196,6 @@ def test_cost_fake_is_zero(pricing: Pricing) -> None:
     )
     cost = pricing.cost("fake:deterministic", usage)
     assert cost == 0.0
-
-
-# ---------------------------------------------------------------------------
-# Test 7: estimate helper
-# ---------------------------------------------------------------------------
 
 
 def test_estimate_returns_float(pricing: Pricing) -> None:

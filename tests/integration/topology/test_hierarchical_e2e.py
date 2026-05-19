@@ -21,7 +21,6 @@ from typing import Any
 
 import pytest
 
-# Side-effect import: triggers @TopologyRegistry.register("hierarchical")
 import atm.topology.hierarchical  # noqa: F401
 from atm.agents.base import Agent
 from atm.agents.config import AgentConfig
@@ -33,13 +32,8 @@ from atm.tools.base import ToolRegistry
 from atm.topology.base import TopologyConfig
 from atm.topology.hierarchical import HierarchicalTopology
 
-# Fixtures directory
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_budget() -> BudgetTracker:
@@ -53,7 +47,6 @@ def _make_pricing() -> Pricing:
 
 
 def _make_llm_for_agent(agent_id: str, fixture_path: Path) -> LLMWrapper:
-    """Build a FakeLLM wrapper for the given agent using scripted fixture."""
     fake = FakeLLM(mode="scripted", fixture=fixture_path)
     return LLMWrapper(
         model_id="fake:scripted",
@@ -64,7 +57,6 @@ def _make_llm_for_agent(agent_id: str, fixture_path: Path) -> LLMWrapper:
 
 
 def _make_worker_agent(agent_id: str, fixture_path: Path) -> Agent:
-    """Build a worker Agent with FakeLLM scripted fixture."""
     llm = _make_llm_for_agent(agent_id, fixture_path)
     cfg = AgentConfig(
         role="executor",
@@ -105,11 +97,6 @@ def _make_initial_state(
     }
 
 
-# ---------------------------------------------------------------------------
-# Main integration test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_hierarchical_e2e_finalize_path() -> None:
     """E2E test: HierarchicalTopology with 4 workers, rule-based coordinators.
@@ -131,12 +118,10 @@ async def test_hierarchical_e2e_finalize_path() -> None:
     if not fixture_path.exists():
         pytest.skip(f"Fixture not found: {fixture_path}")
 
-    # Build worker agents using the scripted fixture
     agents: dict[str, Any] = {}
     for agent_id in ["executor_a1", "executor_a2", "executor_b1", "executor_b2"]:
         agents[agent_id] = _make_worker_agent(agent_id, fixture_path)
 
-    # Build topology
     cfg = TopologyConfig(
         name="hierarchical",
         max_iterations=20,
@@ -154,7 +139,6 @@ async def test_hierarchical_e2e_finalize_path() -> None:
     topology = HierarchicalTopology()
     compiled = topology.build(agents, cfg)
 
-    # Run
     initial_state = _make_initial_state()
     final_state = await compiled.ainvoke(initial_state)
 
@@ -163,15 +147,12 @@ async def test_hierarchical_e2e_finalize_path() -> None:
     final_answer = shared.get("final_answer")
     iter_total = shared.get("iter_total", 0)
 
-    # Assertion 1: iter_total > 0
     assert iter_total > 0, f"iter_total should be > 0, got {iter_total}"
 
-    # Assertion 2: top_coord_finalize signal is True
     assert signals.get("top_coord_finalize") is True, (
         f"Expected signals['top_coord_finalize'] == True, got: {signals}"
     )
 
-    # Assertion 3: final_answer is valid JSON with team_a and team_b keys
     assert final_answer is not None, "final_answer should not be None"
     parsed = json.loads(final_answer)
     assert isinstance(parsed, dict), (
@@ -180,7 +161,6 @@ async def test_hierarchical_e2e_finalize_path() -> None:
     assert "team_a" in parsed, f"Expected 'team_a' key in final_answer, got: {list(parsed.keys())}"
     assert "team_b" in parsed, f"Expected 'team_b' key in final_answer, got: {list(parsed.keys())}"
 
-    # Assertion 4: both team values are non-empty strings
     assert parsed["team_a"] and parsed["team_a"] != "<incomplete>", (
         f"team_a draft should not be empty, got: {parsed['team_a']!r}"
     )
@@ -197,7 +177,6 @@ async def test_hierarchical_e2e_max_iterations_stops_graph() -> None:
     """
     from unittest.mock import MagicMock
 
-    # Build no-draft agents (no DRAFT messages → coordinator won't finalize)
     no_draft_agents: dict[str, Any] = {}
     for agent_id in ["executor_a1", "executor_a2", "executor_b1", "executor_b2"]:
         agent = MagicMock()
@@ -232,9 +211,7 @@ async def test_hierarchical_e2e_max_iterations_stops_graph() -> None:
     shared = final_state.get("shared", {})
     iter_total = shared.get("iter_total", 0)
 
-    # iter_total should not wildly exceed max_iterations
     assert iter_total >= 1, "Should have run at least once"
-    # Give a reasonable buffer for the counter increments in coordinator nodes
     assert iter_total <= cfg.max_iterations + 10, (
         f"iter_total {iter_total} exceeded max_iterations {cfg.max_iterations} by too much"
     )

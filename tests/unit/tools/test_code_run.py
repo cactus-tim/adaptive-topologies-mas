@@ -15,21 +15,12 @@ import pytest
 from atm.tools.local_.code_run import CodeRunTool
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 _SANDBOX = SubprocessSandbox()
 
 
 @pytest.fixture
 def tool() -> CodeRunTool:
     return CodeRunTool(sandbox=_SANDBOX)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

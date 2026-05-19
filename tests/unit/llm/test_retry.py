@@ -10,10 +10,6 @@ import pytest
 from atm.core.errors import LLMError
 from atm.llm.retry import RetryPolicy, is_transient, with_retry
 
-# ---------------------------------------------------------------------------
-# Helpers / fake exception classes
-# ---------------------------------------------------------------------------
-
 
 class FakeRateLimitError(Exception):
     """Simulates a 429 rate-limit error via duck-typed status_code."""
@@ -33,11 +29,6 @@ class FakeTransientExplicitError(Exception):
 
 class FakeNonTransientError(Exception):
     """Plain error with no status_code — should NOT be retried by default."""
-
-
-# ---------------------------------------------------------------------------
-# is_transient tests
-# ---------------------------------------------------------------------------
 
 
 class TestIsTransient:
@@ -97,11 +88,6 @@ class TestIsTransient:
         assert is_transient(exc, policy) is True
 
 
-# ---------------------------------------------------------------------------
-# with_retry — success cases
-# ---------------------------------------------------------------------------
-
-
 class TestWithRetrySuccess:
     @pytest.mark.asyncio
     async def test_success_on_first_attempt(self) -> None:
@@ -141,7 +127,6 @@ class TestWithRetrySuccess:
         assert result == "success"
         assert call_count == 2
         assert len(slept) == 1
-        # First retry: delay = base_delay_s * 2**0 = 1.0 (no jitter)
         assert slept[0] == pytest.approx(1.0)
 
     @pytest.mark.asyncio
@@ -169,17 +154,9 @@ class TestWithRetrySuccess:
         assert result == "done"
         assert call_count == 4
         assert len(slept) == 3
-        # attempt 1→2: 1.0 * 2**0 = 1.0
-        # attempt 2→3: 1.0 * 2**1 = 2.0
-        # attempt 3→4: 1.0 * 2**2 = 4.0
         assert slept[0] == pytest.approx(1.0)
         assert slept[1] == pytest.approx(2.0)
         assert slept[2] == pytest.approx(4.0)
-
-
-# ---------------------------------------------------------------------------
-# with_retry — non-transient raises immediately
-# ---------------------------------------------------------------------------
 
 
 class TestWithRetryNonTransient:
@@ -200,7 +177,7 @@ class TestWithRetryNonTransient:
             await with_retry(fn, policy=policy, provider="test", model="m")
 
         assert exc_info.value is original
-        assert call_count == 1  # called exactly once, not retried
+        assert call_count == 1
 
     @pytest.mark.asyncio
     async def test_non_transient_cause_not_wrapped_in_llm_error(self) -> None:
@@ -214,11 +191,6 @@ class TestWithRetryNonTransient:
 
         with pytest.raises(FakeNonTransientError):
             await with_retry(fn, policy=policy, provider="p", model="m")
-
-
-# ---------------------------------------------------------------------------
-# with_retry — exhaustion wraps into LLMError
-# ---------------------------------------------------------------------------
 
 
 class TestWithRetryExhaustion:
@@ -243,8 +215,8 @@ class TestWithRetryExhaustion:
         err = exc_info.value
         assert err.provider == "openai"
         assert err.model == "gpt-4o"
-        assert err.attempts == 3 + 1  # initial attempt + max_retries
-        assert err.__cause__ is original  # chain preserved
+        assert err.attempts == 3 + 1
+        assert err.__cause__ is original
 
     @pytest.mark.asyncio
     async def test_exhaustion_cause_is_original_error(
@@ -288,11 +260,6 @@ class TestWithRetryExhaustion:
         assert call_count == max_retries + 1
 
 
-# ---------------------------------------------------------------------------
-# with_retry — jitter behaviour
-# ---------------------------------------------------------------------------
-
-
 class TestWithRetryJitter:
     @pytest.mark.asyncio
     async def test_jitter_delays_within_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -314,7 +281,6 @@ class TestWithRetryJitter:
             retry_on=(FakeRateLimitError,),
         )
 
-        # Run 10 repetitions to gather enough jitter samples
         for _ in range(10):
             observed_delays.clear()
             call_count = 0
@@ -328,8 +294,6 @@ class TestWithRetryJitter:
 
             await with_retry(fn, policy=policy, provider="p", model="m")
 
-        # After 10 runs we have many delay samples; all must be >= 0
-        # Each run produces 2 delays (attempt 1→2, attempt 2→3)
         assert len(observed_delays) > 0
         for d in observed_delays:
             assert d >= 0.0, f"Delay {d} is negative"
@@ -394,8 +358,6 @@ class TestWithRetryJitter:
 
         await with_retry(fn, policy=policy, provider="p", model="m")
 
-        # attempt 1→2: 2.0 * 2**0 = 2.0
-        # attempt 2→3: 2.0 * 2**1 = 4.0
         assert slept == pytest.approx([2.0, 4.0])
 
     @pytest.mark.asyncio

@@ -21,10 +21,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Test helpers
-# ---------------------------------------------------------------------------
-
 
 def _build_session_factory() -> MagicMock:
     """Minimal async session factory mock with no execute side-effects."""
@@ -107,11 +103,6 @@ def _human_response_data(
     }
 
 
-# ---------------------------------------------------------------------------
-# 1. human_request — INSERT ... ON CONFLICT DO NOTHING fires with correct constraint
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_human_request_inserts_with_correct_constraint() -> None:
     """on_custom_event('human_request', ...) must execute an INSERT that uses
@@ -144,20 +135,12 @@ async def test_human_request_inserts_with_correct_constraint() -> None:
     assert len(executed_stmts) == 1, f"Expected 1 statement, got {len(executed_stmts)}"
 
     stmt = executed_stmts[0]
-    # The compiled SQL should contain ON CONFLICT DO NOTHING
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
     assert "ON CONFLICT" in compiled.upper(), f"Expected ON CONFLICT clause in SQL, got: {compiled}"
 
-    # Verify the constraint constant value matches the migration
     assert CONSTRAINT_NAME == "uq_human_interactions_run_request"
 
-    # Verify target table is human_interactions
     assert stmt.table.name == HumanInteraction.__tablename__
-
-
-# ---------------------------------------------------------------------------
-# 2. Two identical human_request events — only one INSERT executed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -185,18 +168,10 @@ async def test_human_request_duplicate_does_not_double_insert() -> None:
     run_id = uuid4()
     data = _human_request_data(run_id=run_id, request_id="chain:reviewer:1")
 
-    # First dispatch
     await handler.on_custom_event(name="human_request", data=data, run_id=uuid4())
-    # Second dispatch with same (run_id, request_id)
     await handler.on_custom_event(name="human_request", data=data, run_id=uuid4())
 
-    # The handler dispatched two INSERTs; the DB constraint prevents double rows.
     assert execute_count == 2, f"Expected 2 execute calls (one per event), got {execute_count}"
-
-
-# ---------------------------------------------------------------------------
-# 3. human_response — UPDATE fires with IS NULL filter
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -226,7 +201,6 @@ async def test_human_response_select_for_update_then_insert_when_missing() -> No
         run_id=uuid4(),
     )
 
-    # Expect SELECT ... FOR UPDATE then INSERT ... ON CONFLICT DO NOTHING
     assert len(executed_stmts) == 2, f"Expected 2 statements, got {len(executed_stmts)}"
 
     first = str(executed_stmts[0].compile(compile_kwargs={"literal_binds": False})).upper()
@@ -236,11 +210,6 @@ async def test_human_response_select_for_update_then_insert_when_missing() -> No
     second = str(executed_stmts[1].compile(compile_kwargs={"literal_binds": False})).upper()
     assert second.strip().startswith("INSERT"), f"Expected INSERT second, got: {second}"
     assert "ON CONFLICT" in second, f"Expected ON CONFLICT clause, got: {second}"
-
-
-# ---------------------------------------------------------------------------
-# 4. human_response — idempotency: WHERE response_json IS NULL prevents double-update
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -255,7 +224,6 @@ async def test_human_response_idempotent_when_existing_response_present() -> Non
     session_factory = _build_session_factory()
     session = session_factory.return_value
 
-    # Simulate an existing row that already has response_json filled
     existing_row = MagicMock(spec=HumanInteraction)
     existing_row.id = uuid4()
     existing_row.response_json = {"action": "approve"}
@@ -274,8 +242,6 @@ async def test_human_response_idempotent_when_existing_response_present() -> Non
     await handler.on_custom_event(name="human_response", data=data, run_id=uuid4())
     await handler.on_custom_event(name="human_response", data=data, run_id=uuid4())
 
-    # Each dispatch should issue exactly ONE statement (the SELECT ... FOR UPDATE);
-    # no UPDATE/INSERT follows because existing.response_json is non-NULL.
     assert len(executed_stmts) == 2, (
         f"Expected 2 statements (one SELECT per dispatch), got {len(executed_stmts)}"
     )
@@ -284,11 +250,6 @@ async def test_human_response_idempotent_when_existing_response_present() -> Non
         assert compiled.strip().startswith("SELECT"), (
             f"Expected SELECT only — idempotency must short-circuit before UPDATE; got: {compiled}"
         )
-
-
-# ---------------------------------------------------------------------------
-# 5. Exception in human_request is swallowed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -303,13 +264,7 @@ async def test_human_request_exception_is_swallowed() -> None:
     handler = _make_handler(session_factory=session_factory)
     data = _human_request_data()
 
-    # Must not raise
     await handler.on_custom_event(name="human_request", data=data, run_id=uuid4())
-
-
-# ---------------------------------------------------------------------------
-# 6. Exception in human_response is swallowed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -324,13 +279,7 @@ async def test_human_response_exception_is_swallowed() -> None:
     handler = _make_handler(session_factory=session_factory)
     data = _human_response_data()
 
-    # Must not raise
     await handler.on_custom_event(name="human_response", data=data, run_id=uuid4())
-
-
-# ---------------------------------------------------------------------------
-# 7. human_request INSERT targets the correct table
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -355,11 +304,6 @@ async def test_human_request_targets_human_interactions_table() -> None:
 
     assert executed_stmts, "No statement was executed"
     assert executed_stmts[0].table.name == HumanInteraction.__tablename__
-
-
-# ---------------------------------------------------------------------------
-# 8. human_response UPDATE targets the correct table (human_interactions)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

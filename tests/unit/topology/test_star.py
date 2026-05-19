@@ -25,10 +25,6 @@ from langgraph.graph.state import CompiledStateGraph
 from atm.core.types import MessageKind, Phase
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(
     *,
@@ -137,11 +133,6 @@ def _build_star(
     return topology.build(agents, cfg, checkpointer=checkpointer)
 
 
-# ---------------------------------------------------------------------------
-# 1. Registration
-# ---------------------------------------------------------------------------
-
-
 class TestStarRegistration:
     """StarTopology is correctly registered in TopologyRegistry."""
 
@@ -161,11 +152,6 @@ class TestStarRegistration:
 
         cls = TopologyRegistry.get("star")
         assert callable(getattr(cls, "build", None))
-
-
-# ---------------------------------------------------------------------------
-# 2. Graph compilation
-# ---------------------------------------------------------------------------
 
 
 class TestStarBuild:
@@ -193,11 +179,6 @@ class TestStarBuild:
         cfg = _make_cfg(max_iterations=5, planning_max_iter=1, exec_max_iter=2, verify_max_iter=1)
         graph = _build_star(cfg=cfg)
         assert isinstance(graph, CompiledStateGraph)
-
-
-# ---------------------------------------------------------------------------
-# 3. Full graph run — planning → execution → verification → done (approved)
-# ---------------------------------------------------------------------------
 
 
 class TestStarPhasesApproved:
@@ -265,17 +246,11 @@ class TestStarPhasesApproved:
         result = await graph.ainvoke(initial, config={"configurable": {"thread_id": "test-phases"}})
 
         phase_history = result["shared"].get("phase_history", [])
-        # Phase history records transitions; should contain planning, execution, verification, done
         phases_str = [str(p) for p in phase_history]
         assert any("planning" in p for p in phases_str) or result["shared"]["phase"] in (
             Phase.DONE,
             "done",
         )
-
-
-# ---------------------------------------------------------------------------
-# 4. Critic-reject loop runs verify_max_iter times then ends
-# ---------------------------------------------------------------------------
 
 
 class TestStarVerifyLoop:
@@ -316,7 +291,6 @@ class TestStarVerifyLoop:
             initial, config={"configurable": {"thread_id": "test-reject-loop"}}
         )
 
-        # Graph must terminate and have a final_answer
         assert result is not None
         assert result["shared"].get("final_answer") is not None
 
@@ -334,7 +308,7 @@ class TestStarVerifyLoop:
 
         agents = {
             "planner": _make_mock_agent("planner"),
-            "executor": _make_mock_agent("executor"),  # no outbox messages
+            "executor": _make_mock_agent("executor"),
             "critic": _make_mock_agent_with_outbox("critic", [reject_msg]),
         }
         cfg = _make_cfg(
@@ -350,13 +324,7 @@ class TestStarVerifyLoop:
             initial, config={"configurable": {"thread_id": "test-fallback"}}
         )
 
-        # Must have a final_answer (even if fallback)
         assert result["shared"].get("final_answer") is not None
-
-
-# ---------------------------------------------------------------------------
-# 5. _critic_postprocess — malformed message handling
-# ---------------------------------------------------------------------------
 
 
 class TestCriticPostprocess:
@@ -367,12 +335,11 @@ class TestCriticPostprocess:
         """A critic message without payload['approved'] treats as rejected (no crash)."""
         from atm.core.types import Message
 
-        # Critic sends a DECISION with NO approved field
         malformed_msg = Message(
             sender="critic",
             kind=MessageKind.DECISION,
             content="something",
-            payload={},  # missing 'approved' key
+            payload={},
         )
 
         agents = {
@@ -384,7 +351,6 @@ class TestCriticPostprocess:
         graph = _build_star(agents=agents, cfg=cfg)
 
         initial = _make_initial_state()
-        # Should not raise — just treat as rejected and eventually terminate
         result = await graph.ainvoke(
             initial, config={"configurable": {"thread_id": "test-malformed"}}
         )
@@ -470,11 +436,6 @@ class TestCriticPostprocess:
         assert result["shared"]["signals"]["critic_approved"] is False
 
 
-# ---------------------------------------------------------------------------
-# 6. Global max_iter cap triggers END
-# ---------------------------------------------------------------------------
-
-
 class TestStarGlobalMaxIter:
     """_should_stop global max_iter cap forces early termination."""
 
@@ -486,7 +447,6 @@ class TestStarGlobalMaxIter:
             "executor": _make_mock_agent("executor"),
             "critic": _make_mock_agent("critic"),
         }
-        # Very tight budget: max_iterations=3 with large phase caps
         cfg = _make_cfg(
             max_iterations=3,
             planning_max_iter=100,
@@ -500,16 +460,9 @@ class TestStarGlobalMaxIter:
             initial, config={"configurable": {"thread_id": "test-max-iter"}}
         )
 
-        # Graph should have terminated
         assert result is not None
-        # iter_total should not exceed max_iterations (coordinator stops routing)
         iter_total = result["shared"].get("iter_total", 0)
-        assert iter_total <= cfg.max_iterations + 2  # allow some slack for the coordinator tick
-
-
-# ---------------------------------------------------------------------------
-# 7. Coordinator increments iteration counters
-# ---------------------------------------------------------------------------
+        assert iter_total <= cfg.max_iterations + 2
 
 
 class TestCoordinatorCounters:
@@ -541,14 +494,6 @@ class TestCoordinatorCounters:
         )
 
         assert result["shared"]["iter_total"] > 0
-
-
-# ---------------------------------------------------------------------------
-# Regression: _extract_final_answer task-aware preference (port of chain
-# d585bbb). For non-code tasks the executor still writes solution.py per
-# executor.yaml's unconditional instruction, but that file holds Python
-# intermediates rather than the human-readable answer — DRAFT should win.
-# ---------------------------------------------------------------------------
 
 
 class TestExtractFinalAnswerTaskAware:

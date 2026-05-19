@@ -21,10 +21,6 @@ import pytest
 
 from atm.evaluation.metrics import DEFAULT_WEIGHTS, _load_weights, human_sim_cognitive_load_proxy
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_session(rows: list[tuple[Any, ...]]) -> AsyncMock:
     """Build a mock AsyncSession whose execute() returns *rows*."""
@@ -41,11 +37,6 @@ def _ctx_bytes(ctx: dict[str, Any]) -> int:
     return len(json.dumps(ctx, default=str))
 
 
-# ---------------------------------------------------------------------------
-# Test 1: empty (no rows) → returns 0.0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_empty_returns_zero() -> None:
     """No human_interactions for run_id → cognitive_load_proxy == 0.0."""
@@ -55,11 +46,6 @@ async def test_empty_returns_zero() -> None:
     result = await human_sim_cognitive_load_proxy(session, run_id)
 
     assert result == 0.0
-
-
-# ---------------------------------------------------------------------------
-# Test 2: k=3 interactions → expected value using DEFAULT_WEIGHTS
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -72,7 +58,7 @@ async def test_k3_interactions_expected_value() -> None:
     ctx_b = {"question": "reject?", "messages": ["world", "foo"]}
     ctx_c = {"question": "review?", "messages": ["bar", "baz", "qux"]}
 
-    lat_a = 5.0  # seconds
+    lat_a = 5.0
     lat_b = 10.0
     lat_c = 15.0
 
@@ -101,23 +87,17 @@ async def test_k3_interactions_expected_value() -> None:
 
     result = await human_sim_cognitive_load_proxy(session, run_id)
 
-    # Manual computation using DEFAULT_WEIGHTS
     alpha = DEFAULT_WEIGHTS["alpha"]
     beta = DEFAULT_WEIGHTS["beta"]
     gamma = DEFAULT_WEIGHTS["gamma"]
 
     count = 3
     mean_ctx = (_ctx_bytes(ctx_a) + _ctx_bytes(ctx_b) + _ctx_bytes(ctx_c)) / count
-    mean_lat = (lat_a + lat_b + lat_c) / count  # (5 + 10 + 15) / 3 = 10.0
+    mean_lat = (lat_a + lat_b + lat_c) / count
 
     expected = alpha * count + beta * mean_ctx + gamma * mean_lat
 
     assert abs(result - expected) < 1e-9, f"Expected {expected}, got {result}"
-
-
-# ---------------------------------------------------------------------------
-# Test 3: missing answered_at → latency = 0.0 for that row
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -142,7 +122,7 @@ async def test_missing_answered_at_contributes_zero_latency() -> None:
             uuid.uuid4(),
             ctx_unanswered,
             now,
-            None,  # no answered_at
+            None,
         ),
     ]
 
@@ -156,16 +136,11 @@ async def test_missing_answered_at_contributes_zero_latency() -> None:
 
     count = 2
     mean_ctx = (_ctx_bytes(ctx_answered) + _ctx_bytes(ctx_unanswered)) / count
-    mean_lat = (lat_answered + 0.0) / count  # 8.0 / 2 = 4.0
+    mean_lat = (lat_answered + 0.0) / count
 
     expected = alpha * count + beta * mean_ctx + gamma * mean_lat
 
     assert abs(result - expected) < 1e-9, f"Expected {expected}, got {result}"
-
-
-# ---------------------------------------------------------------------------
-# Test 4: _load_weights returns DEFAULT_WEIGHTS when file is missing
-# ---------------------------------------------------------------------------
 
 
 def test_load_weights_missing_file_returns_defaults() -> None:

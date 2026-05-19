@@ -18,7 +18,6 @@ from atm.tools.sandbox.docker_sandbox import DockerSandbox
 
 _SECCOMP_PATH = pathlib.Path(__file__).parents[3] / "conf" / "sandbox" / "seccomp.json"
 
-# errno values
 EPERM = 1
 ENOSYS = 38
 
@@ -34,7 +33,6 @@ def sandbox(seccomp_str: str) -> DockerSandbox:
         mem_limit="128m",
         pids_limit=64,
         timeout_s=10.0,
-        # Use SandboxConfig defaults for tmpfs (uid=1000,gid=1000 required).
     )
     return DockerSandbox(config=cfg, seccomp_json_str=seccomp_str, prefetch=False)
 
@@ -48,7 +46,6 @@ def _syscall_test_code(syscall_name: str, call_code: str) -> str:
 
         libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
 
-        # Reset errno
         ctypes.set_errno(0)
 
         result = {call_code}
@@ -76,15 +73,9 @@ async def _assert_syscall_blocked(
     )
 
 
-# ---------------------------------------------------------------------------
-# Per-syscall tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.docker
 async def test_seccomp_ptrace_blocked(sandbox: DockerSandbox) -> None:
     """ptrace syscall must be blocked."""
-    # PTRACE_TRACEME=0, pid=0, addr=0, data=0
     await _assert_syscall_blocked(
         sandbox,
         "ptrace",
@@ -105,7 +96,6 @@ async def test_seccomp_mount_blocked(sandbox: DockerSandbox) -> None:
 @pytest.mark.docker
 async def test_seccomp_unshare_blocked(sandbox: DockerSandbox) -> None:
     """unshare syscall must be blocked."""
-    # CLONE_NEWNS = 0x00020000
     await _assert_syscall_blocked(
         sandbox,
         "unshare",
@@ -116,7 +106,6 @@ async def test_seccomp_unshare_blocked(sandbox: DockerSandbox) -> None:
 @pytest.mark.docker
 async def test_seccomp_bpf_blocked(sandbox: DockerSandbox) -> None:
     """bpf syscall must be blocked."""
-    # BPF_MAP_CREATE=0
     await _assert_syscall_blocked(
         sandbox,
         "bpf",
@@ -127,7 +116,6 @@ async def test_seccomp_bpf_blocked(sandbox: DockerSandbox) -> None:
 @pytest.mark.docker
 async def test_seccomp_keyctl_blocked(sandbox: DockerSandbox) -> None:
     """keyctl syscall must be blocked."""
-    # KEYCTL_GET_KEYRING_ID = 0
     await _assert_syscall_blocked(
         sandbox,
         "keyctl",
@@ -158,7 +146,6 @@ async def test_seccomp_chroot_blocked(sandbox: DockerSandbox) -> None:
 @pytest.mark.docker
 async def test_seccomp_setns_blocked(sandbox: DockerSandbox) -> None:
     """setns syscall must be blocked."""
-    # CLONE_NEWUTS = 0x04000000
     await _assert_syscall_blocked(
         sandbox,
         "setns",
@@ -169,7 +156,6 @@ async def test_seccomp_setns_blocked(sandbox: DockerSandbox) -> None:
 @pytest.mark.docker
 async def test_seccomp_clone3_blocked(sandbox: DockerSandbox) -> None:
     """clone3 syscall must be blocked."""
-    # clone3 = syscall 435 on x86_64
     await _assert_syscall_blocked(
         sandbox,
         "clone3",

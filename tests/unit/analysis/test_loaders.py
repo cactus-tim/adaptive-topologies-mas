@@ -31,10 +31,6 @@ from atm.storage.session import create_session_factory, session_scope
 
 _UTC = datetime.UTC
 
-# ---------------------------------------------------------------------------
-# Helpers — factory for inserting fixtures into the ephemeral DB
-# ---------------------------------------------------------------------------
-
 
 async def _insert_experiment(
     session_factory: Any,
@@ -91,11 +87,6 @@ async def _insert_run(
             )
         )
     return run_id
-
-
-# ===========================================================================
-# load_experiment
-# ===========================================================================
 
 
 class TestLoadExperiment:
@@ -163,11 +154,6 @@ class TestLoadExperiment:
                 await load_experiment(missing_id, session_factory=factory)
         finally:
             await engine.dispose()
-
-
-# ===========================================================================
-# load_runs
-# ===========================================================================
 
 
 class TestLoadRuns:
@@ -258,11 +244,9 @@ class TestLoadRuns:
 
         await engine.dispose()
 
-        # budget_spent_usd should be float, not Decimal
         bsu = df["budget_spent_usd"].iloc[0]
         assert isinstance(bsu, float), f"Expected float, got {type(bsu)}"
 
-        # quality_score should be float (or NaN), not None
         qs = df["quality_score"].iloc[0]
         assert isinstance(qs, float), f"Expected float, got {type(qs)}"
 
@@ -290,11 +274,6 @@ class TestLoadRuns:
 
         assert len(df_a) == 1
         assert len(df_b) == 2
-
-
-# ===========================================================================
-# Helpers — write fixture parquet files via ParquetWriter
-# ===========================================================================
 
 
 def _make_llm_call_row(run_id: str, agent_id: str = "agent-0") -> dict[str, Any]:
@@ -329,16 +308,11 @@ async def _write_llm_calls_via_writer(
         root=parquet_dir,
         run_id=run_id,
         exp_id=exp_id,
-        buffer_rows=1,  # flush immediately on every write
+        buffer_rows=1,
     )
     for row in rows:
         await writer.write_llm_call(row)
     await writer.close()
-
-
-# ===========================================================================
-# load_llm_calls
-# ===========================================================================
 
 
 class TestLoadLlmCalls:
@@ -408,11 +382,6 @@ class TestLoadLlmCalls:
             load_llm_calls(missing_run_id, parquet_dir=tmp_path)
 
 
-# ===========================================================================
-# load_llm_calls_for_experiment
-# ===========================================================================
-
-
 class TestLoadLlmCallsForExperiment:
     """Tests for load_llm_calls_for_experiment(exp_id, *, parquet_dir)."""
 
@@ -461,7 +430,6 @@ class TestLoadLlmCallsForExperiment:
         df = load_llm_calls_for_experiment(str(exp_id), parquet_dir=tmp_path)
 
         assert "run_id" in df.columns
-        # The run_id in the DataFrame should match the actual run_id used
         assert str(run_id) in df["run_id"].values
 
     def test_load_llm_calls_for_experiment_empty_experiment_returns_empty_dataframe(
@@ -471,7 +439,6 @@ class TestLoadLlmCallsForExperiment:
         from atm.analysis.loaders import load_llm_calls_for_experiment
 
         exp_id = uuid.uuid4()
-        # Create the experiment directory but no run subdirectories
         exp_dir = tmp_path / "experiments" / str(exp_id)
         exp_dir.mkdir(parents=True)
 
@@ -479,11 +446,6 @@ class TestLoadLlmCallsForExperiment:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
-
-
-# ===========================================================================
-# Security — path traversal validation
-# ===========================================================================
 
 
 class TestPathTraversalValidation:
@@ -528,14 +490,8 @@ class TestPathTraversalValidation:
         from atm.analysis.loaders import load_llm_calls_for_experiment
 
         valid_exp_id = str(uuid.uuid4())
-        # No parquet files → returns empty DataFrame, but should not raise
         df = load_llm_calls_for_experiment(valid_exp_id, parquet_dir=tmp_path)
         assert isinstance(df, pd.DataFrame)
-
-
-# ===========================================================================
-# Helpers — write topology_transitions and phases via ParquetWriter
-# ===========================================================================
 
 
 def _make_topology_transition_row(run_id: str) -> dict[str, Any]:
@@ -609,11 +565,6 @@ async def _write_phases_via_writer(
     for row in rows:
         await writer.write_phase(row)
     await writer.close()
-
-
-# ===========================================================================
-# load_topology_transitions — parquet source
-# ===========================================================================
 
 
 class TestLoadTopologyTransitionsParquet:
@@ -751,11 +702,6 @@ class TestLoadTopologyTransitionsParquet:
         assert len(df) == 0
 
 
-# ===========================================================================
-# load_topology_transitions — PG source
-# ===========================================================================
-
-
 class TestLoadTopologyTransitionsPG:
     """PG-source tests for load_topology_transitions (gated on ATM_ENABLE_PG_TESTS=1)."""
 
@@ -777,7 +723,6 @@ class TestLoadTopologyTransitionsPG:
         exp_id = await _insert_experiment(factory, name="exp-transitions-pg")
         run_id = await _insert_run(factory, exp_id=exp_id)
 
-        # Insert a topology transition row
         async with session_scope(factory) as session:
             session.add(
                 TopologyTransition(
@@ -884,7 +829,6 @@ class TestLoadTopologyTransitionsPG:
 
         df_pg = await load_topology_transitions(str(exp_id), source="pg", session_factory=factory)
 
-        # Write same data to parquet (use await since we're in an async test)
         parquet_row = _make_topology_transition_row(str(run_id))
         await _write_transitions_via_writer(tmp_path, exp_id, run_id, [parquet_row])
         df_pq = await load_topology_transitions(str(exp_id), source="parquet", parquet_dir=tmp_path)
@@ -895,11 +839,6 @@ class TestLoadTopologyTransitionsPG:
             f"Column mismatch: PG={sorted(df_pg.columns.tolist())!r}, "
             f"Parquet={sorted(df_pq.columns.tolist())!r}"
         )
-
-
-# ===========================================================================
-# load_phases — parquet source
-# ===========================================================================
 
 
 class TestLoadPhasesParquet:
@@ -993,11 +932,6 @@ class TestLoadPhasesParquet:
         assert len(df) == 0
 
 
-# ===========================================================================
-# load_phases — PG source
-# ===========================================================================
-
-
 class TestLoadPhasesPG:
     """PG-source tests for load_phases (gated on ATM_ENABLE_PG_TESTS=1)."""
 
@@ -1064,7 +998,6 @@ class TestLoadPhasesPG:
 
         df_pg = await load_phases(str(exp_id), source="pg", session_factory=factory)
 
-        # Use await since we're in an async test
         parquet_row = _make_phase_row(str(run_id))
         await _write_phases_via_writer(tmp_path, exp_id, run_id, [parquet_row])
         df_pq = await load_phases(str(exp_id), source="parquet", parquet_dir=tmp_path)
@@ -1075,11 +1008,6 @@ class TestLoadPhasesPG:
             f"PG cols={sorted(df_pg.columns.tolist())!r}, "
             f"Parquet cols={sorted(df_pq.columns.tolist())!r}"
         )
-
-
-# ===========================================================================
-# load_human_interactions — PG only
-# ===========================================================================
 
 
 class TestLoadHumanInteractions:
@@ -1147,8 +1075,6 @@ class TestLoadHumanInteractions:
 
         await engine.dispose()
 
-        # Columns from plan spec: id, run_id, role, requested_at, answered_at,
-        # raw_tlx_score, tlx_scores, request_id
         required = {
             "id",
             "run_id",
@@ -1186,7 +1112,7 @@ class TestLoadHumanInteractions:
                     run_id=run_id,
                     role="operator",
                     context_json={},
-                    raw_tlx_score=None,  # NULL in DB
+                    raw_tlx_score=None,
                     request_id="req-003",
                 )
             )

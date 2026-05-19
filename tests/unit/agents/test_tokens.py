@@ -12,10 +12,6 @@ from __future__ import annotations
 
 from atm.agents._tokens import estimate_prompt_tokens
 
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
 
 def _msg(content: str) -> dict:
     return {"role": "user", "content": content}
@@ -55,25 +51,18 @@ class TestEstimateFallbackForUnknownProvider:
     """Unknown or fake providers use len(text)//4 heuristic."""
 
     def test_estimate_fallback_for_unknown_provider(self) -> None:
-        text = "a" * 100  # 100 chars -> heuristic = 100//4 + overhead
+        text = "a" * 100
         messages = [_msg(text)]
         result = estimate_prompt_tokens(messages, model_id="fake:deterministic")
-        # heuristic: len(all_text) // 4 + per_message_overhead * n_messages
-        # per message overhead is 4, so expected ~= 100//4 + 4 = 29
-        # We just check it's reasonable (between 20 and 50)
         assert 20 <= result <= 50
 
     def test_estimate_fallback_no_provider_prefix(self) -> None:
-        # model_id without colon also uses heuristic
         text = "x" * 80
         messages = [_msg(text)]
         result = estimate_prompt_tokens(messages, model_id="unknown-model")
-        # heuristic: 80//4 + 4 = 24
         assert result > 0
 
     def test_estimate_fallback_deterministic_value(self) -> None:
-        # exact value check: single message, content="a"*40, model="fake:x"
-        # expected: 40//4 + 4 = 14
         messages = [_msg("a" * 40)]
         result = estimate_prompt_tokens(messages, model_id="fake:x")
         assert result == 14
@@ -83,7 +72,6 @@ class TestEstimateOpenAIUsesTiktoken:
     """For openai:* models, tiktoken is used, which diverges from len//4 heuristic by >15%."""
 
     def test_estimate_openai_uses_tiktoken(self) -> None:
-        # Use a long prose string (~500 chars) where tiktoken and heuristic diverge
         prose = (
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
             "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
@@ -98,10 +86,8 @@ class TestEstimateOpenAIUsesTiktoken:
 
         tiktoken_est = estimate_prompt_tokens(messages, model_id=model_id)
 
-        # Heuristic: len(prose)//4 + 4 per message
         heuristic_est = len(prose) // 4 + 4
 
-        # Two-sided: tiktoken result diverges from heuristic by more than 15%
         divergence = abs(tiktoken_est - heuristic_est) / heuristic_est
         assert divergence > 0.15, (
             f"Expected >15% divergence between tiktoken ({tiktoken_est}) "
@@ -109,7 +95,6 @@ class TestEstimateOpenAIUsesTiktoken:
         )
 
     def test_estimate_openai_strips_prefix(self) -> None:
-        # Verify that openai: prefix is stripped correctly (no KeyError)
         messages = [_msg("Test message for gpt-4o")]
         result = estimate_prompt_tokens(messages, model_id="openai:gpt-4o")
         assert result > 0
@@ -121,29 +106,24 @@ class TestEstimateWithLRUCacheHits:
     def test_estimate_with_lrucache_hits(self) -> None:
         from atm.agents._tokens import _get_encoder
 
-        # Clear cache to start fresh
         _get_encoder.cache_clear()
 
         model_id = "openai:gpt-4o-mini"
         messages = [_msg("Cache test message")]
 
-        # First call — cache miss
         result1 = estimate_prompt_tokens(messages, model_id=model_id)
         info_after_first = _get_encoder.cache_info()
         assert info_after_first.misses >= 1
 
-        # Second call — should hit cache
         result2 = estimate_prompt_tokens(messages, model_id=model_id)
         info_after_second = _get_encoder.cache_info()
         assert info_after_second.hits >= 1
 
-        # Results must be consistent
         assert result1 == result2
 
     def test_estimate_lrucache_no_crash_on_repeat(self) -> None:
         model_id = "openai:gpt-4o-mini"
         messages = [_msg("Repeated message")]
         results = [estimate_prompt_tokens(messages, model_id=model_id) for _ in range(10)]
-        # All results must be identical (deterministic)
         assert len(set(results)) == 1
         assert results[0] > 0

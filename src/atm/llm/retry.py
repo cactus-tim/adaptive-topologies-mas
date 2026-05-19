@@ -63,11 +63,7 @@ def is_transient(exc: BaseException, policy: RetryPolicy) -> bool:
 
 
 def _compute_delay(attempt: int, policy: RetryPolicy) -> float:
-    """Return the sleep duration for *attempt* (1-indexed, first retry = 1).
-
-    Formula (no jitter): ``min(base * 2**(attempt-1), max_delay_s)``
-    Formula (jitter):    ``uniform(0, cap)``
-    """
+    """Return the sleep duration for *attempt* (1-indexed, first retry = 1)."""
     cap: float = min(policy.base_delay_s * float(2 ** (attempt - 1)), policy.max_delay_s)
     if policy.jitter:
         return random.uniform(0.0, cap)
@@ -108,7 +104,6 @@ async def with_retry(
             return await fn()
         except BaseException as exc:
             if not is_transient(exc, policy):
-                # Non-transient: propagate immediately without wrapping.
                 raise
 
             last_exc = exc
@@ -117,7 +112,6 @@ async def with_retry(
                 delay = _compute_delay(attempt + 1, policy)
                 await asyncio.sleep(delay)
 
-    # All attempts exhausted.
     total_attempts = policy.max_retries + 1
     raise LLMError(
         provider=provider,

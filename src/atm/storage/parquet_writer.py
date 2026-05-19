@@ -1,21 +1,4 @@
-"""Buffered async Parquet writer for ATM storage streams.
-
-Implements per-stream buffering with two auto-flush triggers:
-  (a) buffer reaches buffer_rows rows  — invariant (d) from arch.md §10.3
-  (b) time since first buffered row >= buffer_seconds
-
-File layout:
-  root/experiments/{exp_id}/runs/{run_id}/{stream}.parquet
-  root/experiments/{exp_id}/runs/{run_id}/scratchpads/{agent_id}.parquet
-
-Design note: pyarrow.parquet.ParquetWriter does not support append mode (reopening
-the same path creates a new file, losing prior data). To guarantee the file is always
-in a valid readable state after every flush AND to preserve all rows across multiple
-flushes, each stream keeps a running ``flushed_rows`` list. On every flush, the complete
-list (prior flushes + current buffer) is written atomically via a fresh
-pq.ParquetWriter that is immediately closed. The cost is O(total_rows) per flush, which
-is acceptable for the buffer sizes used in experiments (buffer_rows defaults to 100).
-"""
+"""Buffered async Parquet writer for ATM storage streams."""
 
 from __future__ import annotations
 
@@ -47,9 +30,7 @@ class _StreamState:
 
     path: Path
     schema: pa.Schema
-    # Rows that have been flushed at least once (complete history on disk)
     flushed_rows: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
-    # Rows buffered since last flush
     buffer: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
     first_buffered_at: float | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -74,19 +55,7 @@ class _StreamState:
 
 
 class ParquetWriter:
-    """Buffered append-only async Parquet writer.
-
-    One file per stream; auto-flushes when buffer reaches buffer_rows rows OR when
-    time since first buffered row exceeds buffer_seconds.
-
-    Args:
-        root: Root directory for data storage.
-        run_id: UUID of the current run.
-        exp_id: UUID of the current experiment.
-        buffer_rows: Number of rows to buffer before auto-flush (default 100).
-        buffer_seconds: Seconds since first buffered row before auto-flush (default 5.0).
-        compression: Parquet compression codec (default "snappy").
-    """
+    """Buffered append-only async Parquet writer; one file per stream."""
 
     def __init__(
         self,
@@ -108,7 +77,6 @@ class ParquetWriter:
 
         run_dir = root / "experiments" / str(exp_id) / "runs" / str(run_id)
 
-        # Pre-defined streams (non-scratchpad)
         self._streams: dict[str, _StreamState] = {
             "llm_calls": _StreamState(run_dir / "llm_calls.parquet", LLM_CALL_SCHEMA),
             "messages": _StreamState(run_dir / "messages.parquet", MESSAGE_SCHEMA),
@@ -119,14 +87,9 @@ class ParquetWriter:
             ),
         }
 
-        # Scratchpad streams are created on demand, keyed by agent_id
         self._scratchpad_dir = run_dir / "scratchpads"
         self._scratchpads: dict[str, _StreamState] = {}
         self._scratchpad_registry_lock = asyncio.Lock()
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _should_auto_flush(self, state: _StreamState) -> bool:
         if len(state.buffer) >= self._buffer_rows:
@@ -152,10 +115,6 @@ class ParquetWriter:
                 path = self._scratchpad_dir / f"{agent_id}.parquet"
                 self._scratchpads[agent_id] = _StreamState(path, SCRATCHPAD_SCHEMA)
             return self._scratchpads[agent_id]
-
-    # ------------------------------------------------------------------
-    # Public write methods
-    # ------------------------------------------------------------------
 
     async def write_llm_call(self, row: dict) -> None:  # type: ignore[type-arg]
         """Buffer a row for the llm_calls stream."""
@@ -183,10 +142,6 @@ class ParquetWriter:
             raise ValueError(f"Invalid agent_id {agent_id!r}: must match [A-Za-z0-9_-]{{1,64}}")
         state = await self._get_scratchpad_stream(agent_id)
         await self._append(state, row)
-
-    # ------------------------------------------------------------------
-    # Flush and close
-    # ------------------------------------------------------------------
 
     async def flush(self) -> None:
         """Flush ALL buffered rows to disk across all streams."""

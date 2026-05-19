@@ -1,10 +1,4 @@
-"""GSM8K task loader and numeric-match evaluator for the ATM tasks module.
-
-Public API:
-- ``_extract_final_number(text: str) -> str | None``  — extract #### N from answer
-- ``GSM8KLoader``                                      — TaskLoader for openai/gsm8k
-- ``GSM8KMatcher``                                     — Evaluator: last-number regex + math.isclose
-"""
+"""GSM8K task loader and numeric-match evaluator."""
 
 from __future__ import annotations
 
@@ -25,42 +19,18 @@ __all__ = [
     "_extract_final_number",
 ]
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# Matches "#### <number>" at the end of a GSM8K answer string.
-# Group 1: the raw number string (may include commas, optional decimal part).
 _FINAL_NUMBER_RE = re.compile(r"####\s*(-?[0-9][\d,]*(?:\.\d+)?)")
 
-# Matches any numeric token (with optional sign, commas, decimals) in free text.
 _NUMERIC_TOKEN_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
 
 def _extract_final_number(text: str) -> str | None:
-    """Extract the canonical answer from a GSM8K-style answer string.
-
-    GSM8K answers encode the final numeric result after ``####``, for example::
-
-        "She made 9 * 2 = 18 dollars.\\n#### 18"
-
-    The extracted string has commas stripped so it can be passed to ``float()``.
-
-    Args:
-        text: Full answer text from a GSM8K row.
-
-    Returns:
-        The final number as a plain string (no commas), or ``None`` if not found.
-    """
+    """Return the number after ``####`` (commas stripped), or None if not found."""
     match = _FINAL_NUMBER_RE.search(text)
     if match is None:
         return None
     return match.group(1).replace(",", "")
 
-
-# ---------------------------------------------------------------------------
-# GSM8KLoader
-# ---------------------------------------------------------------------------
 
 _CACHE_KEY = "gsm8k"
 _HF_DATASET = "openai/gsm8k"
@@ -70,30 +40,12 @@ _HF_SPLIT = "test"
 
 @TASKS.register
 class GSM8KLoader:
-    """Task loader for the GSM8K math-reasoning benchmark.
-
-    Loads from ``openai/gsm8k`` (HuggingFace) and caches to Parquet to avoid
-    repeated network calls.  On cache miss, ``datasets.load_dataset`` is called;
-    on hit, the local file is read directly.
-
-    Each row is converted to a ``TaskSpec`` with:
-    - ``type = "reasoning"``
-    - ``evaluator_key = "gsm8k_numeric"``
-    - ``id = f"gsm8k/{idx}"`` (zero-based index in dataset order)
-    - ``expected``: numeric string extracted via ``_extract_final_number``
-    """
+    """Task loader for the GSM8K math-reasoning benchmark (openai/gsm8k, test split)."""
 
     name: str = "gsm8k"
 
     def load(self, cache_dir: Path | None = None) -> list[TaskSpec]:
-        """Load GSM8K tasks, hitting Parquet cache when available.
-
-        Args:
-            cache_dir: Override for the default Parquet cache directory.
-
-        Returns:
-            List of ``TaskSpec`` instances, one per GSM8K problem.
-        """
+        """Load GSM8K tasks; uses Parquet cache when available."""
         if is_cached(_CACHE_KEY, cache_dir):
             rows: list[dict[str, Any]] = read_cache(_CACHE_KEY, cache_dir)
         else:
@@ -102,7 +54,6 @@ class GSM8KLoader:
             for idx, row in enumerate(split):
                 expected = _extract_final_number(row["answer"])
                 if expected is None:
-                    # Skip malformed rows that have no "####" marker.
                     continue
                 rows.append(
                     {
@@ -127,23 +78,9 @@ def _row_to_spec(row: dict[str, Any]) -> TaskSpec:
     )
 
 
-# ---------------------------------------------------------------------------
-# GSM8KMatcher
-# ---------------------------------------------------------------------------
-
-
 @EVALUATORS.register
 class GSM8KMatcher:
-    """Evaluator for GSM8K tasks using last-numeric-token matching.
-
-    Strategy:
-    1. Find the last numeric token in the model's answer using a permissive regex.
-    2. Strip commas and convert to ``float``.
-    3. Compare to ``float(spec.expected)`` via ``math.isclose(abs_tol=1e-6)``.
-
-    If no numeric token is found the result is ``passed=False`` with
-    ``error="no number found"``.
-    """
+    """Evaluator for GSM8K: last-numeric-token extraction + math.isclose(abs_tol=1e-6)."""
 
     name: str = "gsm8k_numeric"
 
@@ -154,18 +91,7 @@ class GSM8KMatcher:
         *,
         artifacts: dict[str, Any] | None = None,
     ) -> EvalResult:
-        """Evaluate ``answer`` against a GSM8K ``spec``.
-
-        Args:
-            spec:      The ``TaskSpec`` from ``GSM8KLoader`` (``expected`` holds
-                       the canonical numeric string).
-            answer:    Free-text model answer — the last numeric token is extracted.
-            artifacts: Unused. Present for ``Evaluator`` Protocol compatibility.
-
-        Returns:
-            ``EvalResult`` with score 1.0/passed=True on match, 0.0/False otherwise.
-        """
-        # Extract all numeric tokens from the answer, take the last one.
+        """Evaluate ``answer`` against a GSM8K ``spec``."""
         tokens = _NUMERIC_TOKEN_RE.findall(answer)
         if not tokens:
             return EvalResult(

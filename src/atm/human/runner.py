@@ -1,52 +1,4 @@
-"""run_with_human — resume-loop orchestrator for HITL-enabled LangGraph runs (M9 Step 5.1).
-
-This helper wraps a compiled LangGraph and drives the full interrupt/resume cycle.
-The graph may interrupt zero or more times; the helper resolves each interrupt by
-calling the appropriate gateway and supplying a ``Command(resume=...)`` continuation.
-
-Current M9 scope
-----------------
-In M9, the Chain topology's ``human_reviewer`` node calls gateways **synchronously
-inside the node** (no LangGraph ``interrupt()`` call is made from that node).  The
-helper is therefore "no-op" for existing Chain HITL runs — it simply calls ``ainvoke``
-once and returns the state.
-
-The interrupt/resume path IS exercised by the unit tests via a
-``FakeInterruptingGraph`` stub, validating the forward-compatible design for M14+,
-where real ``interrupt()`` calls will be introduced.
-
-Interrupt payload contract (M9 Step 4.1 / future)
--------------------------------------------------
-When a node calls ``interrupt(payload)``, the payload is expected to be a dict with
-at minimum:
-
-    {
-        "ctx":        <HumanContext.model_dump(mode='json')>,
-        "request_id": <str>,
-    }
-
-Optionally it may contain ``"gateway"`` (a gateway name string) for future
-dispatch routing.  Currently the helper uses the single ``gateway`` kwarg passed at
-call time.
-
-Idempotency
------------
-To handle crash-recovery scenarios where the same ``(thread_id, request_id)`` pair
-is interrupted again on re-execution (the graph is replayed from the checkpoint),
-the helper caches resolved responses in a ``dict[(thread_id, request_id), dict]``
-(the JSON-serialised model dump, ready to pass to ``Command(resume=...)``) and
-short-circuits gateway calls for already-seen pairs.
-
-Guards
-------
-``max_interactions`` (default 10) caps the number of resume cycles to prevent
-runaway loops.  Exceeding the limit raises ``MaxInteractionsExceededError``.
-
-The helper also detects the pathological case where a single invocation result
-contains more than one interrupt simultaneously (which the current LangGraph version
-does not produce, but could in principle arise from future multi-node parallelism
-bugs) and raises ``RuntimeError``.
-"""
+"""run_with_human — resume-loop orchestrator for HITL-enabled LangGraph runs."""
 
 from __future__ import annotations
 
@@ -66,11 +18,6 @@ logger = logging.getLogger(__name__)
 __all__ = ["MaxInteractionsExceededError", "run_with_human"]
 
 
-# ---------------------------------------------------------------------------
-# Public exceptions
-# ---------------------------------------------------------------------------
-
-
 class MaxInteractionsExceededError(RuntimeError):
     """Raised when ``run_with_human`` exceeds ``max_interactions`` resume cycles."""
 
@@ -85,11 +32,6 @@ class MaxInteractionsExceededError(RuntimeError):
         self.thread_id = thread_id
 
 
-# ---------------------------------------------------------------------------
-# Public helper
-# ---------------------------------------------------------------------------
-
-
 async def run_with_human(
     compiled_graph: Any,
     initial_state: Any,
@@ -102,63 +44,12 @@ async def run_with_human(
     timeout_policy: str = "skip",
     fallback_gateway: HumanGateway | None = None,
 ) -> Any:
-    """Drive a compiled LangGraph through its full lifecycle, handling interrupts.
+    """Drive a compiled LangGraph through its full lifecycle, resolving interrupts.
 
-    Executes the graph via ``ainvoke`` and loops until the graph reaches END
-    (i.e., the result dict no longer contains ``__interrupt__``).
-
-    Parameters
-    ----------
-    compiled_graph:
-        A compiled LangGraph (``CompiledStateGraph``) that may or may not
-        contain nodes that call ``interrupt()``.
-    initial_state:
-        The initial state dict to pass to the first ``ainvoke`` call.
-    thread_id:
-        LangGraph thread ID for checkpointing.  Required for interrupt/resume
-        to work correctly with a stateful checkpointer.
-    gateway:
-        The :class:`~atm.human.gateway.HumanGateway` to call when an interrupt
-        is encountered.  Required if the graph ever calls ``interrupt()``.
-        May be ``None`` for graphs that never interrupt.
-    checkpointer:
-        Optional LangGraph checkpointer.  When provided, it is passed to the
-        graph's ``ainvoke`` config (some graph variants accept it here).
-        Note: the checkpointer is typically already baked into the compiled
-        graph at ``compile()`` time; this parameter is available for callers
-        that need to override it at invocation time.
-    max_interactions:
-        Maximum number of interrupt/resume cycles to allow before raising
-        :class:`MaxInteractionsExceededError`.  Defaults to 10.
-    timeout_s:
-        Optional timeout in seconds for each gateway.request() call.  When
-        provided, ``request_with_timeout`` is used instead of a direct
-        ``gateway.request()`` call.  ``None`` means no timeout (default,
-        backward-compatible behavior).
-    timeout_policy:
-        Timeout policy string passed to ``request_with_timeout`` when
-        ``timeout_s`` is not ``None``.  One of ``"fail"``, ``"llm_fallback"``,
-        ``"skip"``.  Defaults to ``"skip"``.
-    fallback_gateway:
-        Optional fallback :class:`~atm.human.gateway.HumanGateway` used when
-        ``timeout_policy="llm_fallback"`` and the primary gateway times out.
-        Required if ``timeout_s`` is set and ``timeout_policy="llm_fallback"``.
-
-    Returns
-    -------
-    Any
-        The final state dict from the graph (the last ``ainvoke`` result with
-        no ``__interrupt__`` key, or with an empty interrupt list).
-
-    Raises
-    ------
-    MaxInteractionsExceededError
-        If more than ``max_interactions`` interrupts occur.
-    RuntimeError
-        If a single invocation result contains more than one interrupt
-        simultaneously.
-    ValueError
-        If an interrupt is encountered but ``gateway`` is ``None``.
+    Raises:
+        MaxInteractionsExceededError: exceeds ``max_interactions`` cycles.
+        RuntimeError:                 multiple simultaneous interrupts in one result.
+        ValueError:                   interrupt encountered but ``gateway=None``.
     """
     config: dict[str, Any] = {
         "configurable": {
@@ -166,22 +57,18 @@ async def run_with_human(
         }
     }
 
-    # In-process idempotency cache: (thread_id, request_id) → response payload dict
     _resolved: dict[tuple[str, str], dict[str, Any]] = {}
 
     interaction_count = 0
 
-    # First invocation — pass the initial state
     result: Any = await compiled_graph.ainvoke(initial_state, config=config)
 
     while True:
         interrupts = _extract_interrupts(result)
 
         if not interrupts:
-            # Graph reached END normally — return final state.
             return result
 
-        # Pathological guard: more than 1 interrupt in a single result.
         if len(interrupts) > 1:
             raise RuntimeError(
                 f"run_with_human: received {len(interrupts)} simultaneous interrupts "
@@ -197,10 +84,8 @@ async def run_with_human(
         interrupt = interrupts[0]
         payload: dict[str, Any] = interrupt.value if hasattr(interrupt, "value") else {}
 
-        # --- Resolve request_id from interrupt payload ---
         request_id: str = str(payload.get("request_id", ""))
 
-        # --- Idempotency check ---
         cache_key = (thread_id, request_id)
         if cache_key in _resolved:
             logger.debug(
@@ -210,14 +95,12 @@ async def run_with_human(
             )
             resume_payload = _resolved[cache_key]
         else:
-            # Need a gateway to resolve the interrupt.
             if gateway is None:
                 raise ValueError(
                     f"run_with_human: received an interrupt (request_id={request_id!r}) "
                     f"but gateway=None. Provide a HumanGateway instance to handle interrupts."
                 )
 
-            # --- Reconstruct HumanContext from payload ---
             ctx_data = payload.get("ctx")
             if ctx_data is None:
                 raise ValueError(
@@ -232,11 +115,6 @@ async def run_with_human(
                 request_id,
             )
 
-            # F5: Dispatch human_request event before gateway call.
-            # adispatch_custom_event requires an active LangChain callback context; when
-            # run_with_human is called outside a node (no active context), the call
-            # will raise and we silently skip the event.  The interrupt-path caller is
-            # responsible for establishing the callback context if PG writes are required.
             _run_id = ctx.run_id
             try:
                 await adispatch_custom_event(
@@ -255,8 +133,6 @@ async def run_with_human(
                     exc_info=True,
                 )
 
-            # F6: Use request_with_timeout when timeout_s is provided; otherwise
-            # fall back to direct gateway.request() for backward compatibility.
             _t0 = time.monotonic()
             if timeout_s is not None:
                 response: HumanResponse = await request_with_timeout(
@@ -273,7 +149,6 @@ async def run_with_human(
 
             resume_payload = response.model_dump(mode="json")
 
-            # F5: Dispatch human_response event after gateway call.
             try:
                 await adispatch_custom_event(
                     "human_response",
@@ -293,12 +168,10 @@ async def run_with_human(
                     exc_info=True,
                 )
 
-            # Store in idempotency cache
             _resolved[cache_key] = resume_payload
 
         interaction_count += 1
 
-        # --- Resume the graph ---
         from langgraph.types import Command
 
         result = await compiled_graph.ainvoke(
@@ -307,20 +180,8 @@ async def run_with_human(
         )
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _extract_interrupts(result: Any) -> list[Any]:
-    """Extract the list of Interrupt objects from an ainvoke result dict.
-
-    LangGraph places interrupts under the ``__interrupt__`` key in the returned
-    state dict.  The value is a sequence of ``Interrupt`` objects.
-
-    Returns an empty list if the result is not a dict, the key is absent,
-    or the value is empty/falsy.
-    """
+    """Extract Interrupt objects from an ainvoke result dict (``__interrupt__`` key)."""
     if not isinstance(result, dict):
         return []
     raw = result.get("__interrupt__")
@@ -328,5 +189,4 @@ def _extract_interrupts(result: Any) -> list[Any]:
         return []
     if isinstance(raw, (list, tuple)):
         return list(raw)
-    # Single interrupt object (defensive, LangGraph always returns a list)
     return [raw]

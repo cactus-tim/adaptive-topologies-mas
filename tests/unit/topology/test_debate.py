@@ -19,7 +19,6 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# Side-effect import: triggers @TopologyRegistry.register("debate")
 import atm.topology.debate  # noqa: F401
 from atm.core.types import Message, MessageKind, ToolCall, ToolResult
 from atm.topology.base import TopologyConfig, TopologyRegistry
@@ -29,10 +28,6 @@ from atm.topology.debate import (
     _judge_postprocess,
     _route_from_judge,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers — minimal state factories
-# ---------------------------------------------------------------------------
 
 
 def _make_shared(
@@ -131,20 +126,10 @@ def _make_cfg(*, max_iterations: int = 12, max_rounds: int = 4) -> TopologyConfi
     )
 
 
-# ---------------------------------------------------------------------------
-# Ensure DebateTopology stays registered across test isolation
-# ---------------------------------------------------------------------------
-
-
 def _ensure_debate_registered() -> None:
     """Re-register DebateTopology if the registry was cleared by another test."""
     if "debate" not in TopologyRegistry.list_names():
         TopologyRegistry.register("debate")(DebateTopology)
-
-
-# ---------------------------------------------------------------------------
-# Test 1: test_register_under_name_debate
-# ---------------------------------------------------------------------------
 
 
 class TestDebateRegistration:
@@ -167,11 +152,6 @@ class TestDebateRegistration:
         assert callable(DebateTopology.build)
 
 
-# ---------------------------------------------------------------------------
-# Test 10: test_build_rejects_same_debater_id_for_pro_and_contra
-# ---------------------------------------------------------------------------
-
-
 class TestDebateBuildValidation:
     """build() raises ValueError when debater_pro_id == debater_contra_id."""
 
@@ -186,7 +166,7 @@ class TestDebateBuildValidation:
             extra={
                 "max_rounds": 4,
                 "debater_pro_id": "debater_x",
-                "debater_contra_id": "debater_x",  # Same as pro!
+                "debater_contra_id": "debater_x",
                 "judge_id": "judge",
             },
         )
@@ -204,11 +184,6 @@ class TestDebateBuildValidation:
             ValueError, match="debater_pro_id and debater_contra_id must be different"
         ):
             topology.build(agents, cfg)
-
-
-# ---------------------------------------------------------------------------
-# Test 1: test_planner_fans_out_to_both_debaters
-# ---------------------------------------------------------------------------
 
 
 class TestDebateFanOut:
@@ -240,7 +215,6 @@ class TestDebateFanOut:
             topology = DebateTopology()
             compiled = topology.build(agents, cfg)
 
-        # Verify both debater nodes were added
         node_calls = [call[0][0] for call in mock_graph.add_node.call_args_list]
         assert "debater_pro" in node_calls
         assert "debater_contra" in node_calls
@@ -249,7 +223,6 @@ class TestDebateFanOut:
         assert "judge_postprocess" in node_calls
         assert "debate_round_start" in node_calls
 
-        # Verify compiled graph returned
         assert compiled is mock_compiled
 
     def test_planner_has_two_edges_to_debaters(self) -> None:
@@ -275,15 +248,9 @@ class TestDebateFanOut:
             topology = DebateTopology()
             topology.build(agents, cfg)
 
-        # Verify edges planner → debater_pro and planner → debater_contra
         edge_calls = [call[0] for call in mock_graph.add_edge.call_args_list]
         assert ("planner", "debater_pro") in edge_calls
         assert ("planner", "debater_contra") in edge_calls
-
-
-# ---------------------------------------------------------------------------
-# Tests 2, 3, 9: _judge_postprocess
-# ---------------------------------------------------------------------------
 
 
 class TestJudgePostprocess:
@@ -364,10 +331,6 @@ class TestJudgePostprocess:
         delta = asyncio.run(run())
         signals = delta["shared"]["signals"]
         assert signals.get("judge_decided") is not True
-        # New contract (post-safety-net): on rejection, we still extract the
-        # best DRAFT artifact so the run reports SOMETHING instead of
-        # quality_score=0 on otherwise-correct debates. With no DRAFT data
-        # in this test fixture, the fallback returns "<incomplete>".
         assert delta["shared"].get("final_answer") == "<incomplete>"
 
     def test_judge_postprocess_no_decision_message_treated_as_rejected(self) -> None:
@@ -434,7 +397,6 @@ class TestJudgePostprocess:
                 debater_contra_id="debater_contra",
                 cfg=_make_cfg(),
             )
-            # Merge delta back into state for next round
             merged = dict(s)
             merged["shared"] = delta["shared"]
             return merged
@@ -448,12 +410,6 @@ class TestJudgePostprocess:
         final_state = asyncio.run(run_three_rounds())
         assert final_state["shared"]["iter_total"] == 3
         assert final_state["shared"]["debate_round"] == 3
-
-
-# ---------------------------------------------------------------------------
-# Tests for _extract_winner_artifact — the in-topology code-artifact extractor
-# that removes reliance on the runner-level workspace fallback for code tasks.
-# ---------------------------------------------------------------------------
 
 
 class TestExtractWinnerArtifact:
@@ -497,11 +453,10 @@ class TestExtractWinnerArtifact:
         agents = {
             "debater_pro": {
                 "outbox": [_make_draft_msg(content="argument")],
-                "tool_calls": [good, bad],  # bad is later in list
+                "tool_calls": [good, bad],
                 "tool_results": [self._ok_result(good), self._bad_result(bad)],
             }
         }
-        # bad is rejected → should fall through to good
         assert _extract_winner_artifact(agents, "debater_pro", task_id="humaneval") == "GOOD"
 
     def test_falls_back_to_draft_when_no_file_write(self) -> None:
@@ -548,15 +503,6 @@ class TestExtractWinnerArtifact:
 
         delta = asyncio.run(run())
         assert delta["shared"]["final_answer"] == "def f(): return 42"
-
-
-# ---------------------------------------------------------------------------
-# Regression: _extract_winner_artifact task-aware preference (port of chain
-# d585bbb). For non-code tasks the prompt override instructs debaters to use
-# a ###ANSWER###...###END### marker; the extractor must prefer DRAFT (with
-# marker extraction) over any solution.py artifact, since the executor.yaml
-# unconditionally tells debaters to dump "programming tasks" to solution.py.
-# ---------------------------------------------------------------------------
 
 
 class TestExtractWinnerArtifactTaskAware:
@@ -638,18 +584,12 @@ class TestExtractWinnerArtifactTaskAware:
         assert delta["shared"]["final_answer"] == "42"
 
 
-# ---------------------------------------------------------------------------
-# Tests 4, 5, 6, 7: _route_from_judge
-# ---------------------------------------------------------------------------
-
-
 class TestRouteFromJudge:
     """_route_from_judge returns correct routing string based on state."""
 
     def test_route_from_judge_returns_end_on_approved(self) -> None:
         """Returns '__end__' when judge_decided=True (topology_success)."""
         state = _make_state(iter_total=2, debate_round=1, judge_decided=True)
-        # Manually set judge_decided in signals
         state["shared"]["signals"]["judge_decided"] = True
         cfg = _make_cfg(max_iterations=12, max_rounds=4)
 
@@ -674,7 +614,6 @@ class TestRouteFromJudge:
 
     def test_global_max_iterations_overrides_topology_max(self) -> None:
         """Returns '__end__' when iter_total >= max_iterations, overriding debate_round < max_rounds."""
-        # iter_total=12 >= max_iterations=12, debate_round=1 (within max_rounds=4)
         state = _make_state(iter_total=12, debate_round=1)
         cfg = _make_cfg(max_iterations=12, max_rounds=4)
 
@@ -688,11 +627,6 @@ class TestRouteFromJudge:
 
         result = _route_from_judge(state, cfg, max_rounds=4)  # type: ignore[arg-type]
         assert result == "debate_round_start"
-
-
-# ---------------------------------------------------------------------------
-# Test: test_build_passes_checkpointer_to_compile
-# ---------------------------------------------------------------------------
 
 
 class TestDebateBuildCheckpointer:

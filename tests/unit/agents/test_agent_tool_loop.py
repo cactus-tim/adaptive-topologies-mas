@@ -109,7 +109,6 @@ class TestToolCallThenFinal:
         delta = await agent.step(state)
 
         scratchpad = delta["agents"]["p1"]["scratchpad"]
-        # Expected: reasoning(0), tool_call(0), observation(0), reasoning(1) = 4 events
         assert len(scratchpad) == 4, f"Expected 4 events, got {len(scratchpad)}: {scratchpad}"
 
         kinds = [e["kind"] for e in scratchpad]
@@ -157,7 +156,6 @@ class TestToolCallsAccumulateAcrossIters:
         agent_delta = delta["agents"]["p1"]
         tool_calls = agent_delta["tool_calls"]
 
-        # C1 assertion: must have accumulated across BOTH iterations
         assert len(tool_calls) == 2, (
             f"C1 violation: expected 2 accumulated tool_calls, got {len(tool_calls)}"
         )
@@ -169,9 +167,6 @@ class TestToolErrorConverted:
 
     async def test_tool_error_converted_to_failed_result(self) -> None:
         """ToolError from tool -> ToolResult(ok=False) in tool_results."""
-        # We need a fixture where the LLM requests "raising_tool"
-        # Use echo mode and manually patch — or use scripted fixture
-        # For simplicity, create a custom fixture inline
         import yaml as _yaml
 
         fixture_data = {

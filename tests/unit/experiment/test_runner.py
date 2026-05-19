@@ -43,10 +43,6 @@ from atm.experiment.runner import (
     run_one,
 )
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(**overrides: Any) -> ExperimentConfig:
     """Build a minimal ExperimentConfig for testing.
@@ -106,11 +102,6 @@ def _make_final_state(final_answer: str = "fib(10) = 55") -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Test: _build_initial_state has all 14 shared keys
-# ---------------------------------------------------------------------------
-
-
 def test_initial_state_has_all_14_shared_keys() -> None:
     """_build_initial_state must populate all 14 SharedState keys."""
     cfg = _make_cfg()
@@ -165,11 +156,6 @@ def test_initial_state_correct_values() -> None:
     assert shared["broadcast_bus"] == []
 
 
-# ---------------------------------------------------------------------------
-# Test: git_sha fallback
-# ---------------------------------------------------------------------------
-
-
 def test_git_sha_fallback_when_subprocess_raises() -> None:
     """_get_git_sha returns None when subprocess raises any exception."""
     with patch("atm.experiment.runner.subprocess.run", side_effect=OSError("no git")):
@@ -195,11 +181,6 @@ def test_git_sha_returns_value_on_success() -> None:
     with patch("atm.experiment.runner.subprocess.run", return_value=mock_result):
         result = _get_git_sha()
     assert result == "abc1234"
-
-
-# ---------------------------------------------------------------------------
-# Mock setup helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_mock_engine_and_session() -> tuple[MagicMock, AsyncMock, AsyncMock]:
@@ -245,11 +226,6 @@ def _make_mock_parquet_writer() -> AsyncMock:
     return mock_pw
 
 
-# ---------------------------------------------------------------------------
-# Test: success path
-# ---------------------------------------------------------------------------
-
-
 def _patch_run_one_common(
     mock_ce: Any,
     mock_csf: Any,
@@ -267,26 +243,19 @@ def _patch_run_one_common(
     mock_ee.return_value = exp_id
     mock_ir.return_value = run_id
 
-    # Engine — use a MagicMock with async begin() context manager
     mock_engine = MagicMock()
     mock_engine.dispose = AsyncMock()
     mock_ce.return_value = mock_engine
 
-    # Session factory
     mock_csf.return_value = MagicMock()
 
-    # Parquet writer
     mock_pw_cls.return_value = mock_pw
 
-    # Topology registry
-    # BUG-4 fix: runner now does cls = registry.get(name); instance = cls(); instance.build(...)
-    # So get() must return a callable (class mock) whose return_value is the instance.
     mock_topo_instance = Mock()
     mock_topo_instance.build = Mock(return_value=mock_graph)
     mock_topo_cls = Mock(return_value=mock_topo_instance)
     mock_reg.get.return_value = mock_topo_cls
 
-    # Checkpointer scope context manager
     mock_cp = AsyncMock()
 
     async def _cp_aenter(self: Any) -> Any:
@@ -341,15 +310,9 @@ async def test_run_one_success_path() -> None:
     assert result.status == "completed"
     assert result.run_id == run_id
     assert result.exp_id == exp_id
-    # M11: "fib_test" is not a registered task → inline-prompt path → quality_score=0.0
     assert result.metrics["quality_score"] == 0.0
     assert result.final_answer == "The answer is 55"
     mock_urs.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# Test: BudgetExceededError path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -375,7 +338,6 @@ async def test_run_one_budget_exceeded_path() -> None:
         run_id = uuid.uuid4()
         mock_pw = _make_mock_parquet_writer()
 
-        # Graph raises BudgetExceededError
         mock_graph = AsyncMock()
         mock_graph.ainvoke = AsyncMock(
             side_effect=BudgetExceededError(level="run", limit_usd=5.0, spent_usd=5.01)
@@ -397,17 +359,10 @@ async def test_run_one_budget_exceeded_path() -> None:
 
     assert result.status == "budget_exceeded"
     assert result.run_id == run_id
-    # parquet.close() should have been called
     mock_pw.close.assert_called_once()
-    # _update_run_failed should have been called with budget_exceeded status
     mock_urf.assert_called_once()
     call_kwargs = mock_urf.call_args
     assert call_kwargs[1]["status"] == "budget_exceeded"
-
-
-# ---------------------------------------------------------------------------
-# Test: generic Exception path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -433,7 +388,6 @@ async def test_run_one_generic_exception_path() -> None:
         run_id = uuid.uuid4()
         mock_pw = _make_mock_parquet_writer()
 
-        # Graph raises a generic exception
         mock_graph = AsyncMock()
         mock_graph.ainvoke = AsyncMock(side_effect=RuntimeError("graph crashed"))
         _patch_run_one_common(
@@ -452,17 +406,10 @@ async def test_run_one_generic_exception_path() -> None:
         with pytest.raises(RuntimeError, match="graph crashed"):
             await run_one(cfg)
 
-    # parquet should still have been closed
     mock_pw.close.assert_called_once()
-    # _update_run_failed should have been called with failed status
     mock_urf.assert_called_once()
     call_kwargs = mock_urf.call_args
     assert call_kwargs[1]["status"] == "failed"
-
-
-# ---------------------------------------------------------------------------
-# Test: flush-before-update order
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -516,7 +463,6 @@ async def test_flush_before_update_order_on_success() -> None:
         )
         await run_one(cfg)
 
-    # parquet.close must come BEFORE update_run_success
     assert "parquet.close" in call_order
     assert "update_run_success" in call_order
     close_idx = call_order.index("parquet.close")
@@ -588,11 +534,6 @@ async def test_flush_before_update_order_on_budget_exceeded() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test: RunResult model
-# ---------------------------------------------------------------------------
-
-
 def test_run_result_fields() -> None:
     """RunResult Pydantic model has the required fields."""
     run_id = uuid.uuid4()
@@ -613,11 +554,6 @@ def test_run_result_fields() -> None:
     assert result.final_answer == "The answer is 55"
 
 
-# ---------------------------------------------------------------------------
-# Test: _build_agents uses role name as dict key (BUG-1 regression)
-# ---------------------------------------------------------------------------
-
-
 def test_build_agents_keys_by_role_name() -> None:
     """_build_agents must return dict keyed by role name (not 'role_agent').
 
@@ -628,7 +564,6 @@ def test_build_agents_keys_by_role_name() -> None:
 
     cfg = _make_cfg()
 
-    # Build a minimal pricing and budget so LLMWrapper doesn't fail
     from atm.llm.budget import BudgetTracker
     from atm.llm.fake import FakeLLM
     from atm.llm.pricing import Pricing
@@ -647,20 +582,17 @@ def test_build_agents_keys_by_role_name() -> None:
         "researcher": fake_llm,
     }
 
-    # Find the conf dir
     from pathlib import Path as _Path
 
     conf_dir = _Path(__file__).parent.parent.parent.parent / "conf"
 
     agents = _build_agents(cfg, llms, conf_dir=conf_dir)
 
-    # Keys must be role names, not "planner_agent" etc.
     for key in agents:
         assert not key.endswith("_agent"), (
             f"_build_agents dict key must be role name, got '{key}'. "
             "Expected one of: 'planner', 'executor', 'critic', 'researcher'."
         )
-    # At least the three core roles should be present
     for role in ["planner", "executor", "critic"]:
         assert role in agents, (
             f"Expected agents['{role}'] to exist; got keys: {list(agents.keys())}"
@@ -704,11 +636,6 @@ def test_build_agents_critic_is_critic_subclass() -> None:
     assert isinstance(agents["critic"], Critic), (
         f"agents['critic'] must be Critic instance, got {type(agents['critic'])}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test: run_one instantiates topology class (BUG-4 regression)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -759,7 +686,6 @@ async def test_run_one_instantiates_topology_class() -> None:
         mock_csf.return_value = MagicMock()
         mock_pw_cls.return_value = mock_pw
 
-        # Registry returns the CLASS (not an instance) — runner must instantiate it
         mock_reg.get.return_value = _FakeTopo
 
         mock_cp = AsyncMock()
@@ -775,7 +701,6 @@ async def test_run_one_instantiates_topology_class() -> None:
 
         await run_one(cfg)
 
-    # The topology class must have been instantiated (constructor called)
     assert "instantiated" in instantiation_log, (
         "Topology class must be instantiated (cls()) before build() is called. "
         f"Calls seen: {instantiation_log}"
@@ -783,11 +708,6 @@ async def test_run_one_instantiates_topology_class() -> None:
     assert "build_called" in instantiation_log, (
         "topology_instance.build() must be called after instantiation."
     )
-
-
-# ---------------------------------------------------------------------------
-# Test: F4 — human_gateway_llm is built and passed to topology.build when needed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -844,8 +764,6 @@ async def test_run_one_passes_human_gateway_llm_when_human_enabled() -> None:
         mock_pw_cls.return_value = mock_pw
         mock_reg.get.return_value = _FakeTopoF4
 
-        # build_llm is called both for regular LLM wrappers AND for human_gateway_llm.
-        # We use a fake LLMWrapper for each call.
         from atm.llm.budget import BudgetTracker
         from atm.llm.fake import FakeLLM
         from atm.llm.pricing import Pricing
@@ -874,7 +792,6 @@ async def test_run_one_passes_human_gateway_llm_when_human_enabled() -> None:
 
         await run_one(cfg)
 
-    # build() must have been called with human_gateway_llm kwarg
     assert len(build_kwargs_log) == 1, (
         f"Expected exactly 1 build() call, got {len(build_kwargs_log)}"
     )
@@ -893,7 +810,7 @@ async def test_run_one_passes_human_gateway_llm_when_human_enabled() -> None:
 async def test_run_one_does_not_pass_human_gateway_llm_when_human_disabled() -> None:
     """When cfg.human is None (default), human_gateway_llm must be None (no extra
     build_llm call for HITL)."""
-    cfg = _make_cfg()  # human=None by default
+    cfg = _make_cfg()
     final_state = _make_final_state(final_answer="The answer is 55")
 
     build_kwargs_log: list[dict[str, Any]] = []
@@ -950,16 +867,10 @@ async def test_run_one_does_not_pass_human_gateway_llm_when_human_disabled() -> 
 
     assert len(build_kwargs_log) == 1
     build_kwargs = build_kwargs_log[0]
-    # human_gateway_llm should be None when human is not configured
     assert build_kwargs.get("human_gateway_llm") is None, (
         "When cfg.human is None, human_gateway_llm must be None (not built). "
         f"Got: {build_kwargs.get('human_gateway_llm')!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Regression test: _build_agents reads debate extras from namespaced TopologyExtras
-# ---------------------------------------------------------------------------
 
 
 def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
@@ -976,7 +887,6 @@ def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
     """
     from pathlib import Path
 
-    # Build a topology config with namespaced debate extras
     topo_cfg = TopologyCfg.model_validate(
         {
             "name": "debate",
@@ -992,12 +902,10 @@ def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
     )
     cfg = _make_cfg(topology=topo_cfg)
 
-    # Minimal mock AgentConfig returned by load_agent_config
     mock_agent_cfg = MagicMock()
     mock_agent_cfg.system_prompt = "test prompt"
     mock_agent_cfg.model_copy = MagicMock(return_value=mock_agent_cfg)
 
-    # Minimal mock Agent/LLMWrapper
     mock_llm = MagicMock()
     mock_agent = MagicMock()
 
@@ -1008,11 +916,8 @@ def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
         return mock_agent
 
     with (
-        # Patch Path.exists to always return True so YAML paths appear present
         patch.object(Path, "exists", return_value=True),
-        # Patch load_agent_config at the source module (imported locally inside _build_agents)
         patch("atm.agents.config.load_agent_config", side_effect=_fake_load_agent_config),
-        # Patch Agent and Critic at the source modules (imported locally)
         patch("atm.agents.base.Agent", side_effect=_fake_agent_cls),
         patch("atm.agents.critic.Critic", side_effect=_fake_agent_cls),
     ):
@@ -1026,7 +931,6 @@ def test_build_agents_reads_debater_ids_from_namespaced_extra() -> None:
             },
         )
 
-    # The custom debater/judge IDs must be present in the synthesised agent dict
     assert "my_pro" in agents, (
         f"Expected 'my_pro' in agents (from debate.debater_pro_id), got keys: {list(agents)}"
     )

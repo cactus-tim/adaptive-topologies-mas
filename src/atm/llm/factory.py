@@ -62,12 +62,10 @@ def build_llm(
     bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
 
     if provider == "fake":
-        # Determine fake mode from bare_model or fallback parameter
         mode = bare_model if bare_model in ("scripted", "echo", "replay") else fake_mode
 
         if mode == "scripted":
             if fixture_path is None:
-                # Fall back to echo if no fixture provided
                 fake_llm: FakeLLM = FakeLLM(mode="echo")
             else:
                 fake_llm = FakeLLM(mode="scripted", fixture=Path(fixture_path))
@@ -79,8 +77,6 @@ def build_llm(
             replay_path = Path(replay_source)
             if not replay_path.exists():
                 raise FileNotFoundError(f"build_llm: replay_source not found: {replay_path}")
-            # Local import keeps pyarrow.parquet load lazy so that callers that
-            # never touch replay mode don't pay the import cost.
             import pyarrow.parquet as pq
 
             table = pq.read_table(str(replay_path))  # type: ignore[no-untyped-call]
@@ -96,11 +92,6 @@ def build_llm(
             llm=fake_llm,
         )
 
-    # Providers whose prefix LangChain's `init_chat_model` does NOT recognise
-    # natively (cerebras, vllm) must be built via our own factories and
-    # injected as `llm=` so LLMWrapper skips its `init_chat_model` fallback.
-    # openai / anthropic are recognised natively, so we leave them on the
-    # default path for back-compat.
     if provider in ("cerebras", "vllm"):
         from atm.llm.providers import build_cerebras, build_vllm
 
@@ -114,7 +105,6 @@ def build_llm(
             llm=chat_model,
         )
 
-    # openai / anthropic / unknown — LLMWrapper calls init_chat_model internally.
     return LLMWrapper(
         model_id=model_id,
         pricing=pricing,

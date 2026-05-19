@@ -42,17 +42,14 @@ async def test_grid_mini_all_cells_complete_with_host_pid(
     overrides = [
         f"observability.pg_dsn={ephemeral_pg_dsn}",
         f"observability.parquet_dir={tmp_path / 'parquet'}",
-        # Force unique experiment name per test to avoid cross-run collisions.
         f"name=m12_grid_mini_{os.getpid()}",
     ]
     configs = load_grid_configs(str(_FIXTURE_YAML), overrides=overrides)
 
     assert len(configs) == 4, f"expected 4 cells, got {len(configs)}"
 
-    # parallelism=2 keeps PG connection load reasonable.
     result = await run_grid(configs, parallelism=2, fail_fast=False)
 
-    # Aggregate counts.
     assert result.total == 4
     assert result.completed == 4, (
         f"expected all 4 cells completed; got completed={result.completed} "
@@ -60,11 +57,9 @@ async def test_grid_mini_all_cells_complete_with_host_pid(
     )
     assert len(result.run_ids) == 4
 
-    # DB-side verification.
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine.connect() as conn:
-            # Per-run host/pid populated.
             rows = (
                 await conn.execute(
                     sa.text(
@@ -80,7 +75,6 @@ async def test_grid_mini_all_cells_complete_with_host_pid(
                     f"run {row.id} process_pid not populated"
                 )
 
-            # Experiment-aggregate status.
             exp_status = (
                 await conn.execute(
                     sa.text("SELECT status FROM experiments WHERE id = :eid").bindparams(

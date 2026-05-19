@@ -16,10 +16,6 @@ import pytest
 from atm.core.types import TaskSpec
 from atm.tasks import EVALUATORS, TASKS
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_fake_specs(n: int) -> list[TaskSpec]:
     """Create ``n`` fake humaneval TaskSpec instances with deterministic IDs."""
@@ -93,11 +89,6 @@ def _make_fake_dabench_specs(n: int = 20) -> list[TaskSpec]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Test 1: All four loaders and evaluators are registered
-# ---------------------------------------------------------------------------
-
-
 def test_all_loaders_registered() -> None:
     """All four loader/evaluator modules are registered in TASKS/EVALUATORS after import."""
     assert set(TASKS._registry.keys()) >= {
@@ -115,11 +106,6 @@ def test_all_loaders_registered() -> None:
     }, f"Expected evaluators not found. Got: {sorted(EVALUATORS._registry.keys())}"
 
 
-# ---------------------------------------------------------------------------
-# Test 2: TASKS.sample("humaneval") returns 10 TaskSpec — no network
-# ---------------------------------------------------------------------------
-
-
 def test_sample_humaneval_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """sample("humaneval", n=10, seed=42) returns exactly 10 TaskSpec.
 
@@ -132,7 +118,6 @@ def test_sample_humaneval_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(HumanEvalLoader, "load", lambda self, cache_dir=None: fake_specs)
 
-    # Clear the internal cache so the monkeypatched load is actually called
     TASKS._cache.pop("humaneval", None)
 
     result = TASKS.sample("humaneval", n=10, seed=42)
@@ -143,11 +128,6 @@ def test_sample_humaneval_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         assert spec.evaluator_key == "humaneval_pytest"
 
 
-# ---------------------------------------------------------------------------
-# Test 3: Determinism — same seed → same sample
-# ---------------------------------------------------------------------------
-
-
 def test_sample_humaneval_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two calls with the same seed produce identical results."""
     fake_specs = _make_fake_specs(20)
@@ -156,20 +136,13 @@ def test_sample_humaneval_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(HumanEvalLoader, "load", lambda self, cache_dir=None: fake_specs)
 
-    # Clear cache to force a fresh load (uses monkeypatched method)
     TASKS._cache.pop("humaneval", None)
 
     first = TASKS.sample("humaneval", n=10, seed=42)
 
-    # Second call uses the populated cache — same seed → same result
     second = TASKS.sample("humaneval", n=10, seed=42)
 
     assert first == second, "Same seed must produce identical sample"
-
-
-# ---------------------------------------------------------------------------
-# Test 4: Different seeds → different samples (with enough items)
-# ---------------------------------------------------------------------------
 
 
 def test_sample_humaneval_different_seeds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -185,15 +158,9 @@ def test_sample_humaneval_different_seeds(monkeypatch: pytest.MonkeyPatch) -> No
     sample_a = TASKS.sample("humaneval", n=10, seed=1)
     sample_b = TASKS.sample("humaneval", n=10, seed=99)
 
-    # With 20 items and n=10, different seeds almost certainly pick different subsets
     ids_a = {s.id for s in sample_a}
     ids_b = {s.id for s in sample_b}
     assert ids_a != ids_b, "Different seeds should produce different samples"
-
-
-# ---------------------------------------------------------------------------
-# Test 5: True sampler determinism — cache cleared between calls
-# ---------------------------------------------------------------------------
 
 
 def test_sample_humaneval_determinism_fresh_load(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,21 +179,15 @@ def test_sample_humaneval_determinism_fresh_load(monkeypatch: pytest.MonkeyPatch
     TASKS._cache.pop("humaneval", None)
     first = TASKS.sample("humaneval", n=10, seed=42)
 
-    # Clear the registry cache to force a second fresh load
     TASKS._cache.clear()
     second = TASKS.sample("humaneval", n=10, seed=42)
 
     assert first == second, "Same seed must produce identical sample even after cache clear"
 
 
-# ---------------------------------------------------------------------------
-# Test 6: GSM8K sample determinism
-# ---------------------------------------------------------------------------
-
-
 def test_gsm8k_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     """sample("gsm8k", n=10, seed=42) returns 10 reasoning specs; same seed is stable."""
-    TASKS._cache.pop("gsm8k", None)  # N3 cache eviction
+    TASKS._cache.pop("gsm8k", None)
     fake_specs = _make_fake_gsm8k_specs(20)
     monkeypatch.setattr(
         "atm.tasks.gsm8k.GSM8KLoader.load",
@@ -236,20 +197,14 @@ def test_gsm8k_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(out) == 10
     assert all(s.type == "reasoning" for s in out)
     assert all(s.evaluator_key == "gsm8k_numeric" for s in out)
-    # determinism: same seed → same selection
     TASKS._cache.pop("gsm8k", None)
     out2 = TASKS.sample("gsm8k", n=10, seed=42)
     assert [s.id for s in out] == [s.id for s in out2]
 
 
-# ---------------------------------------------------------------------------
-# Test 7: CommonGen sample determinism
-# ---------------------------------------------------------------------------
-
-
 def test_commongen_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     """sample("commongen", n=10, seed=42) returns 10 creative specs; same seed is stable."""
-    TASKS._cache.pop("commongen", None)  # N3 cache eviction
+    TASKS._cache.pop("commongen", None)
     fake_specs = _make_fake_commongen_specs(20)
     monkeypatch.setattr(
         "atm.tasks.commongen.CommonGenLoader.load",
@@ -259,20 +214,14 @@ def test_commongen_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(out) == 10
     assert all(s.type == "creative" for s in out)
     assert all(s.evaluator_key == "commongen_rouge_coverage" for s in out)
-    # determinism: same seed → same selection
     TASKS._cache.pop("commongen", None)
     out2 = TASKS.sample("commongen", n=10, seed=42)
     assert [s.id for s in out] == [s.id for s in out2]
 
 
-# ---------------------------------------------------------------------------
-# Test 8: DABench sample determinism
-# ---------------------------------------------------------------------------
-
-
 def test_dabench_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     """sample("dabench", n=10, seed=42) returns 10 decision specs; same seed is stable."""
-    TASKS._cache.pop("dabench", None)  # N3 cache eviction
+    TASKS._cache.pop("dabench", None)
     fake_specs = _make_fake_dabench_specs(20)
     monkeypatch.setattr(
         "atm.tasks.dabench.DABenchLoader.load",
@@ -282,7 +231,6 @@ def test_dabench_sample_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(out) == 10
     assert all(s.type == "decision" for s in out)
     assert all(s.evaluator_key == "dabench_numeric_exact" for s in out)
-    # determinism: same seed → same selection
     TASKS._cache.pop("dabench", None)
     out2 = TASKS.sample("dabench", n=10, seed=42)
     assert [s.id for s in out] == [s.id for s in out2]

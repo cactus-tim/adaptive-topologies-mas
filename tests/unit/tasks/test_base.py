@@ -26,10 +26,6 @@ from atm.tasks.base import (
     TaskRegistry,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers — minimal conforming implementations for testing Protocols
-# ---------------------------------------------------------------------------
-
 
 def _make_task_spec(task_id: str) -> TaskSpec:
     return TaskSpec(
@@ -41,11 +37,6 @@ def _make_task_spec(task_id: str) -> TaskSpec:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 1: TASKS registry — register + get
-# ---------------------------------------------------------------------------
-
-
 def test_tasks_register_and_get() -> None:
     """Registering a loader class via TASKS and getting it back by name works."""
 
@@ -55,21 +46,13 @@ def test_tasks_register_and_get() -> None:
         def load(self, cache_dir: object = None) -> list[TaskSpec]:
             return [_make_task_spec("qa/1"), _make_task_spec("qa/2")]
 
-    # Register
     registered = TASKS.register(_DummyLoader)
     assert registered is _DummyLoader
 
-    # Get back — should be the same class
     loader_cls = TASKS.get("test_loader_unique_1")
     assert loader_cls is _DummyLoader
 
-    # Conforms to TaskLoader Protocol (structural subtyping)
     assert isinstance(_DummyLoader(), TaskLoader)
-
-
-# ---------------------------------------------------------------------------
-# Test 2: EVALUATORS registry — register + get
-# ---------------------------------------------------------------------------
 
 
 def test_evaluators_register_and_get() -> None:
@@ -87,13 +70,7 @@ def test_evaluators_register_and_get() -> None:
     eval_cls = EVALUATORS.get("test_eval_unique_1")
     assert eval_cls is _DummyEval
 
-    # Conforms to Evaluator Protocol
     assert isinstance(_DummyEval(), Evaluator)
-
-
-# ---------------------------------------------------------------------------
-# Test 3: KeyError on unknown name — both registries
-# ---------------------------------------------------------------------------
 
 
 def test_tasks_get_unknown_raises_key_error() -> None:
@@ -108,11 +85,6 @@ def test_evaluators_get_unknown_raises_key_error() -> None:
         EVALUATORS.get("no_such_eval_xyz")
 
 
-# ---------------------------------------------------------------------------
-# Test 4: TaskRegistry.sample(n, seed) determinism + sort-by-id stability
-# ---------------------------------------------------------------------------
-
-
 def test_task_registry_sample_is_deterministic() -> None:
     """sample(n, seed) with same seed always returns the same ordered subset."""
     registry = TaskRegistry()
@@ -121,7 +93,6 @@ def test_task_registry_sample_is_deterministic() -> None:
         name = "det_loader_unique"
 
         def load(self, cache_dir: object = None) -> list[TaskSpec]:
-            # Intentionally out-of-id order to test sort
             return [
                 _make_task_spec("qa/c"),
                 _make_task_spec("qa/a"),
@@ -136,9 +107,8 @@ def test_task_registry_sample_is_deterministic() -> None:
     result2 = registry.sample("det_loader_unique", n=3, seed=42)
 
     assert len(result1) == 3
-    assert result1 == result2  # deterministic with same seed
+    assert result1 == result2
 
-    # seed=99 is also deterministic with itself
     result3 = registry.sample("det_loader_unique", n=3, seed=99)
     result4 = registry.sample("det_loader_unique", n=3, seed=99)
     assert result3 == result4
@@ -152,7 +122,6 @@ def test_task_registry_sample_sorted_by_id() -> None:
         name = "sort_loader_unique"
 
         def load(self, cache_dir: object = None) -> list[TaskSpec]:
-            # Deliberately shuffle ids
             return [
                 _make_task_spec("qa/z"),
                 _make_task_spec("qa/a"),
@@ -161,17 +130,10 @@ def test_task_registry_sample_sorted_by_id() -> None:
 
     registry.register(_LoaderForSort)
 
-    # Sampling all 3 with a seed; since n == len(pool), all are returned in sorted order
     result = registry.sample("sort_loader_unique", n=3, seed=1)
     assert len(result) == 3
     ids = [s.id for s in result]
-    # sorted pool: qa/a, qa/m, qa/z — result should be that order (all selected)
     assert ids == ["qa/a", "qa/m", "qa/z"]
-
-
-# ---------------------------------------------------------------------------
-# Test 5: sample() overflow — returns all available when n > len
-# ---------------------------------------------------------------------------
 
 
 def test_task_registry_sample_overflow_returns_all() -> None:
@@ -187,12 +149,7 @@ def test_task_registry_sample_overflow_returns_all() -> None:
     registry.register(_LoaderForOverflow)
 
     result = registry.sample("overflow_loader_unique", n=100, seed=7)
-    assert len(result) == 2  # only 2 available
-
-
-# ---------------------------------------------------------------------------
-# Test 6: EvalResult score validation — rejects <0 and >1
-# ---------------------------------------------------------------------------
+    assert len(result) == 2
 
 
 def test_eval_result_valid_boundary_scores() -> None:
@@ -219,11 +176,6 @@ def test_eval_result_rejects_score_above_one() -> None:
         EvalResult(score=1.01, passed=True)
 
 
-# ---------------------------------------------------------------------------
-# Test 7: EvalResult is frozen and has expected fields
-# ---------------------------------------------------------------------------
-
-
 def test_eval_result_is_frozen() -> None:
     """EvalResult is immutable after creation."""
     r = EvalResult(score=0.5, passed=False, details={"note": "test"})
@@ -238,11 +190,6 @@ def test_eval_result_optional_error_field() -> None:
 
     r_no_err = EvalResult(score=1.0, passed=True)
     assert r_no_err.error is None
-
-
-# ---------------------------------------------------------------------------
-# Test 8: TaskRegistry lazy load + cache
-# ---------------------------------------------------------------------------
 
 
 def test_task_registry_lazy_load_caches() -> None:
@@ -264,4 +211,4 @@ def test_task_registry_lazy_load_caches() -> None:
     registry.sample("cache_loader_unique", n=1, seed=2)
     registry.sample("cache_loader_unique", n=1, seed=3)
 
-    assert call_count == 1  # load() called only once despite 3 sample calls
+    assert call_count == 1

@@ -70,7 +70,6 @@ def resolve_and_validate_url(url: str, allow_private: bool = False) -> str:
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError as exc:
-            # Malformed address — reject to be safe
             raise ToolError(
                 tool_name="url_fetch",
                 message=f"could not parse resolved address: {ip_str!r}",

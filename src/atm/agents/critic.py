@@ -67,7 +67,6 @@ class Critic(Agent):
         """
         delta = await super().step(state)
 
-        # Convert DRAFT outbox messages to DECISION with approved payload
         agents_delta: dict[str, Any] = dict(delta.get("agents", {}))
         self_delta: dict[str, Any] = dict(agents_delta.get(self.agent_id, {}))
         outbox: list[Any] = list(self_delta.get("outbox", []))
@@ -76,15 +75,6 @@ class Critic(Agent):
         new_outbox: list[Message] = []
         new_messages: list[Message] = []
 
-        # Determine approval from the first outbox message.
-        # Heuristic order:
-        #   1. Final non-empty line is exactly "APPROVE" (case-insensitive)
-        #      → approved=True. This is the contract documented in the
-        #      critic's system prompt and is the only reliable signal.
-        #   2. Final non-empty line is exactly "REJECT" → approved=False.
-        #   3. Fallback (legacy / off-prompt models): substring "approve"
-        #      anywhere in content → True. Loose, but no worse than the
-        #      previous behaviour and a safety net for old fixtures.
         def _verdict(content: str) -> bool:
             for line in reversed((content or "").splitlines()):
                 tok = line.strip().rstrip(".!?:").upper()
@@ -123,8 +113,6 @@ class Critic(Agent):
             )
             new_messages.append(decision_msg)
 
-        # --- Signal emission (additive, does not affect existing delta) ---
-        # Read current shared state to update signals
         shared: dict[str, Any] = dict(state.get("shared") or {})
 
         if approved:
@@ -134,7 +122,6 @@ class Critic(Agent):
             if rejected_count >= 3:
                 shared = emit_signal(shared, NEEDS_DEBATE, True)
 
-        # Rebuild delta with DECISION messages and updated shared signals
         self_delta = dict(self_delta)
         self_delta["outbox"] = new_outbox
         agents_delta = dict(agents_delta)

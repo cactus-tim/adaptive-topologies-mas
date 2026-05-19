@@ -46,7 +46,6 @@ async def test_status_cli_json_aggregates(  # type: ignore[no-untyped-def]
                 status="running",
             )
         )
-        # 2 completed
         for q, cost in [(0.8, 0.10), (0.9, 0.20)]:
             session.add(
                 Run(
@@ -63,7 +62,6 @@ async def test_status_cli_json_aggregates(  # type: ignore[no-untyped-def]
                     iterations=5,
                 )
             )
-        # 1 failed
         session.add(
             Run(
                 id=uuid.uuid4(),
@@ -77,7 +75,6 @@ async def test_status_cli_json_aggregates(  # type: ignore[no-untyped-def]
                 budget_spent_usd=Decimal("0.05"),
             )
         )
-        # 1 running
         session.add(
             Run(
                 id=uuid.uuid4(),
@@ -93,8 +90,6 @@ async def test_status_cli_json_aggregates(  # type: ignore[no-untyped-def]
         )
         await session.commit()
 
-    # Invoke CLI via subprocess to avoid asyncio.run() conflict with
-    # the running pytest-asyncio event loop.
     env = os.environ.copy()
     env["ATM_PG_DSN"] = pg_dsn
 
@@ -190,7 +185,5 @@ async def test_status_cli_latest_experiment(  # type: ignore[no-untyped-def]
     )
 
     parsed = json.loads(result.stdout.strip())
-    # Either is fine if started_at is identical at clock resolution; the test
-    # just asserts the CLI returns _some_ experiment with valid counts.
     assert parsed["name"] in {"older", "newer"}
     assert parsed["total"] == 0

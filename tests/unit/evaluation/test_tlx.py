@@ -2,7 +2,7 @@
 
 6 tests covering:
 1. Valid construction with all 6 scales
-2. raw_score formula (arch.md §13.3): (mental + physical + temporal + (100-perf) + effort + frustration) / 6
+2. raw_score formula: (mental + physical + temporal + (100-perf) + effort + frustration) / 6
 3. Boundary values: all zeros → raw_score == 0.0
 4. Boundary values: all 100 → raw_score == 100.0 (performance inverted: (100-100)=0)
 5. Validation: value out of [0, 100] raises ValidationError
@@ -31,7 +31,6 @@ class TestNasaTLXConstruction:
         assert tlx.performance == 80
 
     def test_raw_score_formula(self) -> None:
-        # arch.md §13.3: (mental + physical + temporal + (100 - perf) + effort + frustration) / 6
         tlx = NasaTLX(
             mental_demand=60,
             physical_demand=10,
@@ -52,7 +51,6 @@ class TestNasaTLXConstruction:
             effort=0,
             frustration=0,
         )
-        # performance=0 → (100-0)=100 contributes 100; all others 0 → 100/6
         expected = (0 + 0 + 0 + 100 + 0 + 0) / 6
         assert tlx.raw_score == pytest.approx(expected)
 
@@ -65,7 +63,6 @@ class TestNasaTLXConstruction:
             effort=100,
             frustration=100,
         )
-        # performance=100 → (100-100)=0; all others 100 → (100*5)/6
         expected = (100 + 100 + 100 + 0 + 100 + 100) / 6
         assert tlx.raw_score == pytest.approx(expected)
 

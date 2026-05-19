@@ -20,11 +20,6 @@ def calc() -> CalculatorTool:
     return CalculatorTool()
 
 
-# ---------------------------------------------------------------------------
-# Happy-path arithmetic
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_calculator_simple_add(calc: CalculatorTool) -> None:
     """2+2 should return value=4 and expression='2+2'."""
@@ -75,11 +70,6 @@ async def test_calculator_pi_constant(calc: CalculatorTool) -> None:
     assert result.output["value"] == pytest.approx(math.pi)
 
 
-# ---------------------------------------------------------------------------
-# Output shape
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_calculator_output_shape(calc: CalculatorTool) -> None:
     """Both 'value' and 'expression' keys must be present in output."""
@@ -87,11 +77,6 @@ async def test_calculator_output_shape(calc: CalculatorTool) -> None:
     assert result.ok is True
     assert "value" in result.output
     assert "expression" in result.output
-
-
-# ---------------------------------------------------------------------------
-# Rejection of unsafe inputs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

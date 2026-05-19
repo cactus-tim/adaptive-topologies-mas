@@ -19,9 +19,6 @@ from atm.tools._retry import with_tool_retry
 from atm.tools._safety import resolve_and_validate_url
 from atm.tools.base import ToolSchema
 
-# Default retry policy: 2 retries on transient network/timeout errors.
-# httpx.NetworkError covers connection refused, DNS failure, etc.
-# 5xx/429 are handled via the is_transient duck-type path in with_retry.
 _DEFAULT_RETRY_POLICY = RetryPolicy(
     max_retries=2,
     base_delay_s=0.1,
@@ -43,12 +40,6 @@ class UrlFetchTool:
     - Body streamed via ``aiter_bytes``; aborts if ``max_bytes`` exceeded.
     - Body decoded as UTF-8 with ``errors='replace'``.
     - Retried via ``with_tool_retry`` on transient errors (e.g. timeout).
-
-    Documented alternative for redirect handling (NOT implemented by default):
-        Use ``httpx.AsyncClient(event_hooks={"response": [_revalidate_redirect]})``
-        to revalidate each ``Location`` header through ``resolve_and_validate_url``
-        before following it.  This is NOT enabled because it adds complexity and
-        most callers should resolve the final URL explicitly.
 
     Parameters
     ----------
@@ -122,12 +113,10 @@ class UrlFetchTool:
 
     async def _do_fetch(self, url: str, call_id: Any) -> ToolResult:
         """Core fetch logic — validates URL, sends GET, streams body."""
-        # Step 1: SSRF validation
         try:
             resolve_and_validate_url(url, allow_private=self.allow_private)
         except ToolError as exc:
             msg = str(exc)
-            # Extract the message portion after "Tool 'url_fetch' failed: "
             prefix = "Tool 'url_fetch' failed: "
             if msg.startswith(prefix):
                 msg = msg[len(prefix) :]
@@ -139,7 +128,6 @@ class UrlFetchTool:
                 latency_ms=0,
             )
 
-        # Step 2: HTTP GET (no redirects)
         async with httpx.AsyncClient(
             timeout=self.timeout_s,
             follow_redirects=False,
@@ -152,7 +140,6 @@ class UrlFetchTool:
             except httpx.TimeoutException as exc:
                 raise exc  # let with_tool_retry handle it
 
-            # Step 3: Reject redirects
             if response.is_redirect or (300 <= response.status_code < 400):
                 await response.aclose()
                 return ToolResult(
@@ -163,7 +150,6 @@ class UrlFetchTool:
                     latency_ms=0,
                 )
 
-            # Step 4: Stream body up to max_bytes
             chunks: list[bytes] = []
             bytes_read = 0
             too_large = False
@@ -185,7 +171,6 @@ class UrlFetchTool:
                     latency_ms=0,
                 )
 
-            # Step 5: Decode body
             raw_body = b"".join(chunks)
             content = raw_body.decode("utf-8", errors="replace")
             content_type = response.headers.get("content-type", "")

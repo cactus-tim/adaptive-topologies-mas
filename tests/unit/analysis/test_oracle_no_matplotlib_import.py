@@ -29,7 +29,6 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
 _ORACLE_PATH = _REPO_ROOT / "src" / "atm" / "analysis" / "oracle.py"
 
-# Python code run in the subprocess
 _CHECK_SCRIPT = """\
 import importlib.util
 import sys
@@ -63,7 +62,6 @@ def _run_subprocess_check() -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         env={
-            # Provide minimal env for the subprocess — no matplotlib pre-loaded
             "PYTHONPATH": str(_REPO_ROOT / "src"),
             "HOME": str(Path.home()),
             "PATH": "/usr/bin:/bin",

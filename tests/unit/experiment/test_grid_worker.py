@@ -38,11 +38,6 @@ def _make_min_cfg() -> ExperimentConfig:
     )
 
 
-# ---------------------------------------------------------------------------
-# Picklability — cfg.model_dump must round-trip through pickle
-# ---------------------------------------------------------------------------
-
-
 def test_cfg_dump_is_picklable() -> None:
     """ExperimentConfig.model_dump(mode='python') must be picklable
     (so ProcessPoolExecutor can ship it to workers)."""
@@ -50,16 +45,10 @@ def test_cfg_dump_is_picklable() -> None:
     dumped = cfg.model_dump(mode="python")
     blob = pickle.dumps(dumped)
     restored = pickle.loads(blob)
-    # Must round-trip through model_validate too.
     cfg2 = ExperimentConfig.model_validate(restored)
     assert cfg2.name == cfg.name
     assert cfg2.seed == cfg.seed
     assert cfg2.topology.name == cfg.topology.name
-
-
-# ---------------------------------------------------------------------------
-# _run_cell_worker — happy path (mocked run_one)
-# ---------------------------------------------------------------------------
 
 
 def test_run_cell_worker_returns_dict_shape(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,7 +72,6 @@ def test_run_cell_worker_returns_dict_shape(monkeypatch: pytest.MonkeyPatch) -> 
     cfg = _make_min_cfg()
     result = _run_cell_worker(cfg.model_dump(mode="python"))
 
-    # Shape contract.
     expected_keys = {
         "run_id",
         "exp_id",
@@ -104,13 +92,7 @@ def test_run_cell_worker_returns_dict_shape(monkeypatch: pytest.MonkeyPatch) -> 
     assert result["final_answer"] == "42"
     assert result["error"] is None
 
-    # Whole dict must be picklable.
     pickle.dumps(result)
-
-
-# ---------------------------------------------------------------------------
-# _run_cell_worker — run_one raises
-# ---------------------------------------------------------------------------
 
 
 def test_run_cell_worker_catches_run_one_exceptions(
@@ -132,11 +114,6 @@ def test_run_cell_worker_catches_run_one_exceptions(
     assert "kaboom" in result["error"]
 
 
-# ---------------------------------------------------------------------------
-# _run_cell_worker — config validation failure
-# ---------------------------------------------------------------------------
-
-
 def test_run_cell_worker_handles_invalid_cfg_dict() -> None:
     from atm.experiment.grid import _run_cell_worker
 
@@ -145,11 +122,6 @@ def test_run_cell_worker_handles_invalid_cfg_dict() -> None:
     assert result["status"] == "failed"
     assert result["error"] is not None
     assert "config validation failed" in result["error"]
-
-
-# ---------------------------------------------------------------------------
-# Result dict round-trips through pickle (it must, to come back from worker)
-# ---------------------------------------------------------------------------
 
 
 def test_run_cell_worker_result_is_picklable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,5 +143,4 @@ def test_run_cell_worker_result_is_picklable(monkeypatch: pytest.MonkeyPatch) ->
     blob = pickle.dumps(result)
     restored = pickle.loads(blob)
     assert restored["status"] == "budget_exceeded"
-    # UUID can be re-parsed
     UUID(restored["run_id"])

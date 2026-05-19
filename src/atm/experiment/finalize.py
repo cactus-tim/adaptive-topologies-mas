@@ -46,16 +46,8 @@ from atm.llm.wrapper import LLMWrapper
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Task classification
-# ---------------------------------------------------------------------------
-
-# Tasks where the answer is text/numeric — prefer a synthesized DRAFT.
-# Mirrors the inverse of ``atm.topology.star._CODE_TASKS``.
 _NON_CODE_TASK_PREFIXES: tuple[str, ...] = ("gsm8k/", "commongen/", "dabench/")
 
-# Loose heuristics for "looks like Python instead of an answer".
-# Triggers if 2+ Python markers appear, OR a code fence is present.
 _PY_MARKERS = (
     "import ",
     "def ",
@@ -67,12 +59,8 @@ _PY_MARKERS = (
     "plt.",
 )
 
-# DABench evaluator expects @name[value]; without at least one such template
-# the per-pair regex search returns zero matches and the run scores 0.
 _DABENCH_TEMPLATE_RE = re.compile(r"@[A-Za-z_]\w*\[[^\]]+\]")
 
-# CommonGen: critic/meta-commentary markers. If the "answer" is a list of
-# issues/suggestions rather than the requested sentence, trigger finalize.
 _COMMONGEN_META_MARKERS: tuple[str, ...] = (
     "issues identified",
     "suggested fix",
@@ -143,10 +131,6 @@ def _needs_finalize(task_spec: TaskSpec, current_answer: str) -> bool:
     return task_id.startswith("commongen/") and _commongen_needs_finalize(task_spec, stripped)
 
 
-# ---------------------------------------------------------------------------
-# Context gathering — pull tool_results from the executor's final state
-# ---------------------------------------------------------------------------
-
 _MAX_TOOL_RESULTS = 6
 _MAX_TOOL_OUTPUT_CHARS = 1200
 
@@ -198,11 +182,6 @@ def _format_required_format(task_spec: TaskSpec) -> str:
             )
 
     return "\n\n".join(parts)
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 async def maybe_finalize_answer(

@@ -47,8 +47,6 @@ class TestBudgetExceededPropagates:
 
     async def test_budget_exceeded_propagates(self) -> None:
         """BudgetExceededError raised by LLMWrapper must propagate through step()."""
-        # Use the _RaisingLLM shim as the underlying llm injected into LLMWrapper
-        # to guarantee BudgetExceededError is raised on every ainvoke call.
         from unittest.mock import AsyncMock
 
         mock_llm = AsyncMock()
@@ -78,7 +76,6 @@ class TestBudgetExceededPropagates:
 
     async def test_budget_exceeded_level_preserved(self) -> None:
         """BudgetExceededError.level attribute is preserved when propagated."""
-        # Use a mock LLMWrapper that raises directly
         mock_llm = AsyncMock()
         mock_llm.model_id = "fake:deterministic"
         mock_llm.ainvoke = AsyncMock(
@@ -93,7 +90,6 @@ class TestBudgetExceededPropagates:
         )
         registry = ToolRegistry()
 
-        # Inject mock_llm as the llm — bypass LLMWrapper by using mock directly
         agent = Agent(agent_id="p1", cfg=cfg, llm=mock_llm, tools=registry)
 
         state: dict[str, Any] = {

@@ -1,12 +1,4 @@
-"""LangGraph-compatible TypedDict state containers.
-
-Three TypedDicts:
-  - AgentState  — per-agent mutable state
-  - SharedState — cross-agent shared state (phase, topology L2, signals, counters)
-  - GraphState  — top-level LangGraph state with Annotated reducer fields
-
-Reference: arch.md §3.2
-"""
+"""LangGraph-compatible TypedDict state containers (AgentState, SharedState, GraphState)."""
 
 from __future__ import annotations
 
@@ -29,13 +21,13 @@ class AgentState(TypedDict, total=False):
     """Per-agent sub-state. Stored in GraphState under agent_id key."""
 
     agent_id: str
-    role: str  # AgentRole.value
-    inbox: list[Message]  # messages addressed to this agent
-    outbox: list[Message]  # for routing by topology router
-    scratchpad: list[dict[str, Any]]  # append-only journal
+    role: str
+    inbox: list[Message]
+    outbox: list[Message]
+    scratchpad: list[dict[str, Any]]
     tool_calls: list[ToolCall]
     tool_results: list[ToolResult]
-    summary_before_window: str  # summarizer output (scratchpad policy C)
+    summary_before_window: str
     step_count: int
     tokens_spent: int
     cost_spent_usd: float
@@ -48,38 +40,24 @@ class SharedState(TypedDict, total=False):
     task_input: str
     final_answer: str | None
 
-    # --- Phase axis (monotonic: planning → execution → verification → done) ---
     phase: Phase
-    phase_started_at_iter: int  # abs meta-graph tick when phase was entered
+    phase_started_at_iter: int
     phase_history: list[Phase]
 
-    # --- Topology axis (can change at runtime within a phase) ---
-    active_topology: str | None  # current active topology name (arch.md §3.2 line 419)
-    topology_started_at_iter: int  # abs tick when current topology was activated
-    topology_switch_count: int  # count of actual switches (for max_switches guard)
-    topology_history: list[str]  # short tail (last K) for cooldown-check
+    active_topology: str | None
+    topology_started_at_iter: int
+    topology_switch_count: int
+    topology_history: list[str]
 
-    # --- Adaptive iteration counters ---
-    iteration: int  # legacy/general (iterations within current subgraph)
-    iter_total: int  # cumulative count of sub-topology work ticks (chain retry,
-    # star coordinator cycle, mesh dispatch round, etc.).  Sub-topologies are
-    # the sole writers; adaptive's dispatch node does NOT increment it (would
-    # double-count vs static baselines).
-    meta_ticks: int  # number of adaptive meta-graph cycles
-    # (phase_router → topology_router → dispatch → transition_gate).
-    # Adaptive-only; static topologies never write this.  Used as a safety
-    # cap to prevent infinite meta-graph spin.
+    iteration: int
+    iter_total: int
+    meta_ticks: int
 
-    # --- Communication/Mesh ---
-    broadcast_bus: list[Message]  # for Mesh; cleared on any transition
+    broadcast_bus: list[Message]
 
-    # --- HITL ---
-    human_requests: list[dict[str, Any]]  # pending HITL requests (for debug)
+    human_requests: list[dict[str, Any]]
     human_responses: list[HumanResponse]
 
-    # --- Agent → router channel (L2 quasi-preemption) ---
-    # Agents emit signals (stuck, rejected_count, needs_debate, ready_for_*).
-    # TransitionGate passes them to TopologyRouter, then clears consumed keys.
     signals: dict[str, Any]
 
 

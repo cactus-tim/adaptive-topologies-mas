@@ -24,10 +24,6 @@ from atm.experiment.runner import RunResult
 
 runner = CliRunner()
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _RUN_ID = uuid.uuid4()
 _EXP_ID = uuid.uuid4()
 
@@ -48,21 +44,11 @@ def _make_result(
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 1: --help exits 0 and shows help text
-# ---------------------------------------------------------------------------
-
-
 def test_help_exits_zero() -> None:
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     output_lower = result.output.lower()
     assert "--config" in result.output or "config" in output_lower
-
-
-# ---------------------------------------------------------------------------
-# Test 2: Success path → exit 0
-# ---------------------------------------------------------------------------
 
 
 def test_run_success_exits_zero(tmp_path: Path) -> None:
@@ -86,11 +72,6 @@ def test_run_success_exits_zero(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 3: Config error (missing file) → exit 3
-# ---------------------------------------------------------------------------
-
-
 def test_config_error_exits_3(tmp_path: Path) -> None:
     nonexistent = tmp_path / "no_such_file.yaml"
 
@@ -99,11 +80,6 @@ def test_config_error_exits_3(tmp_path: Path) -> None:
     assert result.exit_code == 3, (
         f"Expected exit 3, got {result.exit_code}. Output: {result.output}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 4: Budget exceeded → exit 2
-# ---------------------------------------------------------------------------
 
 
 def test_budget_exceeded_exits_2(tmp_path: Path) -> None:
@@ -127,11 +103,6 @@ def test_budget_exceeded_exits_2(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 5: Failed run → exit 1
-# ---------------------------------------------------------------------------
-
-
 def test_failed_run_exits_1(tmp_path: Path) -> None:
     cfg_file = tmp_path / "smoke.yaml"
     cfg_file.write_text("name: test\n")
@@ -151,11 +122,6 @@ def test_failed_run_exits_1(tmp_path: Path) -> None:
     assert result.exit_code == 1, (
         f"Expected exit 1, got {result.exit_code}. Output: {result.output}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 6: Output format is correct
-# ---------------------------------------------------------------------------
 
 
 def test_output_format(tmp_path: Path) -> None:

@@ -21,15 +21,7 @@ from typing import Any, ClassVar
 from atm.core.types import ToolResult
 from atm.tools.base import ToolSchema
 
-# ---------------------------------------------------------------------------
-# Type alias
-# ---------------------------------------------------------------------------
-
 _Numeric = int | float
-
-# ---------------------------------------------------------------------------
-# Safe function/constant mapping — only these Names are allowed
-# ---------------------------------------------------------------------------
 
 _SAFE_FUNCS: dict[str, Callable[..., _Numeric]] = {
     "sqrt": math.sqrt,
@@ -51,10 +43,6 @@ _SAFE_NAMES: dict[str, float] = {
     "pi": math.pi,
     "e": math.e,
 }
-
-# ---------------------------------------------------------------------------
-# AST walker
-# ---------------------------------------------------------------------------
 
 
 def _eval_node(node: ast.AST) -> _Numeric:
@@ -119,11 +107,6 @@ def _eval_node(node: ast.AST) -> _Numeric:
         raise ValueError(f"name not allowed: {name!r}")
 
     raise ValueError(f"disallowed expression node: {type(node).__name__}")
-
-
-# ---------------------------------------------------------------------------
-# CalculatorTool
-# ---------------------------------------------------------------------------
 
 
 class CalculatorTool:

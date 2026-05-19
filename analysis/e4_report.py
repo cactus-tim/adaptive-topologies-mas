@@ -51,25 +51,46 @@ async def _run(exp_id: str, out_path: Path) -> int:
             print(f"E4 REPORT — exp_id={exp_id}")
             print("=" * 72)
 
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT MIN(started_at) AS first_at, MAX(finished_at) AS last_at,
                        EXTRACT(EPOCH FROM (MAX(finished_at) - MIN(started_at))) AS wall_s,
                        SUM(budget_spent_usd) AS total_cost
                 FROM runs WHERE exp_id = :e
-            """), {"e": exp_id})).mappings().one()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
             wall_h = float(r["wall_s"]) / 3600.0
             print(f"\nWALL TIME: {wall_h:.2f}h  ({r['first_at']} → {r['last_at']})")
             print(f"TOTAL COST: ${float(r['total_cost']):.2f}")
 
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT status, COUNT(*) AS n
                 FROM runs WHERE exp_id = :e GROUP BY status
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             status_totals = {row["status"]: int(row["n"]) for row in r}
             print(f"\nSTATUS: {status_totals}")
 
             print("\nMODE × TASK (mode inferred by started_at thirds):")
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 WITH ordered AS (
                     SELECT task_id, quality_score, budget_spent_usd, wall_time_s,
                            ROW_NUMBER() OVER (ORDER BY started_at) AS rn
@@ -85,7 +106,13 @@ async def _run(exp_id: str, out_path: Path) -> int:
                     AVG(budget_spent_usd) AS cost,
                     AVG(wall_time_s) AS wall
                 FROM ordered GROUP BY mode, task_id
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             cell: dict[tuple[str, str], dict] = {}
             for row in r:
                 cell[(row["mode"], row["task_id"])] = {
@@ -97,7 +124,7 @@ async def _run(exp_id: str, out_path: Path) -> int:
                 }
 
             print(f"  {'task':10} | {' '.join(f'{m:>8}' for m in _MODES)}  | best (Δ)")
-            print(f"  {'-'*10}-+-{'-'*(9*len(_MODES))}-+----------")
+            print(f"  {'-' * 10}-+-{'-' * (9 * len(_MODES))}-+----------")
             per_task_winner: dict[str, dict] = {}
             for task in _TASKS:
                 qs = {m: cell[(m, task)]["q"] for m in _MODES if (m, task) in cell}
@@ -122,7 +149,6 @@ async def _run(exp_id: str, out_path: Path) -> int:
                 if not entries:
                     continue
                 n_total = sum(e["n"] for e in entries)
-                # micro-average (weighted by cell count, but cells are equal-n by design)
                 q_avg = sum(e["q"] * e["n"] for e in entries) / n_total
                 cost_avg = sum(e["cost"] * e["n"] for e in entries) / n_total
                 wall_avg = sum(e["wall_s"] * e["n"] for e in entries) / n_total
@@ -134,18 +160,23 @@ async def _run(exp_id: str, out_path: Path) -> int:
                 }
                 print(f"  {mode:6}: n={n_total}  q={q_avg:.3f}  ${cost_avg:.4f}  {wall_avg:.0f}s")
 
-            # RQ4 verdict
             fixed_q = mode_totals.get("fixed", {}).get("mean_q", 0)
             rule_q = mode_totals.get("rule", {}).get("mean_q", 0)
             llm_q = mode_totals.get("llm", {}).get("mean_q", 0)
-            print(f"\nRQ4 VERDICT (adaptive role > fixed?):")
-            print(f"  rule vs fixed: Δq = {rule_q - fixed_q:+.4f}  "
-                  f"{'CONFIRMED' if rule_q > fixed_q else 'NOT CONFIRMED'}")
-            print(f"  llm  vs fixed: Δq = {llm_q - fixed_q:+.4f}  "
-                  f"{'CONFIRMED' if llm_q > fixed_q else 'NOT CONFIRMED'}")
+            print("\nRQ4 VERDICT (adaptive role > fixed?):")
+            print(
+                f"  rule vs fixed: Δq = {rule_q - fixed_q:+.4f}  "
+                f"{'CONFIRMED' if rule_q > fixed_q else 'NOT CONFIRMED'}"
+            )
+            print(
+                f"  llm  vs fixed: Δq = {llm_q - fixed_q:+.4f}  "
+                f"{'CONFIRMED' if llm_q > fixed_q else 'NOT CONFIRMED'}"
+            )
 
-            # human_role distribution per mode (signal verification)
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 WITH ordered AS (
                     SELECT human_role,
                            ROW_NUMBER() OVER (ORDER BY started_at) AS rn
@@ -156,11 +187,17 @@ async def _run(exp_id: str, out_path: Path) -> int:
                          WHEN rn <= 360 THEN 'rule' ELSE 'llm' END AS mode,
                     human_role, COUNT(*) AS n
                 FROM ordered GROUP BY mode, human_role
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             role_dist: dict[str, dict[str, int]] = {m: {} for m in _MODES}
             for row in r:
                 role_dist[row["mode"]][row["human_role"]] = int(row["n"])
-            print(f"\nROLE DISTRIBUTION (mode → role: n):")
+            print("\nROLE DISTRIBUTION (mode → role: n):")
             for mode in _MODES:
                 print(f"  {mode:6}: {role_dist[mode]}")
 
@@ -171,10 +208,7 @@ async def _run(exp_id: str, out_path: Path) -> int:
                 "status_totals": status_totals,
                 "mode_totals": mode_totals,
                 "per_task_winner": per_task_winner,
-                "mode_task_matrix": {
-                    f"{m}/{t}": cell[(m, t)]
-                    for (m, t) in cell.keys()
-                },
+                "mode_task_matrix": {f"{m}/{t}": cell[(m, t)] for (m, t) in cell},
                 "role_distribution": role_dist,
                 "rq4": {
                     "fixed_q": fixed_q,
@@ -187,7 +221,9 @@ async def _run(exp_id: str, out_path: Path) -> int:
                 },
             }
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            out_path.write_text(
+                json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
             print(f"\nWrote {out_path}")
     finally:
         await engine.dispose()

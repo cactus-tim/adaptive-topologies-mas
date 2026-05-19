@@ -100,24 +100,13 @@ async def test_run_one_populates_all_four_post_run_fields(
 
     qs, cog, mvs, sdigest, hrole = row
 
-    # quality_score: M11 evaluator must produce a float (may be 0.0 for scripted FakeLLM)
     assert qs is not None and isinstance(qs, float)
 
-    # cognitive_load_proxy: M9.2 — non-None float; for HITL run with K>=1 interrupts,
-    # value must follow alpha*K + beta*mean_ctx + gamma*mean_lat. With defaults
-    # (alpha=1.0, beta=0.001, gamma=0.1) and at least 1 reviewer interaction,
-    # the proxy is >= 1.0.
     assert cog is not None and isinstance(cog, float)
     assert cog >= 0.0
 
-    # model_version_snapshot: M11/G2 — JSON column, dict-like (may be empty for FakeLLM
-    # since provider fingerprint isn't reported; acceptable per arch).
-    assert mvs is not None  # column not NULL — initialised to {} at INSERT
+    assert mvs is not None
 
-    # sandbox_image_digest: M11/G2 — None acceptable when SubprocessSandbox is used
-    # (DockerSandbox path is exercised by separate docker-marked tests).
     assert sdigest is None or isinstance(sdigest, str)
 
-    # human_role: M9.2 — dynamic value SHOULD have overridden the static cfg.human.role
-    # at INSERT time, OR equal it if no human_interactions rows exist post-run.
     assert hrole is None or isinstance(hrole, str)

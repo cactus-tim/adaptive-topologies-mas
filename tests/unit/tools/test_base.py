@@ -15,11 +15,6 @@ from atm.core.types import ToolCall, ToolResult
 from atm.tools.base import Tool, ToolRegistry, ToolSchema
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_call(tool_name: str = "test_tool") -> ToolCall:
     return ToolCall(tool_name=tool_name, args={}, issued_by="test_agent")
 
@@ -70,11 +65,6 @@ class SlowTool:
         return ToolResult(call_id=uuid4(), ok=True, output={}, latency_ms=50)
 
 
-# ---------------------------------------------------------------------------
-# ToolSchema tests
-# ---------------------------------------------------------------------------
-
-
 def test_tool_schema_frozen_has_returns_field() -> None:
     schema = ToolSchema(
         name="my_tool",
@@ -85,7 +75,6 @@ def test_tool_schema_frozen_has_returns_field() -> None:
     assert schema.name == "my_tool"
     assert schema.returns == {"type": "string"}
 
-    # Must be frozen — assignment should raise (Pydantic v2 raises ValidationError)
     with pytest.raises((TypeError, AttributeError, ValidationError)):
         schema.name = "other"  # type: ignore[misc]
 
@@ -94,11 +83,6 @@ def test_tool_schema_requires_returns_field() -> None:
     """returns field is required (no default)."""
     with pytest.raises(Exception):
         ToolSchema(name="x", description="d", parameters={})  # type: ignore[call-arg]
-
-
-# ---------------------------------------------------------------------------
-# ToolRegistry — basic register/get/names
-# ---------------------------------------------------------------------------
 
 
 def test_registry_register_get_names() -> None:
@@ -124,11 +108,6 @@ def test_registry_unknown_raises() -> None:
         reg.get("nonexistent")
 
 
-# ---------------------------------------------------------------------------
-# ToolRegistry — ainvoke_by_name
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_registry_ainvoke_wraps_exception_in_toolresult() -> None:
     reg = ToolRegistry()
@@ -151,9 +130,8 @@ async def test_registry_ainvoke_measures_latency() -> None:
     elapsed_ms = (time.monotonic() - t0) * 1000
 
     assert result.ok is True
-    # latency_ms must be positive and at least ~40ms (80% of the 50ms sleep)
     assert result.latency_ms >= 40
-    assert result.latency_ms <= elapsed_ms + 50  # reasonable upper bound
+    assert result.latency_ms <= elapsed_ms + 50
 
 
 @pytest.mark.asyncio

@@ -31,10 +31,6 @@ from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Module-level guard (also enforced by the ``ephemeral_pg_dsn`` fixture skip)
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 
 pytestmark = [
@@ -42,34 +38,14 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-# ---------------------------------------------------------------------------
-# Paths to FakeLLM fixtures (resolved at import time — do not rely on cwd)
-# ---------------------------------------------------------------------------
-
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _GRID_MINI_YAML = (
     Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "grid_runner_mini.yaml"
 )
 
-# Subprocess timeout: generous upper bound (120 s) so CI slowness doesn't cause
-# false negatives.  The wall-time parallelism assertion uses a much tighter bound.
 _SUBPROCESS_TIMEOUT_S = 120
 
-# Wall-time parallelism threshold: 4 cells in parallel with parallelism=4
-# should take roughly the same time as 1 cell (FakeLLM, no real IO).
-# We allow 3x single-cell budget as the upper bound to absorb process-spawn
-# overhead and scheduler jitter, while still rejecting full sequential execution
-# (which would take ~4x or more).
-#
-# FakeLLM star-topology cells with max_iterations=4 finish in well under 5 s
-# each on modern hardware; sequential execution of 4 would be ~20 s.
-# We cap at 30 s total, which fails only if parallelism broke down to serial.
 _WALL_TIME_PARALLEL_MAX_S = 30.0
-
-
-# ---------------------------------------------------------------------------
-# Helper: build a self-contained grid YAML referencing the ephemeral PG DSN
-# ---------------------------------------------------------------------------
 
 
 def _write_grid_yaml(tmp_path: Path, *, pg_dsn: str, parquet_dir: str) -> tuple[Path, str]:
@@ -138,11 +114,6 @@ def _write_grid_yaml(tmp_path: Path, *, pg_dsn: str, parquet_dir: str) -> tuple[
     return config_path, unique_name
 
 
-# ---------------------------------------------------------------------------
-# The test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_grid_parallel_all_cells_complete(
     ephemeral_pg_dsn: str,
@@ -181,7 +152,6 @@ async def test_grid_parallel_all_cells_complete(
     env["ATM_PG_DSN"] = ephemeral_pg_dsn
     env["ATM_DISABLE_STRUCTLOG_BOOTSTRAP"] = "1"
 
-    # ── Step 2: run ``atm grid`` ────────────────────────────────────────────
     t_start = time.monotonic()
 
     result = subprocess.run(
@@ -206,20 +176,15 @@ async def test_grid_parallel_all_cells_complete(
 
     elapsed_s = time.monotonic() - t_start
 
-    # ── Step 3: assert exit code ────────────────────────────────────────────
     assert result.returncode == 0, (
         f"``atm grid`` exited with code {result.returncode} (expected 0).\n"
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
 
-    # ── Step 4: assert DB side-effects ─────────────────────────────────────
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine.connect() as conn:
-            # Look up THIS test's experiment by its unique name — robust against
-            # cross-test state pollution that can leave rows from earlier tests
-            # in the same ephemeral DB.
             exp_id_row = (
                 await conn.execute(
                     sa.text("SELECT id FROM experiments WHERE name = :name").bindparams(
@@ -235,7 +200,6 @@ async def test_grid_parallel_all_cells_complete(
             )
             exp_id = exp_id_row[0]
 
-            # 4 run rows for this experiment.
             run_rows = (
                 await conn.execute(
                     sa.text("SELECT id, status FROM runs WHERE exp_id = :eid").bindparams(
@@ -250,7 +214,6 @@ async def test_grid_parallel_all_cells_complete(
                 f"stderr:\n{result.stderr}"
             )
 
-            # All 4 runs must be completed.
             non_completed = [(str(row[0]), row[1]) for row in run_rows if row[1] != "completed"]
             assert not non_completed, (
                 f"Some runs did not reach 'completed' status: {non_completed}.\n"
@@ -258,7 +221,6 @@ async def test_grid_parallel_all_cells_complete(
                 f"stderr:\n{result.stderr}"
             )
 
-            # Experiment aggregate status must be 'completed'.
             exp_status = (
                 await conn.execute(
                     sa.text("SELECT status FROM experiments WHERE id = :eid").bindparams(eid=exp_id)
@@ -273,10 +235,6 @@ async def test_grid_parallel_all_cells_complete(
     finally:
         await engine.dispose()
 
-    # ── Step 5: wall-time parallelism assertion ─────────────────────────────
-    # If parallelism=4 worked, 4 cells should not take significantly longer than
-    # 1 cell.  We assert elapsed < _WALL_TIME_PARALLEL_MAX_S.  Sequential
-    # execution of 4 cells would exceed this bound.
     assert elapsed_s < _WALL_TIME_PARALLEL_MAX_S, (
         f"``atm grid`` took {elapsed_s:.1f}s, exceeding the parallelism threshold "
         f"of {_WALL_TIME_PARALLEL_MAX_S}s.  This suggests cells ran sequentially "

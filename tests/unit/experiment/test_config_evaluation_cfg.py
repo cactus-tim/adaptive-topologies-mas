@@ -15,10 +15,6 @@ from pydantic import ValidationError
 
 from atm.experiment.config import EvaluationCfg
 
-# ---------------------------------------------------------------------------
-# 1. EvaluationCfg defaults
-# ---------------------------------------------------------------------------
-
 
 def test_evaluation_cfg_defaults() -> None:
     """EvaluationCfg uses sensible defaults and is backward-compatible."""
@@ -26,11 +22,6 @@ def test_evaluation_cfg_defaults() -> None:
 
     assert cfg.judge_model == "openai:gpt-4o"
     assert cfg.judge_self_consistency_n == 3
-
-
-# ---------------------------------------------------------------------------
-# 2. YAML override — evaluation fields can be customised
-# ---------------------------------------------------------------------------
 
 
 def test_experiment_config_evaluation_override(tmp_path: Path) -> None:
@@ -84,7 +75,6 @@ observability:
 
     cfg = load_config(str(cfg_file))
 
-    # Defaults from EvaluationCfg
     assert cfg.evaluation.judge_model == "openai:gpt-4o"
     assert cfg.evaluation.judge_self_consistency_n == 3
 

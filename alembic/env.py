@@ -7,9 +7,6 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# Auto-load .env so PG_DSN is available without `source .env` first.
-# atm.__init__ already does this for atm.* imports, but alembic env.py is
-# loaded by alembic before any atm import runs — so we load explicitly here.
 try:
     from dotenv import load_dotenv as _load_dotenv
 
@@ -19,28 +16,16 @@ except Exception:
 
 from atm.storage.models import Base
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
 config = context.config
 
-# Override DSN from environment (we don't store credentials in alembic.ini)
 pg_dsn = os.environ.get("PG_DSN")
 if pg_dsn:
     config.set_main_option("sqlalchemy.url", pg_dsn)
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
 target_metadata = Base.metadata
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
 
 def run_migrations_offline() -> None:

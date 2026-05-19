@@ -24,12 +24,10 @@ def session_factory() -> tuple[MagicMock, AsyncMock]:
     session.commit = AsyncMock()
     session.close = AsyncMock()
     session.rollback = AsyncMock()
-    # session_scope() uses async-context-manager semantics; provide async __aenter__/__aexit__
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=None)
 
     factory = MagicMock(return_value=session)
-    # session_scope expects callable that returns session-context-manager
     return factory, session
 
 
@@ -81,7 +79,6 @@ async def test_update_run_success_defaults_back_compat(
     )
     values = _captured_update_values(session)
     rendered_keys = {str(k) for k in values}
-    # cognitive_load_proxy column is always written (None default); human_role is not when not passed
     assert any("cognitive_load_proxy" in k for k in rendered_keys)
     assert not any("human_role" in k for k in rendered_keys)
 

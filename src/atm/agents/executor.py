@@ -72,24 +72,20 @@ class Executor(Agent):
             Delta dict (same structure as ``Agent.step()``) with an updated
             ``shared`` key containing any newly emitted signals.
         """
-        # Read the current consecutive-failure count from scratchpad markers
         prev_fail_streak: int = self._read_fail_streak(state)
 
         delta = await super().step(state)
 
-        # Inspect tool results from this step only
         agents_delta: dict[str, Any] = dict(delta.get("agents") or {})
         self_delta: dict[str, Any] = dict(agents_delta.get(self.agent_id) or {})
         tool_results: list[Any] = list(self_delta.get("tool_results") or [])
 
-        # Only examine code_run tool results; resolve call ids from tool_calls
         tool_calls: list[Any] = list(self_delta.get("tool_calls") or [])
         code_run_call_ids: set[str] = {
             str(tc.id) for tc in tool_calls if getattr(tc, "tool_name", "") == "code_run"
         }
 
         shared: dict[str, Any] = dict(state.get("shared") or {})
-        # Merge any shared update already in delta (e.g. from future subclasses)
         if "shared" in delta:
             shared.update(delta["shared"])
 
@@ -99,29 +95,22 @@ class Executor(Agent):
         for tr in tool_results:
             call_id = str(getattr(tr, "call_id", ""))
             if call_id not in code_run_call_ids:
-                # Not a code_run result — skip
                 continue
             ok: bool = bool(getattr(tr, "ok", False))
             if ok:
-                # Success: emit ready_for_verification and reset streak
                 shared = emit_signal(shared, READY_FOR_VERIFICATION, True)
                 current_fail_streak = 0
                 emitted_verification = True
             else:
-                # Failure: increment consecutive failure counter
                 current_fail_streak += 1
                 if current_fail_streak >= self._stuck_threshold:
                     shared = emit_signal(shared, STUCK, True)
 
-        # Store updated fail streak as a scratchpad marker so it persists
-        # across step() calls (SharedState.agents[agent_id].scratchpad is
-        # append-only — we append a lightweight marker event).
         if not emitted_verification or current_fail_streak != prev_fail_streak:
             marker: dict[str, Any] = {
                 "kind": "_code_run_fail_streak",
                 "value": current_fail_streak,
             }
-            # Append to delta scratchpad (agent delta has a list here)
             existing_scratchpad: list[dict[str, Any]] = list(self_delta.get("scratchpad") or [])
             existing_scratchpad.append(marker)
             self_delta = dict(self_delta)
@@ -133,10 +122,6 @@ class Executor(Agent):
         delta["agents"] = agents_delta
         delta["shared"] = shared
         return delta
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _read_fail_streak(self, state: GraphState) -> int:
         """Read the last known consecutive-failure count from state scratchpad.

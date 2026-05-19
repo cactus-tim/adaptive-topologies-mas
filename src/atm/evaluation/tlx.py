@@ -1,6 +1,5 @@
 """NASA-TLX model, aggregation helper, and TLX persistence.
 
-Reference: arch.md §13.3
 Storage: human_interactions.tlx_scores (JSONB) + raw_tlx_score (DOUBLE PRECISION).
 """
 
@@ -28,7 +27,7 @@ class NasaTLX(BaseModel):
 
     @property
     def raw_score(self) -> float:
-        """Unweighted mean across 6 dimensions (arch.md §13.3).
+        """Unweighted mean across 6 dimensions.
 
         performance is inverted: (100 - performance) so that higher values
         always mean higher workload.

@@ -4,8 +4,8 @@ Provides engine construction, session-factory creation, and an async context
 manager for transactional scoping.  Intentionally model-agnostic: no ORM
 models are imported here.
 
-Architecture: §11.1 of arch.md — one AsyncEngine per process, short-lived
-sessions, expire_on_commit=False, pool_pre_ping=True.
+One AsyncEngine per process, short-lived sessions, expire_on_commit=False,
+pool_pre_ping=True.
 """
 
 from __future__ import annotations

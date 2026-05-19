@@ -13,7 +13,7 @@ Three test groups:
    For each topology, constructs a state where iter_total == max_iterations - 1
    AND a topology-specific success signal is present. After ainvoke, asserts that
    the graph terminates with iter_total >= max_iterations — verifying that the
-   global max_iter guard fired (highest precedence per arch.md §7.1).
+   global max_iter guard fired (highest precedence).
 
 Signals used per topology:
   star:         phase="done" (topology_success = phase == "done")
@@ -33,7 +33,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# Side-effect imports — trigger all @TopologyRegistry.register() decorators
 import atm.topology.chain
 import atm.topology.debate
 import atm.topology.hierarchical
@@ -41,15 +40,7 @@ import atm.topology.mesh
 import atm.topology.star  # noqa: F401
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
-# ---------------------------------------------------------------------------
-# Expected topology names
-# ---------------------------------------------------------------------------
-
 _EXPECTED_NAMES: set[str] = {"star", "chain", "mesh", "debate", "hierarchical"}
-
-# ---------------------------------------------------------------------------
-# Minimal initial state factory
-# ---------------------------------------------------------------------------
 
 
 def _minimal_state(
@@ -88,11 +79,6 @@ def _minimal_state(
     }
 
 
-# ---------------------------------------------------------------------------
-# No-op mock agent factory
-# ---------------------------------------------------------------------------
-
-
 def _noop_agent(agent_id: str) -> Any:
     """Create a minimal mock agent that returns an empty agents-delta from step()."""
     agent = MagicMock()
@@ -117,11 +103,6 @@ def _noop_agent(agent_id: str) -> Any:
 
     agent.step = _step
     return agent
-
-
-# ---------------------------------------------------------------------------
-# Per-topology agent dicts and configs for smoke tests
-# ---------------------------------------------------------------------------
 
 
 def _agents_and_cfg_for(topology_name: str) -> tuple[dict[str, Any], TopologyConfig]:
@@ -167,7 +148,7 @@ def _agents_and_cfg_for(topology_name: str) -> tuple[dict[str, Any], TopologyCon
             max_iterations=10,
             extra={
                 "max_rounds": 3,
-                "consensus_threshold": 5,  # high threshold — no consensus
+                "consensus_threshold": 5,
                 "agent_order": ["planner", "researcher", "executor", "critic"],
                 "broadcast_bus_cap": 200,
             },
@@ -219,11 +200,6 @@ def _agents_and_cfg_for(topology_name: str) -> tuple[dict[str, Any], TopologyCon
         raise ValueError(f"Unknown topology: {topology_name!r}")
 
 
-# ---------------------------------------------------------------------------
-# Test 1: registry completeness
-# ---------------------------------------------------------------------------
-
-
 def test_all_5_topologies_registered() -> None:
     """Verify that all 5 expected topology names are registered, with no duplicates.
 
@@ -244,11 +220,6 @@ def test_all_5_topologies_registered() -> None:
         f"Duplicate topology names detected in registry! "
         f"list_names()={names}, unique={sorted(names_set)}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 2: smoke-run (parametrized)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("topology_name", sorted(_EXPECTED_NAMES))
@@ -284,11 +255,6 @@ async def test_topology_builds_and_runs_smoke(topology_name: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 3: stopping-precedence integration (MC-2, parametrized)
-# ---------------------------------------------------------------------------
-
-
 def _precedence_state_for(topology_name: str, max_iterations: int) -> dict[str, Any]:
     """Build an initial state with iter_total = max_iterations - 1
     AND the topology's success signal pre-populated.
@@ -300,22 +266,19 @@ def _precedence_state_for(topology_name: str, max_iterations: int) -> dict[str, 
     iter_start = max_iterations - 1
 
     if topology_name == "star":
-        # Success signal for star: phase == "done"
         return _minimal_state(
             iter_total=iter_start,
-            phase="done",  # topology_success = (phase == "done")
-            signals={"critic_approved": True},  # also set critic signal
+            phase="done",
+            signals={"critic_approved": True},
         )
 
     elif topology_name == "chain":
-        # Success signal for chain: critic_approved in signals
         return _minimal_state(
             iter_total=iter_start,
             signals={"critic_approved": True},
         )
 
     elif topology_name == "mesh":
-        # Success signal for mesh: consensus_reached in signals
         return _minimal_state(
             iter_total=iter_start,
             signals={
@@ -327,7 +290,6 @@ def _precedence_state_for(topology_name: str, max_iterations: int) -> dict[str, 
         )
 
     elif topology_name == "debate":
-        # Success signal for debate: judge_decided in signals
         return _minimal_state(
             iter_total=iter_start,
             signals={"judge_decided": True},
@@ -335,7 +297,6 @@ def _precedence_state_for(topology_name: str, max_iterations: int) -> dict[str, 
         )
 
     elif topology_name == "hierarchical":
-        # Success signal for hierarchical: top_coord_finalize in signals
         return _minimal_state(
             iter_total=iter_start,
             signals={
@@ -354,7 +315,7 @@ def _precedence_state_for(topology_name: str, max_iterations: int) -> dict[str, 
 async def test_should_stop_precedence_consistent_integration(topology_name: str) -> None:
     """MC-2: global max_iter guard has highest precedence over topology_success.
 
-    Test protocol (arch.md §7.1 stopping precedence):
+    Test protocol (stopping precedence):
       1. Construct a state where:
            iter_total == max_iterations - 1   (one step away from global max)
            AND success_signal == True          (topology-specific success condition)
@@ -389,7 +350,6 @@ async def test_should_stop_precedence_consistent_integration(topology_name: str)
         f"got {initial_iter}"
     )
 
-    # Run the compiled graph — must terminate (no loop)
     final_state = await compiled.ainvoke(initial_state)
 
     assert final_state is not None, (
@@ -399,7 +359,6 @@ async def test_should_stop_precedence_consistent_integration(topology_name: str)
     shared = final_state.get("shared") or {}
     final_iter_total: int = int(shared.get("iter_total") or 0)
 
-    # The graph must have run (incremented iter_total) AND stopped
     assert final_iter_total >= max_iterations, (
         f"MC-2 precedence test FAILED for {topology_name!r}: "
         f"Expected final iter_total >= {max_iterations} (max_iter guard fired), "

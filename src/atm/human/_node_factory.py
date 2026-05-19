@@ -1,38 +1,4 @@
-"""build_human_node_factory — DRY helper for building HITL LangGraph nodes (M9.1 Step 1.2).
-
-This module extracts the canonical HITL-node pattern established in the Chain
-topology reference implementation (M9) and makes it reusable for Star/Mesh.
-
-Usage pattern (topology build methods)::
-
-    from atm.human import build_human_node_factory
-
-    human_node = build_human_node_factory(
-        topology_name="star",
-        human_cfg=human_cfg,
-        gateway=gateway,
-        request_id_template="star:{run_id}:{iter_total}:reviewer",
-        question_extractor=lambda state: "Should the executor retry?",
-    )
-    graph.add_node("human_reviewer", human_node)
-
-Design decisions
-----------------
-- Module-level **lazy try/except imports** for ``LLMSimulatedGateway``,
-  ``CLIGateway``, and ``request_with_timeout`` mirror the Chain pattern: the
-  module-level names are set to ``None`` on import failure, enabling tests to
-  patch them without installing the full gateway stack.
-- ``apply_decision`` default implements approve → ``shared["human_approved"]=True``;
-  reject → append Message + ``needs_rerun=True``. Custom callbacks override this.
-- Return type is ``Any`` to avoid a hard dependency on LangGraph's node
-  signature type (not a direct dep in pyproject.toml).
-- Topology-specific semantics (judge outbox write, subgraph scope, router
-  override) are NOT covered here — use inline closures for those.
-- MeshTopology deliberately rolls its own ``human_peer_node`` inline closure
-  because broadcast_bus voting semantics and round-aware activation are tightly
-  coupled to the mesh dispatcher and cannot be expressed via the default
-  ``apply_decision`` without a new overload.  See mesh.py module docstring.
-"""
+"""build_human_node_factory — DRY helper for building HITL LangGraph nodes."""
 
 from __future__ import annotations
 
@@ -49,17 +15,6 @@ if TYPE_CHECKING:
     from atm.human.role_router import HumanRoleRouter
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Module-level lazy imports — patchable in tests
-# ---------------------------------------------------------------------------
-# These are set to None if the respective module is unavailable at import time.
-# Tests patch "atm.human._node_factory.<Name>" to inject stubs without
-# needing the full gateway stack installed.
-#
-# Typed as Any to allow both the class and None without mypy complaints.
-# The try/except pragma: no cover blocks are for ImportError paths that only
-# trigger when the package is not installed (which does not happen in tests).
 
 LLMSimulatedGateway: Any
 CLIGateway: Any
@@ -83,11 +38,6 @@ except ImportError:  # pragma: no cover
 __all__ = ["build_human_node_factory"]
 
 
-# ---------------------------------------------------------------------------
-# Default apply_decision callback
-# ---------------------------------------------------------------------------
-
-
 def _default_apply_decision(
     response: Any,
     state: dict[str, Any],
@@ -95,22 +45,8 @@ def _default_apply_decision(
 ) -> None:
     """Apply the human decision to shared state.
 
-    Approve (action == "approve"):
-        Sets ``shared["human_approved"] = True``.
-
-    Reject (any other action):
-        Appends a CRITIQUE Message to ``state["agents"]`` outbox (if agents
-        are present) and sets ``shared["needs_rerun"] = True``.
-
-    Parameters
-    ----------
-    response:
-        A :class:`~atm.core.types.HumanResponse` instance.
-    state:
-        The full LangGraph state dict (for accessing agents).
-    shared:
-        The mutable ``shared`` dict extracted from state (already deep-copied
-        by the node closure before this callback is called).
+    Approve → ``shared["human_approved"] = True``.
+    Reject → append CRITIQUE Message, set ``shared["needs_rerun"] = True``.
     """
     action: str = getattr(response, "action", "") or ""
 
@@ -118,7 +54,6 @@ def _default_apply_decision(
         shared["human_approved"] = True
         logger.debug("_default_apply_decision: approved")
     else:
-        # Reject — write a CRITIQUE Message and flag needs_rerun
         from atm.core.types import Message, MessageKind
 
         comment = getattr(response, "comment", None) or f"Human rejected with action={action!r}"
@@ -128,80 +63,38 @@ def _default_apply_decision(
             content=comment,
             payload={"action": action},
         )
-        # Append to a generic "human_reviewer" outbox in agents state
         agents: dict[str, Any] = state.get("agents", {})
         reviewer_state = dict(agents.get("human_reviewer", {}))
         outbox: list[Any] = list(reviewer_state.get("outbox", []))
         outbox.append(rejection_msg)
         reviewer_state["outbox"] = outbox
-        # NOTE: we do NOT mutate state["agents"] here — the node closure
-        # returns a delta dict; the topology is responsible for merging it.
         shared["needs_rerun"] = True
         logger.debug("_default_apply_decision: rejected — needs_rerun=True")
 
 
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
-
-
 def build_human_node_factory(
     topology_name: str,
-    human_cfg: Any,  # HumanCfg — typed as Any to avoid circular import at module level
-    gateway: Any,  # HumanGateway — typed as Any
+    human_cfg: Any,
+    gateway: Any,
     *,
     request_id_template: str,
     question_extractor: Callable[[dict[str, Any]], str],
     apply_decision: Callable[[Any, dict[str, Any], dict[str, Any]], None] | None = None,
     role_router: HumanRoleRouter | None = None,
 ) -> Any:
-    """Build an async LangGraph-compatible node closure for HITL decisions.
+    """Build an async LangGraph-compatible HITL node closure.
 
-    The returned node:
-    1. Extracts ``run_id`` and ``iter_total`` from ``state["shared"]``.
-    2. Formats ``request_id`` from ``request_id_template`` using ``{run_id}``
-       and ``{iter_total}`` (and optionally ``{topology_name}``).
-    3. Dispatches ``human_request`` custom event via ``adispatch_custom_event``.
-    4. Calls the gateway via ``request_with_timeout`` (if available) or direct
-       ``gateway.request()``.
-    5. Dispatches ``human_response`` custom event.
-    6. Calls ``apply_decision(response, state, shared)`` to update shared state.
-    7. Returns a state delta dict with the updated ``shared`` key.
+    Args:
+        topology_name:        Caller topology name (used in logging and request_id).
+        human_cfg:            HumanCfg with ``role``, ``timeout_s``, ``timeout_policy``.
+        gateway:              HumanGateway-compatible object (or None if disabled).
+        request_id_template:  str.format template; vars: ``{topology_name}``, ``{run_id}``, ``{iter_total}``.
+        question_extractor:   ``(state) -> str`` callable.
+        apply_decision:       Optional ``(response, state, shared) -> None``; defaults to _default_apply_decision.
+        role_router:          Optional HumanRoleRouter; falls back to ``human_cfg.role`` if None.
 
-    Parameters
-    ----------
-    topology_name:
-        Name of the calling topology (e.g. ``"star"``, ``"mesh"``).  Used for
-        logging and as a ``{topology_name}`` format variable in ``request_id_template``.
-    human_cfg:
-        A :class:`~atm.experiment.config.HumanCfg` instance (or duck-typed
-        equivalent with ``role``, ``timeout_s``, ``timeout_policy`` attributes).
-    gateway:
-        A :class:`~atm.human.gateway.HumanGateway`-compatible object.  May be
-        ``None`` if ``human_cfg.enabled`` is False (node will no-op).
-    request_id_template:
-        A str.format template for the idempotency key.  Available variables:
-        ``{topology_name}``, ``{run_id}``, ``{iter_total}``.
-        Example: ``"star:{run_id}:{iter_total}:reviewer"``.
-    question_extractor:
-        A callable ``(state) -> str`` that extracts the decision question from
-        the current graph state.
-    apply_decision:
-        Optional callback ``(response, state, shared) -> None`` that applies
-        the human decision to ``shared``.  Defaults to ``_default_apply_decision``
-        (approve → ``human_approved=True``; reject → ``needs_rerun=True``).
-    role_router:
-        Optional :class:`~atm.human.role_router.HumanRoleRouter` instance.
-        When ``None`` (default), ``human_cfg.role`` is used for every interaction
-        (byte-identical to pre-m9.2 behaviour).  When provided, the router's
-        ``decide(phase, shared)`` is awaited to determine the active role for
-        each node invocation.
-
-    Returns
-    -------
-    Any
-        An async callable ``async def _human_node(state) -> dict[str, Any]``
-        compatible with LangGraph's node signature.
+    Returns:
+        Async node callable ``async def _human_node(state) -> dict``.
     """
     _apply = apply_decision if apply_decision is not None else _default_apply_decision
 
@@ -209,7 +102,6 @@ def build_human_node_factory(
         """HITL node — invokes the human gateway and updates shared state."""
         shared = dict(deepcopy(state.get("shared", {})))
 
-        # Extract identifiers for event dispatching and request_id formatting
         import uuid as _uuid_mod
 
         _raw_run_id = shared.get("run_id") or state.get("run_id")
@@ -228,10 +120,8 @@ def build_human_node_factory(
             iter_total=iter_total,
         )
 
-        # Extract question from state
         question = question_extractor(state)
 
-        # Determine active role: use role_router if provided, else fall back to human_cfg.role
         from atm.core.types import Phase
 
         if role_router is not None:
@@ -241,7 +131,6 @@ def build_human_node_factory(
         else:
             active_role = human_cfg.role
 
-        # Build HumanContext
         from atm.core.types import HumanContext
 
         ctx = HumanContext(
@@ -253,7 +142,6 @@ def build_human_node_factory(
             deadline_s=int(human_cfg.timeout_s) if human_cfg.timeout_s is not None else None,
         )
 
-        # Dispatch human_request event
         _requested_at = datetime.now(UTC)
         try:
             await adispatch_custom_event(
@@ -275,7 +163,6 @@ def build_human_node_factory(
                 exc_info=True,
             )
 
-        # Call gateway
         _t0 = time.monotonic()
         timeout_s: float | None = getattr(human_cfg, "timeout_s", None)
         timeout_policy: str = getattr(human_cfg, "timeout_policy", "skip")
@@ -298,7 +185,6 @@ def build_human_node_factory(
 
         _latency_s = time.monotonic() - _t0
 
-        # Dispatch human_response event
         try:
             await adispatch_custom_event(
                 "human_response",
@@ -319,7 +205,6 @@ def build_human_node_factory(
                 exc_info=True,
             )
 
-        # Apply decision — mutates shared in place
         _apply(response, state, shared)
 
         logger.debug(

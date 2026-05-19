@@ -21,7 +21,6 @@ SECCOMP_PATH = (
     pathlib.Path(__file__).parent.parent.parent.parent / "conf" / "sandbox" / "seccomp.json"
 )
 
-# Must match DENY_SET in scripts/derive_seccomp.py exactly.
 DENY_SET: frozenset[str] = frozenset(
     {
         "add_key",

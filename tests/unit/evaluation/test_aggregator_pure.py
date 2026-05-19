@@ -18,10 +18,6 @@ import pytest
 from atm.evaluation.aggregator import aggregate_run, compute_quality, persist_quality
 from atm.tasks.base import EvalResult, TaskSpec
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_spec(**kwargs: Any) -> TaskSpec:
     defaults: dict[str, Any] = {
@@ -33,11 +29,6 @@ def _make_spec(**kwargs: Any) -> TaskSpec:
     }
     defaults.update(kwargs)
     return TaskSpec(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# 1. compute_quality success path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -57,11 +48,6 @@ async def test_compute_quality_success() -> None:
     assert details == {"correct": True}
 
 
-# ---------------------------------------------------------------------------
-# 2. compute_quality error path — returns (None, {"error": ...})
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_compute_quality_error_path_returns_none() -> None:
     """compute_quality catches exceptions and returns (None, {"error": ...})."""
@@ -79,11 +65,6 @@ async def test_compute_quality_error_path_returns_none() -> None:
     assert "evaluator blew up" in details["error"]
 
 
-# ---------------------------------------------------------------------------
-# 3. persist_quality basic mock — issues SQL UPDATE
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_persist_quality_executes_update() -> None:
     """persist_quality calls session.execute with a SQL statement."""
@@ -93,17 +74,10 @@ async def test_persist_quality_executes_update() -> None:
     await persist_quality(mock_session, run_id, 0.75)
 
     mock_session.execute.assert_called_once()
-    # Verify the argument is a SQL construct (not None)
     call_args = mock_session.execute.call_args
     assert call_args is not None
     stmt = call_args[0][0]
-    # The statement should be a SQLAlchemy Update object
     assert stmt is not None
-
-
-# ---------------------------------------------------------------------------
-# 4. aggregate_run shape — returns float on success, calls persist
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -123,5 +97,4 @@ async def test_aggregate_run_shape_on_success() -> None:
         result = await aggregate_run(mock_session, run_id, spec, "correct answer")
 
     assert result == pytest.approx(1.0)
-    # persist_quality should have been called (executes SQL UPDATE)
     mock_session.execute.assert_called_once()

@@ -23,10 +23,6 @@ import pytest
 from atm.core.types import TaskSpec
 from atm.tasks.gsm8k import GSM8KLoader, GSM8KMatcher
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
 _FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "gsm8k_sample.json"
 
 
@@ -54,11 +50,6 @@ def _make_spec_with_expected(expected_number: str) -> TaskSpec:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 1: loader_via_dataset
-# ---------------------------------------------------------------------------
-
-
 def test_gsm8k_loader_via_dataset(tmp_path: Path) -> None:
     """Loader returns ≥3 TaskSpec from mocked datasets.load_dataset."""
     rows = _load_fixture_rows()
@@ -77,14 +68,8 @@ def test_gsm8k_loader_via_dataset(tmp_path: Path) -> None:
         )
         assert spec.id.startswith("gsm8k/"), f"id should start with 'gsm8k/', got {spec.id!r}"
 
-    # All ids should be unique and in the format "gsm8k/<idx>"
     ids = [s.id for s in specs]
     assert len(ids) == len(set(ids)), "Duplicate ids found"
-
-
-# ---------------------------------------------------------------------------
-# Test 2: cache_hit
-# ---------------------------------------------------------------------------
 
 
 def test_gsm8k_cache_hit(tmp_path: Path) -> None:
@@ -102,17 +87,11 @@ def test_gsm8k_cache_hit(tmp_path: Path) -> None:
     with patch("atm.tasks.gsm8k.datasets.load_dataset", side_effect=counting_load_dataset):
         loader = GSM8KLoader()
         specs_first = loader.load(cache_dir=tmp_path)
-        # Reset iterator for potential second call
         mock_split.__iter__ = MagicMock(return_value=iter(rows))
         specs_second = loader.load(cache_dir=tmp_path)
 
     assert call_count == 1, f"Expected 1 network call, got {call_count}"
     assert len(specs_first) == len(specs_second)
-
-
-# ---------------------------------------------------------------------------
-# Test 3: numeric_exact_match
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -125,11 +104,6 @@ async def test_gsm8k_numeric_exact_match() -> None:
     assert result.passed is True
     assert result.score == 1.0
     assert result.error is None
-
-
-# ---------------------------------------------------------------------------
-# Test 4: comma_formatted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -145,11 +119,6 @@ async def test_gsm8k_comma_formatted() -> None:
     assert result.score == 1.0
 
 
-# ---------------------------------------------------------------------------
-# Test 5: float_tolerance
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_gsm8k_float_tolerance() -> None:
     """Integer expected vs float answer: 72 == 72.0 via math.isclose(abs_tol=1e-6)."""
@@ -163,11 +132,6 @@ async def test_gsm8k_float_tolerance() -> None:
     assert result.score == 1.0
 
 
-# ---------------------------------------------------------------------------
-# Test 6: wrong_answer
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_gsm8k_wrong_answer() -> None:
     """Wrong numeric answer → passed=False, score=0.0."""
@@ -177,11 +141,6 @@ async def test_gsm8k_wrong_answer() -> None:
 
     assert result.passed is False
     assert result.score == 0.0
-
-
-# ---------------------------------------------------------------------------
-# Test 7: no_number_in_answer
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,6 @@ Create Date: 2026-05-12
 
 from alembic import op
 
-# revision identifiers, used by Alembic.
 revision = "0002"
 down_revision = "0001"
 branch_labels = None

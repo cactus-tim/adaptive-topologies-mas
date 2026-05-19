@@ -26,10 +26,6 @@ from atm.storage.models import Experiment, Run
 from atm.storage.session import create_session_factory, session_scope
 from atm.tasks.base import EvalResult, TaskSpec
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _mmlu_spec() -> TaskSpec:
     return TaskSpec(
@@ -75,11 +71,6 @@ async def _insert_exp_and_run(
         )
 
 
-# ---------------------------------------------------------------------------
-# 1. persist_quality writes quality_score column
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_persist_quality_writes_column(
     pg_engine_fast: AsyncEngine,
@@ -93,16 +84,10 @@ async def test_persist_quality_writes_column(
     async with session_scope(factory) as session:
         await persist_quality(session, run_id, 0.75)
 
-    # Verify the column was updated
     async with session_scope(factory) as session:
         result = await session.execute(select(Run).where(Run.id == run_id))
         run_row = result.scalar_one()
         assert run_row.quality_score == pytest.approx(0.75)
-
-
-# ---------------------------------------------------------------------------
-# 2. persist_quality is idempotent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -115,11 +100,9 @@ async def test_persist_quality_idempotent(
     run_id = uuid.uuid4()
     await _insert_exp_and_run(factory, exp_id=exp_id, run_id=run_id)
 
-    # First call
     async with session_scope(factory) as session:
         await persist_quality(session, run_id, 0.5)
 
-    # Second call — overwrites
     async with session_scope(factory) as session:
         await persist_quality(session, run_id, 1.0)
 
@@ -129,27 +112,16 @@ async def test_persist_quality_idempotent(
         assert run_row.quality_score == pytest.approx(1.0)
 
 
-# ---------------------------------------------------------------------------
-# 3. persist_quality on unknown run_id — no-op (does not raise)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 async def test_persist_quality_unknown_run_id_noop(
     pg_engine_fast: AsyncEngine,
 ) -> None:
     """persist_quality on an unknown run_id does not raise."""
     factory = create_session_factory(pg_engine_fast)
-    ghost_run_id = uuid.uuid4()  # never inserted
+    ghost_run_id = uuid.uuid4()
 
-    # Should not raise even though the run does not exist
     async with session_scope(factory) as session:
         await persist_quality(session, ghost_run_id, 0.9)  # no-op
-
-
-# ---------------------------------------------------------------------------
-# 4. compute_quality + persist_quality round-trip (MMLU correct answer → 1.0)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -163,9 +135,8 @@ async def test_compute_and_persist_round_trip(
     await _insert_exp_and_run(factory, exp_id=exp_id, run_id=run_id)
 
     spec = _mmlu_spec()
-    answer = "42"  # correct answer for the gsm8k spec returned by helper
+    answer = "42"
 
-    # Mock score_ground_truth to return a passing EvalResult (correct MMLU answer)
     mock_result = EvalResult(score=1.0, passed=True, details={"match": True})
 
     with patch(
@@ -178,7 +149,6 @@ async def test_compute_and_persist_round_trip(
 
     assert score == pytest.approx(1.0)
 
-    # Verify persisted
     async with session_scope(factory) as session:
         result = await session.execute(select(Run).where(Run.id == run_id))
         run_row = result.scalar_one()

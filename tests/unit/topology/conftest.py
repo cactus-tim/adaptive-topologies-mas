@@ -17,7 +17,6 @@ import pytest
 
 from atm.topology.base import TopologyRegistry
 
-# Mapping of topology name → (module_name, class_attribute_name)
 _TOPOLOGY_MODULES: list[tuple[str, str, str]] = [
     ("star", "atm.topology.star", "StarTopology"),
     ("chain", "atm.topology.chain", "ChainTopology"),
@@ -38,7 +37,6 @@ def ensure_star_registered() -> None:
     for topology_name, mod_name, cls_attr in _TOPOLOGY_MODULES:
         if topology_name not in TopologyRegistry.list_names():
             if mod_name in sys.modules:
-                # Module already loaded — register the class directly from module
                 mod = sys.modules[mod_name]
                 cls = getattr(mod, cls_attr, None)
                 if cls is not None:

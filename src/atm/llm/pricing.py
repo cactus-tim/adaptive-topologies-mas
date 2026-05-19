@@ -47,11 +47,7 @@ class ModelPricing(BaseModel):
 
     input_per_1k: float = Field(default=0.0, ge=0.0)
     output_per_1k: float = Field(default=0.0, ge=0.0)
-
-    # OpenAI cache discount
     cached_input_per_1k: float = Field(default=0.0, ge=0.0)
-
-    # Anthropic cache discount
     cache_read_per_1k: float = Field(default=0.0, ge=0.0)
     cache_write_per_1k: float = Field(default=0.0, ge=0.0)
 
@@ -92,16 +88,11 @@ class Pricing(BaseModel):
 
         return cls(version=version, models=models)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _get_model_pricing(self, model_id: str) -> ModelPricing:
         """Return ModelPricing for *model_id*, raising LLMError if unknown."""
         try:
             return self.models[model_id]
         except KeyError as exc:
-            # Parse provider from "provider:model" convention; fall back gracefully
             parts = model_id.split(":", 1)
             provider = parts[0] if len(parts) == 2 else "unknown"
             model = parts[1] if len(parts) == 2 else model_id
@@ -116,10 +107,6 @@ class Pricing(BaseModel):
     def _per_1k(tokens: int, rate: float) -> float:
         """Compute cost for *tokens* at *rate* USD per 1 000 tokens."""
         return tokens * rate / 1000.0
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def cost(
         self,
@@ -157,12 +144,7 @@ class Pricing(BaseModel):
         completion = usage.completion_tokens
         prompt = usage.prompt_tokens
 
-        # ----------------------------------------------------------------
-        # Determine which cache convention applies
-        # ----------------------------------------------------------------
         if mp.cached_input_per_1k > 0.0:
-            # --- OpenAI convention ---
-            # cached tokens: cheaper rate; non-cached prompt: full rate
             non_cached_input = prompt - cached_read
             return (
                 self._per_1k(non_cached_input, mp.input_per_1k)
@@ -171,10 +153,6 @@ class Pricing(BaseModel):
             )
 
         if mp.cache_read_per_1k > 0.0 or mp.cache_write_per_1k > 0.0:
-            # --- Anthropic convention ---
-            # cached_read tokens: cache_read_per_1k
-            # cache_write_tokens: cache_write_per_1k (kwarg — not in TokenUsage)
-            # remaining plain input: input_per_1k
             plain_input = prompt - cached_read - cache_write_tokens
             return (
                 self._per_1k(plain_input, mp.input_per_1k)
@@ -183,7 +161,6 @@ class Pricing(BaseModel):
                 + self._per_1k(completion, mp.output_per_1k)
             )
 
-        # --- No cache: all prompt tokens at input rate ---
         return self._per_1k(prompt, mp.input_per_1k) + self._per_1k(completion, mp.output_per_1k)
 
     def estimate(

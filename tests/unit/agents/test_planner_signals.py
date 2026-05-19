@@ -23,11 +23,6 @@ FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_pricing() -> Pricing:
     if PRICING_PATH.exists():
         return Pricing.from_yaml(PRICING_PATH)
@@ -69,17 +64,11 @@ def _make_state(signals: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 class TestPlannerSignalEmission:
     """Planner.step() must emit ready_for_execution signal."""
 
     async def test_planner_emits_ready_for_execution(self) -> None:
         """After Planner.step(), signals['ready_for_execution'] == True."""
-        # m6_chain_planner produces a simple planning response with no tool calls
         llm = _make_llm("m6_chain_planner.yaml")
         planner = Planner(agent_id="planner", cfg=_make_cfg(), llm=llm, tools=ToolRegistry())
 
@@ -102,8 +91,6 @@ class TestPlannerSignalEmission:
 
         shared_out: dict[str, Any] = delta.get("shared") or {}
         signals: dict[str, Any] = shared_out.get("signals") or {}
-        # Pre-existing preserved
         assert signals.get("stuck") is False, "stuck should be preserved (False)"
         assert signals.get("rejected_count") == 1, "rejected_count should be preserved (1)"
-        # New signal added
         assert signals.get(READY_FOR_EXECUTION) is True

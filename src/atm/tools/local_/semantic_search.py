@@ -51,10 +51,6 @@ class SemanticSearchTool:
         self.top_k = top_k
         self._build_index()
 
-    # ------------------------------------------------------------------
-    # Index construction
-    # ------------------------------------------------------------------
-
     def _build_index(self) -> None:
         """Load corpus, build vocab, compute TF-IDF matrix and L2-normalise."""
         txt_files = sorted(self.corpus_dir.glob("*.txt"))
@@ -70,7 +66,6 @@ class SemanticSearchTool:
 
         n_docs = len(tokenized_docs)
 
-        # Build vocabulary: term → column index (sorted for determinism)
         vocab: dict[str, int] = {}
         for tokens in tokenized_docs:
             for tok in tokens:
@@ -83,34 +78,24 @@ class SemanticSearchTool:
             self._tfidf_matrix = np.zeros((n_docs, n_terms), dtype=np.float64)
             return
 
-        # TF matrix: raw term counts per document, then normalise by doc length
         tf = np.zeros((n_docs, n_terms), dtype=np.float64)
         for doc_idx, tokens in enumerate(tokenized_docs):
             for tok in tokens:
                 tf[doc_idx, vocab[tok]] += 1.0
 
-        # Normalise TF by total term count in each document (term frequency)
         row_sums = tf.sum(axis=1, keepdims=True)
-        # Avoid division by zero for empty docs
         row_sums[row_sums == 0] = 1.0
         tf /= row_sums
 
-        # IDF: sklearn-smoothed formula  idf[t] = log((1 + N) / (1 + df[t])) + 1
         df = (tf > 0).sum(axis=0).astype(np.float64)  # document frequency per term
         idf = np.log((1.0 + n_docs) / (1.0 + df)) + 1.0
 
-        # TF-IDF and L2 normalisation
         tfidf = tf * idf  # broadcast: (n_docs, n_terms) * (n_terms,)
         norms = np.linalg.norm(tfidf, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
-        self._tfidf_matrix = tfidf / norms  # L2-normalised row vectors
+        self._tfidf_matrix = tfidf / norms
 
-        # Store IDF for query vectorisation
         self._idf = idf
-
-    # ------------------------------------------------------------------
-    # Query
-    # ------------------------------------------------------------------
 
     def _vectorize_query(self, tokens: list[str]) -> np.ndarray:
         """Build a TF-IDF vector for the query using the corpus vocab/IDF."""
@@ -122,13 +107,13 @@ class SemanticSearchTool:
 
         total = vec.sum()
         if total > 0:
-            vec /= total  # TF normalisation
+            vec /= total
 
-        vec *= self._idf  # apply IDF
+        vec *= self._idf
 
         norm = np.linalg.norm(vec)
         if norm > 0:
-            vec /= norm  # L2 normalise
+            vec /= norm
 
         return vec
 
@@ -166,7 +151,6 @@ class SemanticSearchTool:
         tokens = _tokenize(raw_query)
         query_vec = self._vectorize_query(tokens)
 
-        # All-zero vector means no vocab overlap
         if np.all(query_vec == 0.0):
             return ToolResult(
                 call_id=uuid.uuid4(),
@@ -176,17 +160,14 @@ class SemanticSearchTool:
                 latency_ms=0,
             )
 
-        # Cosine similarity: dot product (both sides already L2-normalised)
         scores: np.ndarray = self._tfidf_matrix.dot(query_vec)
 
-        # Top-k by descending score (stable sort for deterministic tie-breaking)
         top_indices = np.argsort(-scores, kind="stable")[:k]
 
         hits: list[dict[str, Any]] = []
         for idx in top_indices:
             score = float(scores[idx])
             if score <= 0.0:
-                # Skip non-matching documents
                 continue
             snippet = self._doc_texts[idx][:200]
             hits.append(

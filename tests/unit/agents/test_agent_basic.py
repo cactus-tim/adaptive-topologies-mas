@@ -70,21 +70,17 @@ class TestHappyPathNoTools:
         state = _make_empty_state()
         delta = await agent.step(state)
 
-        # step_count must be absolute (1 for first step)
         agents_delta = delta["agents"]
         agent_state = agents_delta["p1"]
         assert agent_state["step_count"] == 1
 
-        # outbox must contain exactly one DRAFT message
         outbox = agent_state["outbox"]
         assert len(outbox) == 1
         assert outbox[0].kind == MessageKind.DRAFT
         assert outbox[0].sender == "p1"
 
-        # No tool calls on a no-tools agent
         assert agent_state["tool_calls"] == []
 
-        # delta has required keys
         assert "messages" in delta
         assert "llm_calls" in delta
 
@@ -100,7 +96,6 @@ class TestHappyPathNoTools:
         registry = ToolRegistry()
         agent = Agent(agent_id="p1", cfg=cfg, llm=llm, tools=registry)
 
-        # Simulate existing state with step_count=3
         state = {
             "shared": {"task_input": "Test"},
             "agents": {"p1": {"step_count": 3, "agent_id": "p1", "role": "planner"}},

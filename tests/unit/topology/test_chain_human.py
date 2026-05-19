@@ -30,10 +30,6 @@ from atm.experiment.config import HumanCfg
 from atm.topology.base import TopologyConfig, TopologyRegistry
 from atm.topology.chain import ChainTopology, _build_human_reviewer_node
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(*, max_iterations: int = 10) -> TopologyConfig:
     return TopologyConfig(name="chain", max_iterations=max_iterations)
@@ -114,19 +110,9 @@ def _ensure_chain_registered() -> None:
         TopologyRegistry.register("chain")(ChainTopology)
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def ensure_chain_registered() -> None:
     _ensure_chain_registered()
-
-
-# ---------------------------------------------------------------------------
-# Group 1 — Default path (no HITL)
-# ---------------------------------------------------------------------------
 
 
 class TestChainDefaultPath:
@@ -163,7 +149,6 @@ class TestChainDefaultPath:
         with patch("atm.topology.chain.StateGraph", return_value=mock_graph):
             ChainTopology().build(agents, cfg, human_cfg=human_cfg)
 
-        # Verify human_reviewer was NOT added
         node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
         assert "human_reviewer" not in node_names
 
@@ -174,10 +159,6 @@ class TestChainDefaultPath:
         async def fake_dispatch(name: str, data: Any) -> None:
             dispatched.append(name)
 
-        # build_human_reviewer_node with human_cfg=None should not be called
-        # But let's verify by calling the node directly with a mock that never triggers
-        # Since there's no human_reviewer node in the default path, dispatched stays empty.
-        # We test this by ensuring _build_human_reviewer_node is NOT invoked during build.
         mock_agent = MagicMock()
         mock_agent.step = AsyncMock(return_value={})
         agents = {"planner": mock_agent, "executor": mock_agent, "critic": mock_agent}
@@ -194,11 +175,6 @@ class TestChainDefaultPath:
             ChainTopology().build(agents, cfg)
 
         mock_builder.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Group 2 — HITL path: node insertion into graph
-# ---------------------------------------------------------------------------
 
 
 class TestChainHITLNodeInsertion:
@@ -247,11 +223,6 @@ class TestChainHITLNodeInsertion:
 
         edge_calls = [call.args for call in mock_graph.add_edge.call_args_list]
         assert ("critic_postprocess", "human_reviewer") in edge_calls
-
-
-# ---------------------------------------------------------------------------
-# Group 3 — HITL node logic: approve / reject / abstain / timeout
-# ---------------------------------------------------------------------------
 
 
 class TestHumanReviewerNodeApprove:
@@ -342,13 +313,10 @@ class TestHumanReviewerNodeReject:
         with patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch):
             delta = asyncio.run(node_fn(state))
 
-        # A rejection comment should be reflected in state somehow
-        # Either in messages list or in shared signals
         found_rejection = False
         messages_delta = delta.get("messages", [])
         shared_delta = delta.get("shared", {})
 
-        # Check messages list for rejection message
         for msg in messages_delta:
             if hasattr(msg, "content") and "Needs more tests" in (msg.content or ""):
                 found_rejection = True
@@ -357,7 +325,6 @@ class TestHumanReviewerNodeReject:
                 found_rejection = True
                 break
 
-        # Check shared for rejection hint
         if not found_rejection and (
             shared_delta.get("human_rejected") or shared_delta.get("needs_rerun")
         ):
@@ -388,7 +355,6 @@ class TestHumanReviewerNodeAbstain:
 
         shared_delta = delta.get("shared", {})
         assert not shared_delta.get("human_approved", False)
-        # No rejection messages or needs_rerun hint
         assert not shared_delta.get("needs_rerun", False)
         messages_delta = delta.get("messages", [])
         assert len(messages_delta) == 0
@@ -413,11 +379,6 @@ class TestHumanReviewerNodeAbstain:
         shared_delta = delta.get("shared", {})
         assert not shared_delta.get("human_approved", False)
         assert not shared_delta.get("needs_rerun", False)
-
-
-# ---------------------------------------------------------------------------
-# Group 4 — Dispatch order: human_request BEFORE human_response
-# ---------------------------------------------------------------------------
 
 
 class TestDispatchOrder:
@@ -477,11 +438,6 @@ class TestDispatchOrder:
         assert "human_response" not in event_names
 
 
-# ---------------------------------------------------------------------------
-# Group 5 — missing run_id raises RuntimeError
-# ---------------------------------------------------------------------------
-
-
 class TestMissingRunId:
     def test_missing_run_id_raises_runtime_error(self) -> None:
         """human_reviewer node raises RuntimeError when state['shared']['run_id'] absent."""
@@ -503,11 +459,6 @@ class TestMissingRunId:
 
         with pytest.raises(RuntimeError, match="run_id"):
             asyncio.run(node_fn(state))
-
-
-# ---------------------------------------------------------------------------
-# Group 6 — Canonical payload shape (F1 / F2 fix verification)
-# ---------------------------------------------------------------------------
 
 
 class TestDispatchPayloadShape:
@@ -546,7 +497,6 @@ class TestDispatchPayloadShape:
         assert "human_request" in captured_payloads, "human_request event not dispatched"
         payload = captured_payloads["human_request"]
 
-        # Must have all canonical keys
         assert "run_id" in payload, f"run_id missing from human_request payload: {payload!r}"
         assert "request_id" in payload, (
             f"request_id missing from human_request payload: {payload!r}"
@@ -559,23 +509,19 @@ class TestDispatchPayloadShape:
             f"requested_at missing from human_request payload: {payload!r}"
         )
 
-        # Must NOT use the old "ctx" key
         assert "ctx" not in payload, (
             f"human_request payload must not use 'ctx' key (callback expects 'context_json'): "
             f"{payload!r}"
         )
 
-        # run_id must be the actual run_id
         assert payload["run_id"] == run_id, (
             f"run_id in payload {payload['run_id']!r} != state run_id {run_id!r}"
         )
 
-        # role must be a string
         assert isinstance(payload["role"], str), (
             f"role must be a str, got {type(payload['role'])}: {payload['role']!r}"
         )
 
-        # requested_at must be a datetime
         assert isinstance(payload["requested_at"], datetime), (
             f"requested_at must be a datetime, got {type(payload['requested_at'])}"
         )
@@ -606,7 +552,6 @@ class TestDispatchPayloadShape:
         assert "human_response" in captured_payloads, "human_response event not dispatched"
         payload = captured_payloads["human_response"]
 
-        # Must have all canonical keys
         for key in (
             "run_id",
             "request_id",
@@ -618,30 +563,21 @@ class TestDispatchPayloadShape:
         ):
             assert key in payload, f"{key!r} missing from human_response payload: {payload!r}"
 
-        # Must NOT use the old "response" key
         assert "response" not in payload, (
             f"human_response payload must not use 'response' key (callback expects 'response_json'): "
             f"{payload!r}"
         )
 
-        # run_id must match
         assert payload["run_id"] == run_id
 
-        # answered_at must be a datetime
         assert isinstance(payload["answered_at"], datetime), (
             f"answered_at must be a datetime, got {type(payload['answered_at'])}"
         )
 
-        # latency_s must be a non-negative float
         assert isinstance(payload["latency_s"], float), (
             f"latency_s must be a float, got {type(payload['latency_s'])}"
         )
         assert payload["latency_s"] >= 0.0, f"latency_s must be >= 0.0, got {payload['latency_s']}"
-
-
-# ---------------------------------------------------------------------------
-# Group 7 — F3: llm_fallback timeout_policy does not crash at node invocation
-# ---------------------------------------------------------------------------
 
 
 class TestLlmFallbackPolicy:
@@ -655,12 +591,10 @@ class TestLlmFallbackPolicy:
         run_id = uuid.uuid4()
         state = _make_state(run_id=run_id, iter_total=0)
 
-        # Use a fast-responding mock as the primary gateway so it doesn't time out
         approve_response = _make_approve_response()
         fake_gateway = AsyncMock()
         fake_gateway.request = AsyncMock(return_value=approve_response)
 
-        # Default cfg has timeout_policy='llm_fallback' — this USED to crash
         human_cfg = _make_human_cfg(
             enabled=True,
             timeout_s=30.0,
@@ -674,7 +608,6 @@ class TestLlmFallbackPolicy:
         async def fake_dispatch(name: str, data: Any) -> None:
             events.append(name)
 
-        # Patch request_with_timeout so it calls the primary gateway and returns immediately
         async def fake_request_with_timeout(
             gw: Any,
             ctx: Any,
@@ -684,7 +617,6 @@ class TestLlmFallbackPolicy:
             policy: Any,
             llm_fallback_gateway: Any = None,
         ) -> HumanResponse:
-            # Verify fallback_gateway is now properly provided (F3 fix)
             assert policy != "llm_fallback" or llm_fallback_gateway is not None, (
                 "F3 regression: llm_fallback policy passed with llm_fallback_gateway=None"
             )
@@ -694,17 +626,11 @@ class TestLlmFallbackPolicy:
             patch("atm.topology.chain.adispatch_custom_event", side_effect=fake_dispatch),
             patch("atm.topology.chain.request_with_timeout", side_effect=fake_request_with_timeout),
         ):
-            # Must NOT raise ValueError
             delta = asyncio.run(node_fn(state))
 
         assert delta["shared"]["human_approved"] is True
         assert "human_request" in events
         assert "human_response" in events
-
-
-# ---------------------------------------------------------------------------
-# Group 8 — role_router integration: back-compat + dynamic
-# ---------------------------------------------------------------------------
 
 
 class TestChainRoleRouter:
@@ -781,15 +707,6 @@ class TestChainRoleRouter:
         human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER, timeout_s=None)  # type: ignore[arg-type]
         router = FixedRoleRouter(role=HumanRole.JUDGE)
 
-        # Import the factory from chain (it's the inline node, not from _node_factory)
-        # We test via build() by capturing what role_router gets forwarded to
-        # Here we test _build_human_reviewer_node directly since Chain has its own inline node.
-        # But for the role_router test, we need to verify chain.build() forwards role_router
-        # to the node builder. Since chain.py uses _build_human_reviewer_node (its own),
-        # we test chain.build() with role_router kwarg and verify the node uses router.
-        #
-        # Chain has its OWN inline node (_build_human_reviewer_node), not build_human_node_factory.
-        # We need to patch the chain module to verify role_router propagation.
         mock_agent = MagicMock()
         mock_agent.step = AsyncMock(return_value={})
         agents = {"planner": mock_agent, "executor": mock_agent, "critic": mock_agent}
@@ -865,7 +782,6 @@ class TestChainRoleRouter:
         run_id = uuid.uuid4()
         state = _make_state(run_id=run_id, iter_total=0)
 
-        # Primary gateway that actually times out
         async def _slow_request(ctx: Any, *, request_id: str) -> HumanResponse:
             await _asyncio.sleep(10)
             return _make_approve_response()
@@ -873,14 +789,13 @@ class TestChainRoleRouter:
         primary_gateway = AsyncMock()
         primary_gateway.request = _slow_request
 
-        # The fallback should return quickly
         fallback_response = HumanResponse(
             action="approve", comment="fallback", source="fallback", timed_out=False
         )
 
         human_cfg = _make_human_cfg(
             enabled=True,
-            timeout_s=0.05,  # very short — primary will time out
+            timeout_s=0.05,
             timeout_policy="llm_fallback",
         )
 
@@ -900,5 +815,4 @@ class TestChainRoleRouter:
         ):
             delta = asyncio.run(node_fn(state))
 
-        # The fallback response was "approve", so human_approved should be True
         assert delta["shared"]["human_approved"] is True

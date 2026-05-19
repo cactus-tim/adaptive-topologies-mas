@@ -94,7 +94,7 @@ class TestAgentConfigModelCopy:
         original = AgentConfig(role="planner", system_prompt="original")
         updated = original.model_copy(update={"system_prompt": "updated"})
         assert updated.system_prompt == "updated"
-        assert original.system_prompt == "original"  # original unchanged
+        assert original.system_prompt == "original"
 
     def test_config_model_copy_preserves_other_fields(self) -> None:
         original = AgentConfig(role="planner", system_prompt="p", window_size=15)
@@ -117,7 +117,6 @@ class TestLoadAgentConfig:
         assert isinstance(cfg, AgentConfig)
         assert cfg.role == "planner"
         assert cfg.system_prompt == "You are a planner agent."
-        # defaults applied
         assert cfg.window_size == 10
         assert cfg.tools == []
         assert cfg.params == {}

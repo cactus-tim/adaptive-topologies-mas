@@ -23,10 +23,6 @@ from atm.experiment.finalize import (
     maybe_finalize_answer,
 )
 
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
 
 def _mk_spec(
     task_id: str,
@@ -52,11 +48,6 @@ def _mk_llm_response(text: str) -> Any:
     )
 
 
-# ---------------------------------------------------------------------------
-# Heuristics
-# ---------------------------------------------------------------------------
-
-
 class TestTaskClassification:
     def test_humaneval_is_code(self) -> None:
         assert _is_non_code_task("humaneval/HumanEval/0") is False
@@ -69,7 +60,6 @@ class TestTaskClassification:
         assert _is_non_code_task(task_id) is True
 
     def test_unknown_prefix_treated_as_code(self) -> None:
-        # Conservative default: anything we don't recognize is not finalized.
         assert _is_non_code_task("unknown/0") is False
 
 
@@ -82,7 +72,6 @@ class TestLooksLikeCode:
         assert _looks_like_code(text) is True
 
     def test_one_marker_not_enough(self) -> None:
-        # Single accidental keyword in prose shouldn't trigger finalize.
         assert _looks_like_code("The function should return the same value.") is False
 
     def test_plain_text(self) -> None:
@@ -91,8 +80,6 @@ class TestLooksLikeCode:
 
 class TestNeedsFinalize:
     def test_code_task_never_triggers(self) -> None:
-        # Even with empty / code-shaped answers, humaneval is left alone:
-        # its file-write artifact is the right answer.
         assert _needs_finalize(_mk_spec("humaneval/0"), "") is False
         assert _needs_finalize(_mk_spec("humaneval/0"), "import x\ndef foo(): pass") is False
 
@@ -107,15 +94,12 @@ class TestNeedsFinalize:
         assert _needs_finalize(_mk_spec("gsm8k/0"), py) is True
 
     def test_dabench_missing_template_triggers(self) -> None:
-        # Non-empty, prose-shaped, but no @name[value] — DABench evaluator
-        # would score 0; we should ask the model to re-format.
         assert _needs_finalize(_mk_spec("dabench/5"), "The mean fare is 34.65.") is True
 
     def test_dabench_with_template_passes(self) -> None:
         assert _needs_finalize(_mk_spec("dabench/5"), "@mean_fare[34.65]") is False
 
     def test_gsm8k_plain_numeric_passes(self) -> None:
-        # GSM8K answer is a number — no template required.
         assert _needs_finalize(_mk_spec("gsm8k/0"), "72") is False
 
     def test_commongen_missing_concept_triggers(self) -> None:
@@ -123,7 +107,6 @@ class TestNeedsFinalize:
             "commongen/0",
             metadata={"concepts": ["dog", "fence", "jump"], "references": []},
         )
-        # "fence" missing → trigger.
         assert _needs_finalize(spec, "The dog jumps over the wall.") is True
 
     def test_commongen_all_concepts_present_passes(self) -> None:
@@ -138,7 +121,6 @@ class TestNeedsFinalize:
             "commongen/0",
             metadata={"concepts": ["dog", "fence", "jump"], "references": []},
         )
-        # All concepts technically present, but answer is a critic complaint.
         meta_text = (
             "Issues identified: the executor output does not contain a story "
             "with the required concepts (dog, fence, jump)."
@@ -148,11 +130,6 @@ class TestNeedsFinalize:
     def test_dabench_template_regex(self) -> None:
         assert _DABENCH_TEMPLATE_RE.search("@a[1] @b[2]") is not None
         assert _DABENCH_TEMPLATE_RE.search("a[1] b[2]") is None
-
-
-# ---------------------------------------------------------------------------
-# maybe_finalize_answer
-# ---------------------------------------------------------------------------
 
 
 class TestMaybeFinalizeAnswer:
@@ -176,7 +153,7 @@ class TestMaybeFinalizeAnswer:
             llm=llm,
             task_spec=spec,
             final_state={},
-            current_answer="",  # would trigger for non-code
+            current_answer="",
         )
         assert out == ""
         llm.ainvoke.assert_not_called()
@@ -207,7 +184,6 @@ class TestMaybeFinalizeAnswer:
         )
         assert out == "synthesized answer"
         llm.ainvoke.assert_called_once()
-        # Tools must be disabled on the finalize call.
         kwargs = llm.ainvoke.call_args.kwargs
         assert kwargs.get("tools") is None
 
@@ -237,15 +213,13 @@ class TestMaybeFinalizeAnswer:
                     }
                 }
             },
-            current_answer="The mean fare is 34.65.",  # missing @name[value]
+            current_answer="The mean fare is 34.65.",
         )
         assert out == "@mean_fare[34.65]"
         llm.ainvoke.assert_called_once()
-        # Prompt should mention the required format from metadata.
         messages = llm.ainvoke.call_args.args[0]
         joined = "\n".join(getattr(m, "content", "") for m in messages)
         assert "@mean_fare[value]" in joined
-        # And the tool history should be referenced.
         assert "mean=34.65" in joined
 
     @pytest.mark.asyncio
@@ -257,7 +231,7 @@ class TestMaybeFinalizeAnswer:
             llm=llm,
             task_spec=spec,
             final_state={},
-            current_answer="",  # triggers, but llm raises
+            current_answer="",
         )
         assert out == ""
         llm.ainvoke.assert_called_once()
@@ -265,7 +239,7 @@ class TestMaybeFinalizeAnswer:
     @pytest.mark.asyncio
     async def test_empty_llm_response_keeps_original(self) -> None:
         llm = AsyncMock()
-        llm.ainvoke.return_value = _mk_llm_response("")  # empty text
+        llm.ainvoke.return_value = _mk_llm_response("")
         spec = _mk_spec("gsm8k/0")
         out = await maybe_finalize_answer(
             llm=llm,

@@ -5,7 +5,7 @@ Tests (TDD — 11 tests):
     at least one curated row has TWO @name[value] pairs in sorted name order (N1).
 2.  test_dabench_remote_serialises_common_answers — monkeypatch load_dataset returns synthetic
     data; loader produces spec with expected="@a_metric[1.0] @b_metric[2.5]" (sorted by name).
-3.  test_dabench_remote_multi_pair_sorted — same as #2 but verifies sort-order determinism.
+3.  test_dabench_remote_multi_pair_sorted — same as
 4.  test_dabench_falls_back_on_network_error — load_dataset raises OSError; loader returns
     curated ≥8 specs + emits structlog warning.
 5.  test_dabench_cache_hit               — pre-write parquet; datasets.load_dataset not called.
@@ -40,10 +40,6 @@ import atm.tasks._cache as _cache
 from atm.core.types import TaskSpec
 from atm.tasks.dabench import DABenchEvaluator, DABenchLoader, stage_workspace_for
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
-
 _FIXTURE_PATH = Path(__file__).parent.parent.parent / "fixtures" / "tasks" / "dabench_curated.jsonl"
 
 _PAIR_RE = re.compile(r"@([A-Za-z_][\w]*)\[([^\]]+)\]")
@@ -74,13 +70,7 @@ def _make_synthetic_hf_dataset(
     """Return a MagicMock for load_dataset that returns q and l splits."""
     q_mock = _make_mock_hf_split(questions)
     l_mock = _make_mock_hf_split(labels)
-    # load_dataset is called twice: once for questions, once for labels
     return MagicMock(side_effect=[q_mock, l_mock])
-
-
-# ---------------------------------------------------------------------------
-# Test 1: offline_curated
-# ---------------------------------------------------------------------------
 
 
 def test_dabench_offline_curated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -106,24 +96,17 @@ def test_dabench_offline_curated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
         )
         assert spec.id.startswith("dabench/"), f"id should start with 'dabench/', got {spec.id!r}"
 
-    # N1: at least one spec must have exactly two @name[value] pairs in sorted name order
     multi_pair_specs = [s for s in specs if len(_PAIR_RE.findall(s.expected or "")) >= 2]
     assert len(multi_pair_specs) >= 1, (
         "Expected at least one spec with ≥2 @name[value] pairs in curated JSONL (N1)"
     )
 
-    # Verify sorted name order for each multi-pair spec
     for spec in multi_pair_specs:
-        pairs = _PAIR_RE.findall(spec.expected or "")  # list of (name, value)
+        pairs = _PAIR_RE.findall(spec.expected or "")
         names = [p[0] for p in pairs]
         assert names == sorted(names), (
             f"Pairs in '{spec.expected}' are not in sorted name order: {names}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Test 2: remote_serialises_common_answers
-# ---------------------------------------------------------------------------
 
 
 def test_dabench_remote_serialises_common_answers(tmp_path: Path) -> None:
@@ -150,11 +133,6 @@ def test_dabench_remote_serialises_common_answers(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 3: remote_multi_pair_sorted
-# ---------------------------------------------------------------------------
-
-
 def test_dabench_remote_multi_pair_sorted(tmp_path: Path) -> None:
     """Sort order is deterministic regardless of input order of common_answers."""
     questions = [{"id": 10, "question": "Calculate z, y, x metrics."}]
@@ -170,18 +148,12 @@ def test_dabench_remote_multi_pair_sorted(tmp_path: Path) -> None:
 
     assert len(specs) == 1
     spec = specs[0]
-    # Sorted by name: x_val < y_val < z_val
     assert spec.expected == "@x_val[1.0] @y_val[2.0] @z_val[3.0]", (
         f"Expected alphabetically sorted pairs, got {spec.expected!r}"
     )
     pairs = _PAIR_RE.findall(spec.expected)
     names = [p[0] for p in pairs]
     assert names == sorted(names), f"Names not in sorted order: {names}"
-
-
-# ---------------------------------------------------------------------------
-# Test 4: falls_back_on_network_error
-# ---------------------------------------------------------------------------
 
 
 def test_dabench_falls_back_on_network_error(tmp_path: Path) -> None:
@@ -205,7 +177,6 @@ def test_dabench_falls_back_on_network_error(tmp_path: Path) -> None:
         assert spec.type == "decision"
         assert spec.evaluator_key == "dabench_numeric_exact"
 
-    # Verify warning was emitted via structlog
     warning_found = any(
         record.get("log_level") == "warning"
         and (
@@ -220,14 +191,8 @@ def test_dabench_falls_back_on_network_error(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 5: cache_hit
-# ---------------------------------------------------------------------------
-
-
 def test_dabench_cache_hit(tmp_path: Path) -> None:
     """Pre-written Parquet cache → datasets.load_dataset not called."""
-    # Pre-populate cache with a fake row
     cache_rows = [
         {
             "id": "dabench/1",
@@ -259,11 +224,6 @@ def test_dabench_cache_hit(tmp_path: Path) -> None:
     assert specs[0].evaluator_key == "dabench_numeric_exact"
 
 
-# ---------------------------------------------------------------------------
-# Test 6: evaluator_full_match
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_dabench_evaluator_full_match() -> None:
     """expected '@mean_fare[34.65]', answer contains '@mean_fare[34.65]' → score=1.0, passed=True."""
@@ -275,33 +235,21 @@ async def test_dabench_evaluator_full_match() -> None:
     assert math.isclose(result.score, 1.0, abs_tol=1e-9), f"Expected score=1.0, got {result.score}"
 
 
-# ---------------------------------------------------------------------------
-# Test 7: evaluator_close_within_tol
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_dabench_evaluator_close_within_tol() -> None:
     """abs_tol=1e-2: diff 0.01 → pass; diff 0.02 → fail."""
     evaluator = DABenchEvaluator()
     spec = _make_dabench_spec("@mean_fare[34.65]")
 
-    # Sub-case 1: 34.66 (diff 0.01 ≤ abs_tol=1e-2) → passed=True
     result_pass = await evaluator.evaluate(spec, "@mean_fare[34.66]")
     assert result_pass.passed is True, (
         f"Expected passed=True for diff=0.01 (≤ abs_tol=1e-2), got passed={result_pass.passed}"
     )
 
-    # Sub-case 2: 34.67 (diff 0.02 > abs_tol=1e-2) → passed=False
     result_fail = await evaluator.evaluate(spec, "@mean_fare[34.67]")
     assert result_fail.passed is False, (
         f"Expected passed=False for diff=0.02 (> abs_tol=1e-2), got passed={result_fail.passed}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 8: evaluator_multi_pair_partial
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -320,11 +268,6 @@ async def test_dabench_evaluator_multi_pair_partial() -> None:
     assert result.details.get("total") == 2
 
 
-# ---------------------------------------------------------------------------
-# Test 9: evaluator_missing_template
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_dabench_evaluator_missing_template() -> None:
     """expected '@a[1.0]'; plain text answer with no @a[...] → score=0.0, passed=False."""
@@ -339,11 +282,6 @@ async def test_dabench_evaluator_missing_template() -> None:
     assert result.passed is False, f"Expected passed=False, got {result.passed}"
 
 
-# ---------------------------------------------------------------------------
-# Test 10: evaluator_categorical_fallback
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_dabench_evaluator_categorical_fallback() -> None:
     """Categorical fallback: '@cat[YES]' vs '@cat[yes]' → score=1.0, passed=True (N2).
@@ -352,13 +290,11 @@ async def test_dabench_evaluator_categorical_fallback() -> None:
     Sub-case: '@n[1.0]' expected, '@n[2.0]' answered → passed=False via numeric comparison
     (not via string equality of '1.0' != '2.0').
     """
-    # Verify the categorical path precondition: float("YES") must raise ValueError
     with pytest.raises(ValueError):
         float("YES")
 
     evaluator = DABenchEvaluator()
 
-    # Case 1: categorical match (case-insensitive)
     spec_cat = _make_dabench_spec("@cat[YES]")
     result_cat = await evaluator.evaluate(spec_cat, "@cat[yes]")
 
@@ -369,28 +305,17 @@ async def test_dabench_evaluator_categorical_fallback() -> None:
         f"Expected score=1.0 for categorical match, got {result_cat.score}"
     )
 
-    # Case 2: numeric mismatch — must NOT use categorical string equality
-    # '1.0' and '2.0' are both parseable as float, so numeric path is taken
     spec_num = _make_dabench_spec("@n[1.0]")
     result_num = await evaluator.evaluate(spec_num, "@n[2.0]")
 
     assert result_num.passed is False, (
         f"Expected passed=False for numeric mismatch (@n[1.0] vs @n[2.0]), got {result_num.passed}"
     )
-    # Verify it went through numeric comparison: if it were categorical string comparison,
-    # '1.0'.lower() != '2.0'.lower() would also give False, but we want to verify the path.
-    # We assert that both are float-parseable (i.e., numeric path was taken):
-    assert float("1.0") == 1.0  # sanity: no ValueError → numeric path
-    assert float("2.0") == 2.0  # sanity: no ValueError → numeric path
-    # And the values are not close (difference = 1.0 >> abs_tol=1e-2)
+    assert float("1.0") == 1.0
+    assert float("2.0") == 2.0
     assert not math.isclose(1.0, 2.0, abs_tol=1e-2), (
         "1.0 and 2.0 should not be close with abs_tol=1e-2"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 11: evaluator_vacuous
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -409,18 +334,12 @@ async def test_dabench_evaluator_vacuous() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test 12: stage_workspace_for — non-dabench spec returns empty list
-# ---------------------------------------------------------------------------
-
-
 def test_stage_workspace_for_non_dabench_spec_returns_empty(tmp_path: Path) -> None:
     """A spec whose id does not start with 'dabench/' causes an immediate no-op.
 
     stage_workspace_for must return [] without touching the filesystem or
     performing any network activity when the spec is not a DABench task.
     """
-    # Arrange
     spec = TaskSpec(
         id="humaneval/HumanEval/0",
         type="programming",
@@ -429,16 +348,9 @@ def test_stage_workspace_for_non_dabench_spec_returns_empty(tmp_path: Path) -> N
         evaluator_key="humaneval",
     )
 
-    # Act
     result = stage_workspace_for(spec, workspace_path=tmp_path)
 
-    # Assert
     assert result == [], f"Expected [] for non-dabench spec, got {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# Test 13: stage_workspace_for — downloads, writes cache, serves cache on second call
-# ---------------------------------------------------------------------------
 
 
 def test_stage_workspace_for_downloads_and_caches(
@@ -453,7 +365,6 @@ def test_stage_workspace_for_downloads_and_caches(
     - The file is written to cache_dir so subsequent calls avoid re-downloading.
     - urlopen call count does not increase on a cache-hit second call.
     """
-    # Arrange — two separate directories so workspace != cache
     tmp_workspace_1 = tmp_path_factory.mktemp("workspace1")
     tmp_workspace_2 = tmp_path_factory.mktemp("workspace2")
     tmp_cache = tmp_path_factory.mktemp("cache")
@@ -476,14 +387,11 @@ def test_stage_workspace_for_downloads_and_caches(
         metadata={"file_name": "titanic.csv"},
     )
 
-    # Ensure offline mode is not active
     monkeypatch.delenv("ATM_DABENCH_OFFLINE", raising=False)
 
     with patch("atm.tasks.dabench.urlopen", mock_urlopen):
-        # Act — first call: cache miss, should download
         result_1 = stage_workspace_for(spec, workspace_path=tmp_workspace_1, cache_dir=tmp_cache)
 
-        # Assert first call
         assert result_1 == [tmp_workspace_1 / "titanic.csv"], (
             f"Expected [workspace/titanic.csv], got {result_1!r}"
         )
@@ -496,21 +404,14 @@ def test_stage_workspace_for_downloads_and_caches(
             f"Expected exactly 1 urlopen call on first (cache miss) call, got {urlopen_count_after_first}"
         )
 
-        # Act — second call: cache hit, should NOT call urlopen again
         result_2 = stage_workspace_for(spec, workspace_path=tmp_workspace_2, cache_dir=tmp_cache)
 
-    # Assert second call
     assert result_2 == [tmp_workspace_2 / "titanic.csv"], (
         f"Expected [workspace2/titanic.csv] on cache-hit call, got {result_2!r}"
     )
     assert mock_urlopen.call_count == urlopen_count_after_first, (
         "urlopen was called again on cache-hit second call — byte cache not respected"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 14: stage_workspace_for — offline mode returns empty without network attempt
-# ---------------------------------------------------------------------------
 
 
 def test_stage_workspace_for_offline_returns_empty(
@@ -521,7 +422,6 @@ def test_stage_workspace_for_offline_returns_empty(
 
     No urlopen call must be made regardless of whether a cache file exists.
     """
-    # Arrange
     tmp_workspace = tmp_path_factory.mktemp("workspace")
     tmp_cache = tmp_path_factory.mktemp("cache")
 
@@ -539,17 +439,10 @@ def test_stage_workspace_for_offline_returns_empty(
     mock_urlopen = MagicMock()
 
     with patch("atm.tasks.dabench.urlopen", mock_urlopen):
-        # Act
         result = stage_workspace_for(spec, workspace_path=tmp_workspace, cache_dir=tmp_cache)
 
-    # Assert
     assert result == [], f"Expected [] when ATM_DABENCH_OFFLINE=1, got {result!r}"
     mock_urlopen.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Test 15: stage_workspace_for — network error returns empty list and logs warning
-# ---------------------------------------------------------------------------
 
 
 def test_stage_workspace_for_network_error_returns_empty_and_logs(
@@ -561,7 +454,6 @@ def test_stage_workspace_for_network_error_returns_empty_and_logs(
     The error must not propagate to the caller — a degraded-but-running
     experiment is preferable to a crashed run.
     """
-    # Arrange
     tmp_workspace = tmp_path_factory.mktemp("workspace")
     tmp_cache = tmp_path_factory.mktemp("cache")
 
@@ -579,20 +471,12 @@ def test_stage_workspace_for_network_error_returns_empty_and_logs(
     mock_urlopen = MagicMock(side_effect=urllib.error.URLError("test failure"))
 
     with patch("atm.tasks.dabench.urlopen", mock_urlopen):
-        # Act — must not raise
         result = stage_workspace_for(spec, workspace_path=tmp_workspace, cache_dir=tmp_cache)
 
-    # Assert
     assert result == [], f"Expected [] when URLError is raised, got {result!r}"
-    # The workspace file must NOT have been created (nothing to copy)
     assert not (tmp_workspace / "titanic.csv").exists(), (
         "Workspace file should not exist after a network error"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test 16: stage_workspace_for — path traversal in file_name is rejected
-# ---------------------------------------------------------------------------
 
 
 def test_stage_workspace_for_rejects_path_traversal(
@@ -615,7 +499,6 @@ def test_stage_workspace_for_rejects_path_traversal(
         metadata={"file_name": "../etc/passwd"},
     )
 
-    # If urlopen is called the test fails immediately
     mock_urlopen = MagicMock(side_effect=AssertionError("urlopen must not be called"))
 
     with patch("atm.tasks.dabench.urlopen", mock_urlopen):
@@ -623,11 +506,6 @@ def test_stage_workspace_for_rejects_path_traversal(
 
     assert result == [], f"Expected [] for path traversal file_name, got {result!r}"
     mock_urlopen.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Test 17: stage_workspace_for — absolute path in file_name is rejected
-# ---------------------------------------------------------------------------
 
 
 def test_stage_workspace_for_rejects_absolute_path(
@@ -650,7 +528,6 @@ def test_stage_workspace_for_rejects_absolute_path(
         metadata={"file_name": "/etc/passwd"},
     )
 
-    # If urlopen is called the test fails immediately
     mock_urlopen = MagicMock(side_effect=AssertionError("urlopen must not be called"))
 
     with patch("atm.tasks.dabench.urlopen", mock_urlopen):

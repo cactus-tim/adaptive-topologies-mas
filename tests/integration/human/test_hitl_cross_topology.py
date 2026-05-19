@@ -60,18 +60,10 @@ from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 from atm.topology.base import TopologyConfig
 
-# ---------------------------------------------------------------------------
-# Gate: skip unless ATM_ENABLE_PG_TESTS=1
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS") == "1"
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Parametrize table
-# ---------------------------------------------------------------------------
 
 _TOPOLOGY_PARAMS = [
     pytest.param("chain", None, id="chain"),
@@ -81,10 +73,6 @@ _TOPOLOGY_PARAMS = [
     pytest.param("hierarchical", {"scope": "top"}, id="hierarchical"),
     pytest.param("adaptive", None, id="adaptive"),
 ]
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -263,11 +251,6 @@ def _make_judge_agent() -> Any:
     return agent
 
 
-# ---------------------------------------------------------------------------
-# Per-topology graph builders
-# ---------------------------------------------------------------------------
-
-
 def _build_chain_graph(
     run_id: uuid.UUID,
     human_cfg: HumanCfg,
@@ -336,7 +319,6 @@ def _build_mesh_graph(
         "researcher": _make_vote_agent("researcher", "X"),
         "executor": _make_vote_agent("executor", "X"),
     }
-    # threshold=4: 3 LLM votes (round 1) not enough; human tips at activation_round=2
     cfg = TopologyConfig(
         name="mesh",
         max_iterations=30,
@@ -452,10 +434,6 @@ def _make_shared_state(run_id: uuid.UUID, topology: str) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Fixture lookup: reuse existing per-topology fixtures
-# ---------------------------------------------------------------------------
-
 _GATEWAY_FIXTURE: dict[str, str] = {
     "chain": "m9_human_reviewer_approve.yaml",
     "star": "m91_star_human_reviewer.yaml",
@@ -464,11 +442,6 @@ _GATEWAY_FIXTURE: dict[str, str] = {
     "hierarchical": "m91_hierarchical_reviewer_approve.yaml",
     "adaptive": "m91_adaptive_advisor_approve.yaml",
 }
-
-
-# ---------------------------------------------------------------------------
-# Main parametrized acceptance test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -520,9 +493,6 @@ async def test_hitl_cross_topology_acceptance(
         result: Any = None
 
         if topology == "adaptive":
-            # Adaptive: use RunnableLambda + direct event dispatch (advisory scenario).
-            # Building the full adaptive graph end-to-end requires heavy subgraph mocking.
-            # Instead, simulate the advisory HITL contract directly.
             ctx = HumanContext(
                 run_id=run_id,
                 role=HumanRole.REVIEWER,
@@ -655,15 +625,12 @@ async def test_hitl_cross_topology_acceptance(
                 },
             )
 
-        # Allow async background DB writes to complete
         await asyncio.sleep(0.2)
 
-        # ── Assertion 1: run completes (non-None result) ──────────────────
         assert result is not None, (
             f"[{topology}] Graph / runnable should complete and return non-None result"
         )
 
-        # ── Assertion 2: human_interactions count >= 1 ───────────────────
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -677,7 +644,6 @@ async def test_hitl_cross_topology_acceptance(
             f"got {count}. The HITL node must dispatch human_request + human_response events."
         )
 
-        # ── Assertion 3: runs.human_role == 'reviewer' ───────────────────
         async with session_scope(factory) as session:
             run_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_result.scalar_one_or_none()

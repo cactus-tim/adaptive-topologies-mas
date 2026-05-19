@@ -1,10 +1,10 @@
 """Public API for the atm.topology package.
 
 Exports:
-  - Topology        — @runtime_checkable Protocol (arch.md §6)
+  - Topology        — @runtime_checkable Protocol
   - TopologyConfig  — Pydantic config model
   - TopologyRegistry — class-level registry for topology lookup
-  - _should_stop    — stopping-precedence helper (arch.md §7.1)
+  - _should_stop    — stopping-precedence helper
   - AdaptiveTopology — L2 adaptive meta-graph (M8)
   - build_adaptive_graph — convenience factory for AdaptiveTopology
 

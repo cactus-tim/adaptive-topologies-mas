@@ -1,11 +1,4 @@
-"""Oracle labels pipeline for M8.7 — OracleTable producer/consumer.
-
-Public surface:
-    OracleTable         — Pydantic v2 frozen model
-    build_loo_from_rows — pure LOO aggregation helper
-    load_oracle_table   — sync JSON/YAML loader
-    build_leave_one_out_oracle — async Postgres-backed builder
-"""
+"""Oracle labels pipeline for M8.7 — OracleTable producer/consumer."""
 
 from __future__ import annotations
 
@@ -23,20 +16,14 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _VALID_TOPOLOGIES: frozenset[str] = frozenset(
     {"linear", "supervisor", "mesh", "debate", "hierarchical"}
 )
 
 _DEFAULT_TOPOLOGY: str = "linear"
 
-# Phases emitted by the router (must match arch.md §3.4)
 _PHASES: tuple[str, ...] = ("planning", "execution", "verification")
 
-# Task-type inference rules — longest prefix first
 _TASK_TYPE_PREFIX_MAP: list[tuple[str, str]] = [
     ("HumanEval/", "programming"),
     ("humaneval/", "programming"),
@@ -48,34 +35,16 @@ _TASK_TYPE_PREFIX_MAP: list[tuple[str, str]] = [
     ("math/", "reasoning"),
     ("ARC/", "reasoning"),
     ("arc/", "reasoning"),
-    # CommonGen loader emits `commongen/{idx}` (real task IDs) — type=creative
     ("commongen/", "creative"),
     ("CommonGen/", "creative"),
-    # DABench loader emits `dabench/{qid}` — type=decision
     ("dabench/", "decision"),
     ("DABench/", "decision"),
 ]
 
 
-# ---------------------------------------------------------------------------
-# OracleTable — Pydantic v2 frozen model
-# ---------------------------------------------------------------------------
-
-
 @pydantic_dataclass(config=ConfigDict(frozen=True, populate_by_name=True))
 class OracleTable:
-    """Flat oracle table: task_type/task_id → best topology.
-
-    Fields
-    ------
-    by_task_type : dict[str, str]
-        Maps task_type → best topology (global LOO aggregate).
-    by_task_id : dict[str, str]
-        Maps task_id → best topology (per-task LOO winner).
-    default_topology : str
-        Fallback topology when neither task_id nor task_type is found.
-        Stored under the ``_default`` key in the JSON representation.
-    """
+    """Flat oracle table mapping task_type/task_id → best topology."""
 
     by_task_type: dict[str, str] = Field(default_factory=dict)
     by_task_id: dict[str, str] = Field(default_factory=dict)
@@ -85,29 +54,13 @@ class OracleTable:
         serialization_alias="_default",
     )
 
-    # ------------------------------------------------------------------
-    # Lookup
-    # ------------------------------------------------------------------
-
     def lookup(self, *, task_id: str = "", task_type: str = "") -> str:
-        """Return best topology with priority: by_task_id > by_task_type > default.
-
-        Args:
-            task_id:   Specific task identifier.
-            task_type: Task category (programming, reasoning, …).
-
-        Returns:
-            Topology name string.
-        """
+        """Return best topology: by_task_id > by_task_type > default_topology."""
         if task_id and task_id in self.by_task_id:
             return self.by_task_id[task_id]
         if task_type and task_type in self.by_task_type:
             return self.by_task_type[task_type]
         return self.default_topology
-
-    # ------------------------------------------------------------------
-    # Serialization
-    # ------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict (round-trip via from_dict)."""
@@ -127,18 +80,7 @@ class OracleTable:
         )
 
     def to_router_dict(self) -> dict[str, Any]:
-        """Convert to the nested phase-keyed format consumed by OracleTopologyRouter.
-
-        The router expects:
-        {
-            "by_task_type": {"<type>": {"planning": "<topo>", "execution": "<topo>", ...}},
-            "by_task_id":   {"<id>":   {"planning": "<topo>", "execution": "<topo>", ...}},
-            "_default": "<topo>"
-        }
-
-        Because OracleTable stores a single topology per task (same for all phases),
-        this expands each flat mapping into the phase-keyed dict.
-        """
+        """Convert to the nested phase-keyed format consumed by OracleTopologyRouter."""
         by_task_type_nested: dict[str, Any] = {
             t: dict.fromkeys(_PHASES, topo) for t, topo in self.by_task_type.items()
         }
@@ -157,16 +99,12 @@ class OracleTable:
 
     @classmethod
     def from_json_dict(cls, data: dict[str, Any]) -> OracleTable:
-        """Deserialize from the nested router format (inverse of to_json_dict).
-
-        Unknown phase keys are silently dropped (DEBUG log).
-        """
+        """Deserialize from the nested router format (inverse of to_json_dict); drops unknown phases."""
         by_task_type: dict[str, str] = {}
         for t, phase_map in data.get("by_task_type", {}).items():
             if not isinstance(phase_map, dict):
                 _log.debug("from_json_dict: skipping non-dict phase_map for task_type=%r", t)
                 continue
-            # Pick the first known phase's topology as the canonical value
             topo = None
             for phase in _PHASES:
                 if phase in phase_map:
@@ -199,66 +137,16 @@ class OracleTable:
         )
 
 
-# ---------------------------------------------------------------------------
-# Task-type inference
-# ---------------------------------------------------------------------------
-
-
 def _infer_task_type(task_id: str) -> str:
-    """Infer task_type from task_id prefix.
-
-    Examples:
-        HumanEval/0  → programming
-        GSM8K/42     → reasoning
-
-    Returns:
-        Inferred task_type string, or "unknown" if no prefix matches.
-    """
+    """Infer task_type from task_id prefix; returns "unknown" if no prefix matches."""
     for prefix, task_type in _TASK_TYPE_PREFIX_MAP:
         if task_id.startswith(prefix):
             return task_type
     return "unknown"
 
 
-# ---------------------------------------------------------------------------
-# LOO algorithm — pure helper
-# ---------------------------------------------------------------------------
-
-
 def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
-    """Build an OracleTable as a per-task TOP-1 upper-bound table.
-
-    Despite the historical function name ("loo"), this builder now picks the
-    empirically best topology per task_id (and per task_type) — i.e. the
-    ceiling assuming perfect topology knowledge. This matches the RQ2
-    "oracle = upper bound" semantics used in arch.md and the e3 acceptance
-    criteria. The earlier leave-one-out semantics measured generalisation
-    from sibling tasks and conflated with predictor performance.
-
-    Each row must have at minimum:
-        task_id       : str
-        task_type     : str  (used for grouping; inferred from task_id if missing)
-        topology      : str
-        quality_score : float
-
-    Two-pass algorithm
-    ------------------
-    Pass 1 (by_task_type):
-        Group all rows by task_type.
-        For each (task_type, topology) compute mean quality_score (primary)
-        and mean budget_spent_usd (secondary tiebreak, if present).
-        Pick topology with highest mean quality_score.
-
-    Pass 2 (by_task_id) — TOP-1 PER TASK:
-        For each target task_id:
-            Take only rows whose task_id == target.
-            Aggregate quality_score per topology.
-            Pick topology with highest mean quality_score.
-            If no rows for that task_id → fall back to _default topology.
-
-    Returns:
-        OracleTable with by_task_type, by_task_id, and default_topology set.
-    """
+    """Build OracleTable: best topology per task_id (and per task_type) by mean quality_score."""
     if not rows:
         return OracleTable(
             by_task_type={},
@@ -266,7 +154,6 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
             **{"_default": _DEFAULT_TOPOLOGY},
         )
 
-    # Normalize rows: ensure task_type is present
     normalized: list[dict[str, Any]] = []
     for row in rows:
         r = dict(row)
@@ -274,10 +161,6 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
             r["task_type"] = _infer_task_type(str(r.get("task_id", "")))
         normalized.append(r)
 
-    # ------------------------------------------------------------------
-    # Pass 1: global by_task_type (all rows, no exclusion)
-    # ------------------------------------------------------------------
-    # type_topo_scores[task_type][topology] = list[float]
     type_topo_scores: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
 
     for row in normalized:
@@ -293,9 +176,6 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
         if best is not None:
             by_task_type[tt] = best
 
-    # ------------------------------------------------------------------
-    # Pass 2: per-task_id TOP-1 (upper-bound oracle)
-    # ------------------------------------------------------------------
     all_task_ids = sorted({str(row.get("task_id", "")) for row in normalized if row.get("task_id")})
 
     by_task_id: dict[str, str] = {}
@@ -309,11 +189,9 @@ def build_loo_from_rows(rows: list[dict[str, Any]]) -> OracleTable:
         ]
 
         if not target_rows:
-            # No data for this task → fall back to default
             by_task_id[target_id] = _DEFAULT_TOPOLOGY
             continue
 
-        # Aggregate scores by topology over rows of THIS task
         task_topo_scores: dict[str, list[float]] = defaultdict(list)
         for r in target_rows:
             topo = str(r.get("topology", ""))
@@ -351,32 +229,12 @@ def _pick_best_topology(
     if not ranked:
         return None
 
-    # Sort by (-mean, topo) — highest mean first, lex name as tiebreak.
     ranked.sort(key=lambda x: (-x[0], x[1]))
     return ranked[0][1]
 
 
-# ---------------------------------------------------------------------------
-# File loader
-# ---------------------------------------------------------------------------
-
-
 def load_oracle_table(path: Path | str) -> OracleTable:
-    """Load an OracleTable from a JSON or YAML file.
-
-    The file format must match the router dict shape (nested phase maps)
-    as produced by OracleTable.to_json_dict().
-
-    Args:
-        path: Path to a .json or .yaml / .yml file.
-
-    Returns:
-        OracleTable deserialized via from_json_dict.
-
-    Raises:
-        ValueError: If file suffix is not .json, .yaml, or .yml.
-        FileNotFoundError: If the file does not exist.
-    """
+    """Load OracleTable from a .json/.yaml/.yml file; raises ValueError on unsupported suffix."""
     path = Path(path)
     suffix = path.suffix.lower()
 
@@ -399,33 +257,12 @@ def load_oracle_table(path: Path | str) -> OracleTable:
     return OracleTable.from_json_dict(data)
 
 
-# ---------------------------------------------------------------------------
-# Async Postgres-backed builder
-# ---------------------------------------------------------------------------
-
-
 async def build_leave_one_out_oracle(
     exp_id: str,
     *,
     session_factory: Any,
 ) -> OracleTable:
-    """Build OracleTable (per-task TOP-1 upper bound) over all runs for an exp.
-
-    Despite the historical "leave_one_out" function name (kept for API
-    stability), the underlying builder now picks the empirically best
-    topology per task_id — the upper-bound semantics required by RQ2.
-
-    Queries the ``runs`` table (SQLAlchemy 2.x async session) for all rows
-    matching ``exp_id``, extracts relevant columns as dicts, and delegates
-    to build_loo_from_rows.
-
-    Args:
-        exp_id:          Experiment UUID string (or UUID object).
-        session_factory: Async SQLAlchemy sessionmaker / async_sessionmaker.
-
-    Returns:
-        OracleTable populated by LOO aggregation.
-    """
+    """Build OracleTable (per-task TOP-1 upper bound) over all runs for an experiment."""
     from sqlalchemy import select
 
     from atm.storage.models import Run
@@ -452,11 +289,6 @@ async def build_leave_one_out_oracle(
     return build_loo_from_rows(rows)
 
 
-# ---------------------------------------------------------------------------
-# Plot — oracle vs router (TYPE_CHECKING guard: matplotlib imported lazily)
-# ---------------------------------------------------------------------------
-
-
 def plot_oracle_vs_router(
     runs_df: pd.DataFrame,
     oracle_table: OracleTable,
@@ -464,26 +296,7 @@ def plot_oracle_vs_router(
     router_col: str = "topology",
     figsize: tuple[float, float] = (8, 5),
 ) -> matplotlib.figure.Figure:
-    """Plot oracle topology recommendation vs actual router choice per task.
-
-    For each run (identified by ``task_id``), computes the oracle-recommended
-    topology via ``oracle_table.lookup(task_id=...)`` and compares it to the
-    actual topology chosen by the router (``router_col`` column).
-
-    Produces a grouped bar chart: for each unique topology, shows how often
-    the oracle recommended it vs how often the router actually chose it.
-
-    Args:
-        runs_df:      DataFrame with at minimum ``task_id``, ``router_col``, and
-                      optionally ``quality_score`` columns.
-        oracle_table: Pre-built OracleTable mapping task_id → oracle topology.
-        router_col:   Column in ``runs_df`` holding the router's topology choice.
-                      Default: ``"topology"``.
-        figsize:      Figure (width, height) in inches.
-
-    Returns:
-        matplotlib Figure with one Axes (grouped bar chart).
-    """
+    """Plot grouped bar chart: oracle topology recommendation vs actual router choice."""
     import matplotlib
     import matplotlib.pyplot as plt
 
@@ -491,7 +304,6 @@ def plot_oracle_vs_router(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Validate required columns
     required_cols = {router_col}
     if runs_df.empty or not required_cols.issubset(runs_df.columns):
         ax.set_title("Oracle vs Router Topology Choice (no data)")
@@ -502,17 +314,14 @@ def plot_oracle_vs_router(
 
     df = runs_df.copy()
 
-    # Compute oracle recommendation per row (using task_id if available)
     if "task_id" in df.columns:
         df["oracle_topology"] = df["task_id"].apply(
             lambda tid: oracle_table.lookup(task_id=str(tid))
         )
     else:
-        # No task_id: use the table's default for all rows
         default_topo = oracle_table.default_topology
         df["oracle_topology"] = default_topo
 
-    # Aggregate counts
     router_counts = df[router_col].value_counts().rename("router")
     oracle_counts = df["oracle_topology"].value_counts().rename("oracle")
 

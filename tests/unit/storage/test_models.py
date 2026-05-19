@@ -3,7 +3,7 @@
 These tests verify the structural properties of the 6 business tables:
 experiments, runs, phases, human_interactions, budget_events, topology_transitions.
 
-Column names, types, and nullability are asserted to match arch.md §3.4 exactly.
+Column names, types, and nullability are asserted to match the storage schema exactly.
 No live database connection is required — all assertions are metadata-level.
 """
 
@@ -22,10 +22,6 @@ from atm.storage.models import (
     Run,
     TopologyTransition,
 )
-
-# ---------------------------------------------------------------------------
-# FinishReason enum — arch.md §3.4 canonical values
-# ---------------------------------------------------------------------------
 
 
 class TestFinishReason:
@@ -64,11 +60,6 @@ class TestFinishReason:
         assert {m.value for m in FinishReason} == expected
 
 
-# ---------------------------------------------------------------------------
-# Base and metadata — exactly 6 tables in FK-safe order
-# ---------------------------------------------------------------------------
-
-
 EXPECTED_TABLE_NAMES = frozenset(
     {"budget_events", "experiments", "human_interactions", "phases", "runs", "topology_transitions"}
 )
@@ -84,9 +75,7 @@ class TestBaseMetadata:
         names = [t.name for t in Base.metadata.sorted_tables]
         experiments_idx = names.index("experiments")
         runs_idx = names.index("runs")
-        # experiments must precede runs (runs.exp_id → experiments.id)
         assert experiments_idx < runs_idx
-        # runs must precede all FK dependents
         for dependent in ("budget_events", "human_interactions", "phases", "topology_transitions"):
             assert runs_idx < names.index(dependent)
 
@@ -94,11 +83,6 @@ class TestBaseMetadata:
         from sqlalchemy.orm import DeclarativeBase
 
         assert issubclass(Base, DeclarativeBase)
-
-
-# ---------------------------------------------------------------------------
-# Experiment table
-# ---------------------------------------------------------------------------
 
 
 class TestExperimentModel:
@@ -157,11 +141,6 @@ class TestExperimentModel:
             assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
 
 
-# ---------------------------------------------------------------------------
-# Run table
-# ---------------------------------------------------------------------------
-
-
 class TestRunModel:
     def _table(self) -> sa.Table:
         return Base.metadata.tables["runs"]
@@ -199,7 +178,6 @@ class TestRunModel:
     def test_model_column_exists(self) -> None:
         assert "model" in self._table().c
 
-    # Reproducibility bundle fields (§14.4)
     def test_models_by_role_json_jsonb(self) -> None:
         col = self._table().c["models_by_role_json"]
         assert isinstance(col.type, JSONB)
@@ -222,7 +200,7 @@ class TestRunModel:
 
     def test_finish_reason_max_length(self) -> None:
         col = self._table().c["finish_reason"]
-        assert col.nullable  # nullable
+        assert col.nullable
         assert isinstance(col.type, sa.String)
         assert col.type.length == 32  # type: ignore[union-attr]
 
@@ -250,11 +228,6 @@ class TestRunModel:
         mapper = sa.inspect(Run)
         for rel in mapper.relationships:
             assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
-
-
-# ---------------------------------------------------------------------------
-# Phase table
-# ---------------------------------------------------------------------------
 
 
 class TestPhaseModel:
@@ -309,11 +282,6 @@ class TestPhaseModel:
         mapper = sa.inspect(Phase)
         for rel in mapper.relationships:
             assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
-
-
-# ---------------------------------------------------------------------------
-# HumanInteraction table — arch.md §3.4 + §13.3
-# ---------------------------------------------------------------------------
 
 
 class TestHumanInteractionModel:
@@ -384,11 +352,6 @@ class TestHumanInteractionModel:
             assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
 
 
-# ---------------------------------------------------------------------------
-# BudgetEvent table — arch.md §3.4
-# ---------------------------------------------------------------------------
-
-
 class TestBudgetEventModel:
     def _table(self) -> sa.Table:
         return Base.metadata.tables["budget_events"]
@@ -439,11 +402,6 @@ class TestBudgetEventModel:
         mapper = sa.inspect(BudgetEvent)
         for rel in mapper.relationships:
             assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
-
-
-# ---------------------------------------------------------------------------
-# TopologyTransition table — arch.md §3.4
-# ---------------------------------------------------------------------------
 
 
 class TestTopologyTransitionModel:
@@ -533,11 +491,6 @@ class TestTopologyTransitionModel:
         mapper = sa.inspect(TopologyTransition)
         for rel in mapper.relationships:
             assert rel.lazy == "raise", f"Relationship {rel.key!r} must have lazy='raise'"
-
-
-# ---------------------------------------------------------------------------
-# Import check — public API exports from models module
-# ---------------------------------------------------------------------------
 
 
 class TestModuleExports:

@@ -62,19 +62,9 @@ from atm.experiment.config import (
 FIXTURE = Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "valid_minimal.yaml"
 
 
-# ---------------------------------------------------------------------------
-# 1. Basic load
-# ---------------------------------------------------------------------------
-
-
 def test_load_config_returns_experiment_config() -> None:
     cfg = load_config(str(FIXTURE))
     assert isinstance(cfg, ExperimentConfig)
-
-
-# ---------------------------------------------------------------------------
-# 2-3. Public API re-exports
-# ---------------------------------------------------------------------------
 
 
 def test_experiment_config_exported_from_package() -> None:
@@ -91,22 +81,12 @@ def test_load_config_exported_from_package() -> None:
     assert pkg.load_config is load_config
 
 
-# ---------------------------------------------------------------------------
-# 4. BudgetCfg defaults
-# ---------------------------------------------------------------------------
-
-
 def test_budget_cfg_defaults() -> None:
     b = BudgetCfg()
     assert b.per_call_usd == pytest.approx(0.10)
     assert b.per_run_usd == pytest.approx(0.50)
     assert b.per_experiment_usd == pytest.approx(50.0)
     assert b.warn_ratio == pytest.approx(0.8)
-
-
-# ---------------------------------------------------------------------------
-# 5. ModelCfg.get_model_for fallback
-# ---------------------------------------------------------------------------
 
 
 def test_model_cfg_get_model_for_known_role() -> None:
@@ -119,29 +99,14 @@ def test_model_cfg_get_model_for_unknown_role_falls_back() -> None:
     assert m.get_model_for("unknown_role") == "fake:default"
 
 
-# ---------------------------------------------------------------------------
-# 6. Dotlist override — topology.name
-# ---------------------------------------------------------------------------
-
-
 def test_load_config_override_topology_name() -> None:
     cfg = load_config(str(FIXTURE), overrides=["+topology.name=star"])
     assert cfg.topology.name == "star"
 
 
-# ---------------------------------------------------------------------------
-# 7. Dotlist override — integer field coercion
-# ---------------------------------------------------------------------------
-
-
 def test_load_config_override_max_iterations() -> None:
     cfg = load_config(str(FIXTURE), overrides=["topology.max_iterations=99"])
     assert cfg.topology.max_iterations == 99
-
-
-# ---------------------------------------------------------------------------
-# 8. Missing required field raises ValidationError
-# ---------------------------------------------------------------------------
 
 
 def test_load_config_missing_name_raises(tmp_path: Path) -> None:
@@ -161,11 +126,6 @@ observability:
     cfg_file.write_text(yaml_content)
     with pytest.raises(ValidationError, match="name"):
         load_config(str(cfg_file))
-
-
-# ---------------------------------------------------------------------------
-# 9. Invalid topology name raises ValidationError
-# ---------------------------------------------------------------------------
 
 
 def test_load_config_invalid_topology_raises(tmp_path: Path) -> None:
@@ -188,14 +148,8 @@ observability:
         load_config(str(cfg_file))
 
 
-# ---------------------------------------------------------------------------
-# 10. Env interpolation via ${oc.env:VAR,default}
-# ---------------------------------------------------------------------------
-
-
 def test_load_config_env_interpolation_with_default(tmp_path: Path) -> None:
     """${oc.env:VAR,fallback} should resolve to fallback when VAR is unset."""
-    # Ensure the env var is not set
     os.environ.pop("ATM_TEST_PG_DSN_UNIQUE_XYZ", None)
     yaml_content = """
 name: "env_interp_test"
@@ -241,22 +195,12 @@ observability:
         os.environ.pop("ATM_TEST_PG_DSN_UNIQUE_XYZ", None)
 
 
-# ---------------------------------------------------------------------------
-# 11. ScratchpadCfg defaults
-# ---------------------------------------------------------------------------
-
-
 def test_scratchpad_cfg_defaults() -> None:
     s = ScratchpadCfg()
     assert s.policy == "window_with_summary"
     assert s.window_size == 3
     assert s.summarizer_model is None
     assert s.context_token_budget == 12000
-
-
-# ---------------------------------------------------------------------------
-# 12. TopologyCfg.extra passthrough — flat bw-compat via attribute access
-# ---------------------------------------------------------------------------
 
 
 def test_load_config_topology_extra_passthrough(tmp_path: Path) -> None:
@@ -283,15 +227,9 @@ observability:
     cfg_file.write_text(yaml_content)
     with pytest.warns(DeprecationWarning):
         cfg = load_config(str(cfg_file))
-    # Access via namespaced attribute path (flat keys remapped to star namespace)
     assert cfg.topology.extra.star.planning_max_iter == 2
     assert cfg.topology.extra.star.exec_max_iter == 5
     assert cfg.topology.extra.star.verify_max_iter == 3
-
-
-# ---------------------------------------------------------------------------
-# 13. Full round-trip field checks on valid_minimal.yaml
-# ---------------------------------------------------------------------------
 
 
 def test_load_config_field_values() -> None:
@@ -305,34 +243,24 @@ def test_load_config_field_values() -> None:
     assert cfg.observability.callback_sync is True
 
 
-# ---------------------------------------------------------------------------
-# 14. AgentSetCfg and ObservabilityCfg schema validation
-# ---------------------------------------------------------------------------
-
-
 def test_agent_set_cfg_requires_set_field() -> None:
     with pytest.raises(ValidationError):
-        AgentSetCfg.model_validate({})  # missing required 'set'
+        AgentSetCfg.model_validate({})
 
 
 def test_observability_cfg_requires_pg_dsn() -> None:
     with pytest.raises(ValidationError):
-        ObservabilityCfg.model_validate({})  # missing required 'pg_dsn'
+        ObservabilityCfg.model_validate({})
 
 
 def test_task_cfg_requires_name() -> None:
     with pytest.raises(ValidationError):
-        TaskCfg.model_validate({})  # missing required 'name'
+        TaskCfg.model_validate({})
 
 
 def test_topology_cfg_requires_name() -> None:
     with pytest.raises(ValidationError):
-        TopologyCfg.model_validate({})  # missing required 'name'
-
-
-# ---------------------------------------------------------------------------
-# 15. ModelCfg.fake_fixtures — BUG-2 regression
-# ---------------------------------------------------------------------------
+        TopologyCfg.model_validate({})
 
 
 def test_model_cfg_fake_fixtures_default_is_empty_dict() -> None:
@@ -371,22 +299,11 @@ observability:
     }
 
 
-# ---------------------------------------------------------------------------
-# TopologyExtras tests — T1 through T14
-# ---------------------------------------------------------------------------
-
-
-# --- T1. Namespaced form accepted (mesh sub-bucket) ---
-
-
 def test_topology_extras_namespaced_mesh_accepted() -> None:
     """Namespaced extra {mesh: {max_rounds: 12}} parses cleanly with no warning."""
     cfg = TopologyCfg.model_validate({"name": "mesh", "extra": {"mesh": {"max_rounds": 12}}})
     assert isinstance(cfg.extra, TopologyExtras)
     assert cfg.extra.mesh.max_rounds == 12
-
-
-# --- T2. Namespaced form accepted (debate sub-bucket) ---
 
 
 def test_topology_extras_namespaced_debate_accepted() -> None:
@@ -395,16 +312,10 @@ def test_topology_extras_namespaced_debate_accepted() -> None:
     assert cfg.extra.debate.max_rounds == 6
 
 
-# --- T3. Flat bw-compat emits DeprecationWarning ---
-
-
 def test_topology_extras_flat_emits_deprecation_warning() -> None:
     """Flat extra dict triggers DeprecationWarning."""
     with pytest.warns(DeprecationWarning, match="flat topology.extra keys are deprecated"):
         TopologyCfg.model_validate({"name": "star", "extra": {"planning_max_iter": 2}})
-
-
-# --- T4. max_rounds scatters to debate AND hierarchical ---
 
 
 def test_topology_extras_max_rounds_scatters_to_debate_and_hierarchical() -> None:
@@ -415,29 +326,19 @@ def test_topology_extras_max_rounds_scatters_to_debate_and_hierarchical() -> Non
     assert cfg.extra.hierarchical.max_rounds == 2
 
 
-# --- T5. max_rounds flat — mesh stays at default 12 ---
-
-
 def test_topology_extras_max_rounds_flat_does_not_scatter_to_mesh() -> None:
     """Flat max_rounds=2 does NOT scatter to mesh (mesh stays at default 12)."""
     with pytest.warns(DeprecationWarning):
         cfg = TopologyCfg.model_validate({"name": "debate", "extra": {"max_rounds": 2}})
-    assert cfg.extra.mesh.max_rounds == 12  # starvation-safe default preserved
-
-
-# --- T6. max_rounds flat — adaptive has no max_rounds field ---
+    assert cfg.extra.mesh.max_rounds == 12
 
 
 def test_topology_extras_max_rounds_flat_does_not_scatter_to_adaptive() -> None:
     """Flat max_rounds=2 does NOT scatter to adaptive (adaptive has no max_rounds field)."""
     with pytest.warns(DeprecationWarning):
         cfg = TopologyCfg.model_validate({"name": "adaptive", "extra": {"max_rounds": 2}})
-    # AdaptiveExtras has no max_rounds field; verify no error and defaults intact
     assert not hasattr(cfg.extra.adaptive, "max_rounds")
-    assert cfg.extra.adaptive.exec_max_iter == 10  # adaptive default unchanged
-
-
-# --- T7. mesh_max_rounds flat → mesh.max_rounds remap ---
+    assert cfg.extra.adaptive.exec_max_iter == 10
 
 
 def test_topology_extras_mesh_max_rounds_remapped_to_mesh_namespace() -> None:
@@ -445,9 +346,6 @@ def test_topology_extras_mesh_max_rounds_remapped_to_mesh_namespace() -> None:
     with pytest.warns(DeprecationWarning):
         cfg = TopologyCfg.model_validate({"name": "mesh", "extra": {"mesh_max_rounds": 8}})
     assert cfg.extra.mesh.max_rounds == 8
-
-
-# --- T8. Unknown topology name at extra top-level → ValidationError ---
 
 
 def test_topology_extras_unknown_topology_name_raises() -> None:
@@ -462,16 +360,10 @@ def test_topology_extras_unknown_topology_name_raises() -> None:
         TopologyCfg.model_validate({"name": "chain", "extra": {"foo": {"some_param": 1}}})
 
 
-# --- T9. Unknown field inside a topology sub-bucket → ValidationError ---
-
-
 def test_topology_extras_unknown_field_in_sub_bucket_raises() -> None:
     """Extra with unknown field inside a topology bucket raises ValidationError."""
     with pytest.raises(ValidationError):
         TopologyCfg.model_validate({"name": "mesh", "extra": {"mesh": {"unknown_param": 99}}})
-
-
-# --- T10. AdaptiveExtras defaults ---
 
 
 def test_adaptive_extras_defaults() -> None:
@@ -485,18 +377,12 @@ def test_adaptive_extras_defaults() -> None:
     assert a.run_id is None
 
 
-# --- T11. StarExtras defaults ---
-
-
 def test_star_extras_defaults() -> None:
     """StarExtras has correct defaults: planning=2, exec=5, verify=3."""
     s = StarExtras()
     assert s.planning_max_iter == 2
     assert s.exec_max_iter == 5
     assert s.verify_max_iter == 3
-
-
-# --- T12. MeshExtras defaults — max_rounds=12 (starvation-safe) ---
 
 
 def test_mesh_extras_defaults() -> None:
@@ -507,9 +393,6 @@ def test_mesh_extras_defaults() -> None:
     assert m.broadcast_bus_cap == 200
     assert m.activation_policy == "round_robin"
     assert m.agent_order == ["planner", "researcher", "executor", "critic"]
-
-
-# --- T13. DebateExtras and HierarchicalExtras defaults ---
 
 
 def test_debate_extras_defaults() -> None:
@@ -528,9 +411,6 @@ def test_hierarchical_extras_defaults() -> None:
     assert h.finalize_signal == "top_coord_finalize"
     assert h.sub_teams is None
     assert h.final_answer_strategy is None
-
-
-# --- T14. Schema-vs-source parity guard ---
 
 
 def test_schema_defaults_match_topology_builder_constants() -> None:
@@ -562,38 +442,26 @@ def test_schema_defaults_match_topology_builder_constants() -> None:
         _DEFAULT_VERIFY_MAX_ITER,
     )
 
-    # StarExtras parity
     assert StarExtras().planning_max_iter == _DEFAULT_PLANNING_MAX_ITER
     assert StarExtras().exec_max_iter == _DEFAULT_EXEC_MAX_ITER
     assert StarExtras().verify_max_iter == _DEFAULT_VERIFY_MAX_ITER
 
-    # DebateExtras parity
     assert DebateExtras().max_rounds == DEBATE_DEFAULT_MAX_ROUNDS
 
-    # HierarchicalExtras parity
     assert HierarchicalExtras().max_rounds == HIER_DEFAULT_MAX_ROUNDS
     assert HierarchicalExtras().finalize_signal == _DEFAULT_FINALIZE_SIGNAL
 
-    # MeshExtras parity
     assert MeshExtras().max_rounds == MESH_DEFAULT_MAX_ROUNDS
     assert MeshExtras().consensus_threshold == _DEFAULT_CONSENSUS_THRESHOLD
     assert MeshExtras().broadcast_bus_cap == _DEFAULT_BROADCAST_BUS_CAP
     assert MeshExtras().activation_policy == _DEFAULT_ACTIVATION_POLICY
     assert MeshExtras().agent_order == _DEFAULT_AGENT_ORDER
 
-    # AdaptiveExtras — no named constants; assert raw integer parity with
-    # inline literals in adaptive.py:394-396
     assert AdaptiveExtras().planning_max_iter == 3
     assert AdaptiveExtras().exec_max_iter == 10
     assert AdaptiveExtras().verify_max_iter == 4
 
-    # ChainExtras — no fields (chain reads no extras); verify instance is created
     assert isinstance(ChainExtras(), ChainExtras)
-
-
-# ---------------------------------------------------------------------------
-# Refactor-validation (Step 3.2): bw-compat remap isolation
-# ---------------------------------------------------------------------------
 
 
 def test_legacy_flat_extras_remap_does_not_pollute_other_buckets() -> None:
@@ -612,7 +480,6 @@ def test_legacy_flat_extras_remap_does_not_pollute_other_buckets() -> None:
             {"name": "debate", "max_iterations": 8, "extra": {"max_rounds": 7}}
         )
 
-    # Flat max_rounds scatters to debate and hierarchical
     assert cfg.extra.debate.max_rounds == 7, (
         f"debate.max_rounds should be 7, got {cfg.extra.debate.max_rounds!r}"
     )
@@ -620,17 +487,15 @@ def test_legacy_flat_extras_remap_does_not_pollute_other_buckets() -> None:
         f"hierarchical.max_rounds should be 7, got {cfg.extra.hierarchical.max_rounds!r}"
     )
 
-    # mesh.max_rounds must stay at 12 — flat max_rounds MUST NOT scatter here
     assert cfg.extra.mesh.max_rounds == 12, (
         f"mesh.max_rounds should remain at default 12 (not overwritten by flat "
         f"max_rounds=7), got {cfg.extra.mesh.max_rounds!r}"
     )
 
-    # adaptive has no max_rounds field — accessing it must raise AttributeError
     try:
         _ = cfg.extra.adaptive.max_rounds  # type: ignore[attr-defined]
         raise AssertionError(
             "cfg.extra.adaptive.max_rounds should not exist (AttributeError expected)"
         )
     except AttributeError:
-        pass  # expected — AdaptiveExtras has no max_rounds field
+        pass

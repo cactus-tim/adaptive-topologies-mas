@@ -48,20 +48,38 @@ async def _run(exp_id: str, out_path: Path) -> int:
             print(f"E2 REPORT — exp_id={exp_id}")
             print("=" * 70)
 
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT MIN(started_at) AS first_at, MAX(finished_at) AS last_at,
                        EXTRACT(EPOCH FROM (MAX(finished_at) - MIN(started_at))) AS wall_s
                 FROM runs WHERE exp_id = :e
-            """), {"e": exp_id})).mappings().one()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
             wall_h = float(r["wall_s"]) / 3600.0 if r["wall_s"] is not None else None
             print(f"\nWALL TIME: {wall_h:.2f}h  ({r['first_at']} → {r['last_at']})")
 
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT status, COUNT(*) AS n,
                        AVG(quality_score) AS q,
                        SUM(budget_spent_usd) AS spent
                 FROM runs WHERE exp_id = :e GROUP BY status
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             print("\nSTATUS TOTALS:")
             status_totals: dict[str, dict] = {}
             for row in r:
@@ -73,11 +91,20 @@ async def _run(exp_id: str, out_path: Path) -> int:
 
             print("\nBY TASK (completed):")
             by_task: dict[str, dict] = {}
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT task_id, COUNT(*) AS n, AVG(quality_score) AS q
                 FROM runs WHERE exp_id = :e AND status='completed'
                 GROUP BY task_id ORDER BY task_id
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             for row in r:
                 q = float(row["q"])
                 print(f"  {row['task_id']:10}  n={row['n']:4d}  q={q:.3f}")
@@ -85,11 +112,20 @@ async def _run(exp_id: str, out_path: Path) -> int:
 
             print("\nBY ROLE (completed, sorted by q):")
             by_role: dict[str, dict] = {}
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT human_role, COUNT(*) AS n, AVG(quality_score) AS q
                 FROM runs WHERE exp_id = :e AND status='completed'
                 GROUP BY human_role ORDER BY q DESC
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             for row in r:
                 q = float(row["q"])
                 print(f"  {row['human_role']:12}  n={row['n']:4d}  q={q:.3f}")
@@ -97,29 +133,48 @@ async def _run(exp_id: str, out_path: Path) -> int:
 
             print("\nBY TOPOLOGY (completed):")
             by_topology: dict[str, dict] = {}
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT topology, COUNT(*) AS n, AVG(quality_score) AS q
                 FROM runs WHERE exp_id = :e AND status='completed'
                 GROUP BY topology ORDER BY q DESC
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             for row in r:
                 q = float(row["q"])
                 print(f"  {row['topology']:14}  n={row['n']:4d}  q={q:.3f}")
                 by_topology[row["topology"]] = {"n": int(row["n"]), "q": round(q, 4)}
 
             print("\nMATRIX: ROLE × TASK avg_q:")
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT human_role, task_id, AVG(quality_score) AS q, COUNT(*) AS n
                 FROM runs WHERE exp_id = :e AND status='completed'
                 GROUP BY human_role, task_id
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             cell: dict[tuple[str, str], dict] = {}
             for row in r:
                 cell[(row["human_role"], row["task_id"])] = {
-                    "q": round(float(row["q"]), 4), "n": int(row["n"]),
+                    "q": round(float(row["q"]), 4),
+                    "n": int(row["n"]),
                 }
             print(f"  {'role':12} | {' '.join(f'{t:>10}' for t in _TASKS)}")
-            print(f"  {'-'*12}-+-{'-'*(11*len(_TASKS))}")
+            print(f"  {'-' * 12}-+-{'-' * (11 * len(_TASKS))}")
             role_task_matrix: dict[str, dict[str, dict]] = {}
             for role in _ROLES:
                 line = f"  {role:12} |"
@@ -151,11 +206,20 @@ async def _run(exp_id: str, out_path: Path) -> int:
 
             print("\nFAILS by topology+task:")
             fails_by_pair: list[dict] = []
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT topology, task_id, COUNT(*) AS n
                 FROM runs WHERE exp_id = :e AND status='failed'
                 GROUP BY topology, task_id ORDER BY n DESC
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             for row in r:
                 print(f"  {row['topology']:14} {row['task_id']:10}  n={row['n']}")
                 fails_by_pair.append(
@@ -164,11 +228,20 @@ async def _run(exp_id: str, out_path: Path) -> int:
 
             print("\nFAILS by role:")
             fails_by_role: dict[str, int] = {}
-            r = (await conn.execute(text("""
+            r = (
+                (
+                    await conn.execute(
+                        text("""
                 SELECT human_role, COUNT(*) AS n
                 FROM runs WHERE exp_id = :e AND status='failed'
                 GROUP BY human_role ORDER BY n DESC
-            """), {"e": exp_id})).mappings().all()
+            """),
+                        {"e": exp_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             for row in r:
                 print(f"  {row['human_role']:12}  n={row['n']}")
                 fails_by_role[row["human_role"]] = int(row["n"])
@@ -186,7 +259,9 @@ async def _run(exp_id: str, out_path: Path) -> int:
                 "fails_by_role": fails_by_role,
             }
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            out_path.write_text(
+                json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
             print(f"\nWrote {out_path}")
     finally:
         await engine.dispose()

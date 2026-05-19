@@ -29,10 +29,6 @@ from atm.phases.topology_router import OracleTopologyRouter
 from atm.storage.models import Experiment, Run
 from atm.storage.session import session_scope
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _new_uuid() -> uuid.UUID:
     return uuid.uuid4()
@@ -84,11 +80,6 @@ async def _seed_run(
     return run_id
 
 
-# ---------------------------------------------------------------------------
-# Integration test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.requires_postgres
 async def test_oracle_producer_consumer_contract(
     session_factory_fast,
@@ -131,7 +122,6 @@ async def test_oracle_producer_consumer_contract(
     """
     exp_id = await _seed_experiment(session_factory_fast, name=f"oracle-integration-{_new_uuid()}")
 
-    # --- programming rows ---
     await _seed_run(
         session_factory_fast,
         exp_id=exp_id,
@@ -189,7 +179,6 @@ async def test_oracle_producer_consumer_contract(
         budget_spent_usd=Decimal("0.30"),
     )
 
-    # --- reasoning rows ---
     await _seed_run(
         session_factory_fast,
         exp_id=exp_id,
@@ -207,13 +196,11 @@ async def test_oracle_producer_consumer_contract(
         budget_spent_usd=Decimal("0.20"),
     )
 
-    # --- Build OracleTable via LOO over real Postgres rows ---
     oracle = await build_leave_one_out_oracle(
         exp_id,
         session_factory=session_factory_fast,
     )
 
-    # Verify the oracle contains expected entries
     assert "programming" in oracle.by_task_type, (
         f"Expected 'programming' in by_task_type, got keys: {list(oracle.by_task_type)}"
     )
@@ -221,36 +208,29 @@ async def test_oracle_producer_consumer_contract(
         f"Expected 'reasoning' in by_task_type, got keys: {list(oracle.by_task_type)}"
     )
 
-    # Global winner for programming = mesh (mean 0.85 vs supervisor 0.675 vs linear 0.30)
     assert oracle.by_task_type["programming"] == "mesh", (
         f"Expected programming type winner = 'mesh', got {oracle.by_task_type['programming']!r}"
     )
 
-    # Global winner for reasoning = debate (only debate rows have high scores)
     assert oracle.by_task_type["reasoning"] == "debate", (
         f"Expected reasoning type winner = 'debate', got {oracle.by_task_type['reasoning']!r}"
     )
 
-    # Top-1 winner for HumanEval/0 = mesh (own rows: mesh 0.9 > supervisor 0.5 > linear 0.4)
     assert oracle.by_task_id.get("HumanEval/0") == "mesh", (
         f"top-1 winner for HumanEval/0: expected 'mesh', "
         f"got {oracle.by_task_id.get('HumanEval/0')!r}"
     )
 
-    # Top-1 winner for GSM8K/0 = debate (own rows: debate 0.95 > linear 0.1)
     assert oracle.by_task_id.get("GSM8K/0") == "debate", (
         f"top-1 winner for GSM8K/0: expected 'debate', got {oracle.by_task_id.get('GSM8K/0')!r}"
     )
 
-    # --- Serialize to router dict and construct OracleTopologyRouter ---
     router_dict = oracle.to_json_dict()
 
-    # Verify the router dict has the required keys
     assert "by_task_type" in router_dict
     assert "by_task_id" in router_dict
     assert "_default" in router_dict
 
-    # Verify nested phase structure: each value must be a dict mapping phase → topology
     assert isinstance(router_dict["by_task_type"].get("programming"), dict), (
         "by_task_type['programming'] must be a phase-keyed dict"
     )
@@ -260,8 +240,6 @@ async def test_oracle_producer_consumer_contract(
 
     router = OracleTopologyRouter(router_dict)
 
-    # --- Router test 1: by_task_id lookup for HumanEval/0 ---
-    # Expected: mesh (top-1 winner for HumanEval/0)
     state_he0: SharedState = {
         "task_id": "HumanEval/0",
         "phase": Phase.PLANNING,
@@ -274,10 +252,6 @@ async def test_oracle_producer_consumer_contract(
         f"OracleTopologyRouter for HumanEval/0: expected 'mesh', got {decision_he0.topology!r}"
     )
 
-    # --- Router test 2: by_task_id lookup for HumanEval/1 (top-1 → mesh winner) ---
-    # Top-1 for HumanEval/1 uses ONLY its own rows:
-    #   mesh(0.8), linear(0.3)
-    # Winner = mesh
     state_he1: SharedState = {
         "task_id": "HumanEval/1",
         "phase": Phase.EXECUTION,
@@ -288,44 +262,35 @@ async def test_oracle_producer_consumer_contract(
         f"OracleTopologyRouter for HumanEval/1: expected 'mesh', got {decision_he1.topology!r}"
     )
 
-    # --- Router test 3: by_task_type fallback for unknown task_id ---
-    # Must explicitly set state["task_type"] because OracleTopologyRouter.decide()
-    # line ~392 is a `pass` stub — it does NOT auto-infer task_type from task_id.
     state_unknown: SharedState = {
-        "task_id": "HumanEval/999",  # not in by_task_id
+        "task_id": "HumanEval/999",
         "phase": Phase.PLANNING,
-        **{"task_type": "programming"},  # type: ignore[typeddict-item]  # explicitly set
+        **{"task_type": "programming"},  # type: ignore[typeddict-item]
     }
     decision_unknown = await router.decide(state_unknown)
     assert decision_unknown.decided_by == "oracle"
-    # Falls through to by_task_type["programming"]["planning"] = mesh (global winner)
     assert decision_unknown.topology == "mesh", (
         f"by_task_type fallback for programming: expected 'mesh', got {decision_unknown.topology!r}"
     )
 
-    # --- Router test 4: by_task_type fallback for reasoning type ---
     state_reasoning: SharedState = {
-        "task_id": "GSM8K/999",  # not in by_task_id
+        "task_id": "GSM8K/999",
         "phase": Phase.VERIFICATION,
-        **{"task_type": "reasoning"},  # type: ignore[typeddict-item]  # explicitly set
+        **{"task_type": "reasoning"},  # type: ignore[typeddict-item]
     }
     decision_reasoning = await router.decide(state_reasoning)
     assert decision_reasoning.decided_by == "oracle"
-    # by_task_type["reasoning"]["verification"] = debate (global winner for reasoning)
     assert decision_reasoning.topology == "debate", (
         f"by_task_type fallback for reasoning: expected 'debate', "
         f"got {decision_reasoning.topology!r}"
     )
 
-    # --- Router test 5: _default fallback when neither task_id nor task_type is known ---
     state_default: SharedState = {
         "task_id": "unknown/task-xyz",
         "phase": Phase.PLANNING,
-        # task_type is NOT set — falls through to _default
     }
     decision_default = await router.decide(state_default)
     assert decision_default.decided_by == "oracle"
-    # _default in the oracle is "linear"
     assert decision_default.topology == "linear", (
         f"_default fallback: expected 'linear', got {decision_default.topology!r}"
     )
@@ -333,7 +298,6 @@ async def test_oracle_producer_consumer_contract(
         f"Reason should mention 'default': {decision_default.reason!r}"
     )
 
-    # --- Router test 6: router_cost_usd is 0.0 (no LLM calls) ---
     assert decision_he0.router_cost_usd == 0.0, (
         f"Oracle router should have zero cost, got {decision_he0.router_cost_usd}"
     )

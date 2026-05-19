@@ -23,10 +23,6 @@ from atm.topology.base import (
     get_topology_extras,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers — minimal fake state and config for _should_stop
-# ---------------------------------------------------------------------------
-
 
 def _make_state(*, iter_total: int = 0) -> dict:
     """Minimal GraphState-like dict with shared.iter_total."""
@@ -35,11 +31,6 @@ def _make_state(*, iter_total: int = 0) -> dict:
 
 def _make_cfg(*, max_iterations: int = 10) -> TopologyConfig:
     return TopologyConfig(name="test", max_iterations=max_iterations)
-
-
-# ---------------------------------------------------------------------------
-# Test group 1: _should_stop — max_iter branch (highest priority)
-# ---------------------------------------------------------------------------
 
 
 class TestShouldStopMaxIter:
@@ -81,11 +72,6 @@ class TestShouldStopMaxIter:
         assert reason == FinishReason.MAX_ITER.value
 
 
-# ---------------------------------------------------------------------------
-# Test group 2: _should_stop — topology_success branch (second priority)
-# ---------------------------------------------------------------------------
-
-
 class TestShouldStopTopologySuccess:
     """topology_success=True → SUCCESS reason when max_iter not reached."""
 
@@ -110,11 +96,6 @@ class TestShouldStopTopologySuccess:
         assert reason == FinishReason.SUCCESS.value
 
 
-# ---------------------------------------------------------------------------
-# Test group 3: _should_stop — topology_max branch (third priority)
-# ---------------------------------------------------------------------------
-
-
 class TestShouldStopTopologyMax:
     """topology_max_reached=True (and success=False, max_iter not hit) → TOPOLOGY_MAX."""
 
@@ -129,11 +110,6 @@ class TestShouldStopTopologyMax:
         cfg = _make_cfg(max_iterations=10)
         _, reason = _should_stop(state, cfg, topology_success=False, topology_max_reached=True)
         assert reason == FinishReason.TOPOLOGY_MAX.value
-
-
-# ---------------------------------------------------------------------------
-# Test group 4: _should_stop — continue branch (no stop)
-# ---------------------------------------------------------------------------
 
 
 class TestShouldStopContinue:
@@ -154,11 +130,6 @@ class TestShouldStopContinue:
         assert reason == ""
 
 
-# ---------------------------------------------------------------------------
-# Test group 5: Budget NOT detected in _should_stop
-# ---------------------------------------------------------------------------
-
-
 class TestBudgetNotDetectedHere:
     """Budget is detected in LLMWrapper (raises BudgetExceededError).
     _should_stop does NOT inspect budget fields — it never returns budget_exceeded."""
@@ -171,11 +142,6 @@ class TestBudgetNotDetectedHere:
         assert stop is True
         assert reason != FinishReason.BUDGET_EXCEEDED.value
         assert reason == FinishReason.MAX_ITER.value
-
-
-# ---------------------------------------------------------------------------
-# Test group 6: TopologyConfig validation
-# ---------------------------------------------------------------------------
 
 
 class TestTopologyConfig:
@@ -197,11 +163,6 @@ class TestTopologyConfig:
             extra={"planning_max_iter": 2, "verify_max_iter": 3},
         )
         assert cfg.extra["planning_max_iter"] == 2
-
-
-# ---------------------------------------------------------------------------
-# Test group 7: TopologyRegistry — register and lookup
-# ---------------------------------------------------------------------------
 
 
 class TestTopologyRegistry:
@@ -269,11 +230,6 @@ class TestTopologyRegistry:
         assert result is FakeTopology
 
 
-# ---------------------------------------------------------------------------
-# Test group 8: Topology Protocol — isinstance check (runtime_checkable)
-# ---------------------------------------------------------------------------
-
-
 class TestTopologyProtocol:
     """Topology is a @runtime_checkable Protocol with name: str and build()."""
 
@@ -296,11 +252,6 @@ class TestTopologyProtocol:
             name = "no_build"
 
         assert not isinstance(NoBuildTopology(), Topology)
-
-
-# ---------------------------------------------------------------------------
-# Test group 9: Public API — topology/__init__.py exports
-# ---------------------------------------------------------------------------
 
 
 class TestPublicApi:
@@ -328,15 +279,8 @@ class TestPublicApi:
         from atm.topology import get_topology_extras  # noqa: F401
 
 
-# ---------------------------------------------------------------------------
-# Test group 10: get_topology_extras — all four detection branches
-# ---------------------------------------------------------------------------
-
-
 class TestGetTopologyExtras:
     """get_topology_extras handles namespaced, flat, empty, and mixed shapes."""
-
-    # --- Branch 1: namespaced form (all top-level keys in _TOPOLOGY_NAMES) ---
 
     def test_namespaced_returns_correct_bucket(self) -> None:
         """Fully namespaced extra → returns the named topology's sub-dict."""
@@ -374,8 +318,6 @@ class TestGetTopologyExtras:
         assert get_topology_extras(cfg, "debate") == {"max_rounds": 3}
         assert get_topology_extras(cfg, "mesh") == {"max_rounds": 12}
 
-    # --- Branch 2: legacy-flat form (at least one key not in _TOPOLOGY_NAMES) ---
-
     def test_flat_dict_returned_verbatim(self) -> None:
         """Flat extra (non-namespace key present) → full dict returned as-is."""
         cfg = TopologyConfig(
@@ -394,7 +336,6 @@ class TestGetTopologyExtras:
             extra={"max_rounds": 5, "judge_id": "judge"},
         )
         assert get_topology_extras(cfg, "debate") == {"max_rounds": 5, "judge_id": "judge"}
-        # Even with a different topology_name, same flat dict is returned.
         assert get_topology_extras(cfg, "mesh") == {"max_rounds": 5, "judge_id": "judge"}
 
     def test_flat_star_keys_returned_verbatim(self) -> None:
@@ -407,8 +348,6 @@ class TestGetTopologyExtras:
         result = get_topology_extras(cfg, "star")
         assert result == {"planning_max_iter": 2, "exec_max_iter": 5, "verify_max_iter": 3}
 
-    # --- Branch 3: empty / missing extra ---
-
     def test_empty_extra_dict_returns_empty(self) -> None:
         """cfg.extra == {} → always returns {}."""
         cfg = TopologyConfig(name="mesh", max_iterations=8, extra={})
@@ -419,8 +358,6 @@ class TestGetTopologyExtras:
         cfg = TopologyConfig(name="star", max_iterations=20)
         assert get_topology_extras(cfg, "star") == {}
 
-    # --- Branch 4: mixed shape (namespace + non-namespace key) → legacy-flat ---
-
     def test_mixed_shape_treated_as_legacy_flat(self) -> None:
         """A mix of namespace keys and non-namespace keys → entire dict is flat."""
         cfg = TopologyConfig(
@@ -429,10 +366,7 @@ class TestGetTopologyExtras:
             extra={"mesh": {"max_rounds": 12}, "some_unknown_key": 99},
         )
         result = get_topology_extras(cfg, "mesh")
-        # Mixed shape → verbatim flat dict (all keys returned).
         assert result == {"mesh": {"max_rounds": 12}, "some_unknown_key": 99}
-
-    # --- Return type is always a plain dict ---
 
     def test_always_returns_plain_dict(self) -> None:
         """Return value must be a plain dict instance in all branches."""

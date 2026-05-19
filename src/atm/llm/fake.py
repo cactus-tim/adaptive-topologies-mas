@@ -26,11 +26,6 @@ from atm.core.types import LLMResponse, Message, MessageKind, TokenUsage, ToolCa
 if TYPE_CHECKING:
     from langchain_core.messages import BaseMessage
 
-# ---------------------------------------------------------------------------
-# REPLAY_SCHEMA: mirrors arch.md §3.5 llm_calls Parquet schema.
-# NOTE: call_id column maps to LLMResponse.id — M3 DB column convention uses call_id.
-# ---------------------------------------------------------------------------
-
 REPLAY_SCHEMA: pa.Schema = pa.schema(
     [
         pa.field("call_id", pa.string(), nullable=False),
@@ -43,15 +38,10 @@ REPLAY_SCHEMA: pa.Schema = pa.schema(
         pa.field("cost_usd", pa.float64(), nullable=False),
         pa.field("latency_ms", pa.int64(), nullable=False),
         pa.field("finish_reason", pa.string(), nullable=False),
-        pa.field("started_at", pa.string(), nullable=False),  # ISO 8601 string
-        pa.field("tool_calls_json", pa.string(), nullable=True),  # JSON array string
+        pa.field("started_at", pa.string(), nullable=False),
+        pa.field("tool_calls_json", pa.string(), nullable=True),
     ]
 )
-
-
-# ---------------------------------------------------------------------------
-# FakeLLM
-# ---------------------------------------------------------------------------
 
 
 class FakeLLM:
@@ -88,11 +78,9 @@ class FakeLLM:
         self._mode = mode
         self._lock: asyncio.Lock = asyncio.Lock()
 
-        # scripted mode state
-        self._entries: dict[str, list[dict[str, Any]]] = {}  # agent_id -> ordered entries
-        self._step: dict[str, int] = {}  # agent_id -> next step_idx
+        self._entries: dict[str, list[dict[str, Any]]] = {}
+        self._step: dict[str, int] = {}
 
-        # replay mode state
         self._replay_table: pa.Table | None = replay_table
         self._replay_row: int = 0
 
@@ -104,10 +92,6 @@ class FakeLLM:
         if mode == "replay" and replay_table is None:
             raise ValueError("FakeLLM(mode='replay') requires 'replay_table'")
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _load_fixture(self, path: Path) -> None:
         """Parse YAML fixture and index entries by agent_id."""
         with path.open(encoding="utf-8") as fh:
@@ -116,7 +100,6 @@ class FakeLLM:
         for entry in data.get("entries", []):
             agent_id: str = entry.get("agent_id", entry.get("role", "default"))
             self._entries.setdefault(agent_id, []).append(entry)
-            # Also index by role as a fallback key if different from agent_id
             role: str | None = entry.get("role")
             if role and role != agent_id:
                 self._entries.setdefault(role, []).append(entry)
@@ -218,7 +201,6 @@ class FakeLLM:
         """Return the content of the last user-kind message, or last message overall."""
         if not messages:
             return ""
-        # Prefer last REQUEST or BROADCAST Message
         for msg in reversed(messages):
             if isinstance(msg, Message):
                 if msg.kind in (MessageKind.REQUEST, MessageKind.BROADCAST):
@@ -227,18 +209,12 @@ class FakeLLM:
                 kind = msg.get("kind", "")
                 if kind in ("request", "broadcast"):
                     return str(msg.get("content", ""))
-        # Fallback: last message regardless of kind
         last = messages[-1]
         if isinstance(last, Message):
             return last.content
         if isinstance(last, dict):
             return str(last.get("content", ""))
-        # BaseMessage — both HumanMessage, AIMessage etc. have .content attribute
         return str(getattr(last, "content", ""))
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     async def ainvoke(
         self,

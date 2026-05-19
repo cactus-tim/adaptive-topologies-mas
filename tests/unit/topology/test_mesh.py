@@ -32,10 +32,6 @@ from atm.topology.mesh import (
     _pick_priority_agent,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(
     *,
@@ -122,11 +118,6 @@ def _make_mock_agent() -> MagicMock:
     return mock_agent
 
 
-# ---------------------------------------------------------------------------
-# Test 1: test_dispatcher_round_robin_cycles_agents
-# ---------------------------------------------------------------------------
-
-
 class TestDispatcherRoundRobin:
     """Dispatcher round-robin correctly cycles through agents."""
 
@@ -151,8 +142,6 @@ class TestDispatcherRoundRobin:
 
         assert compiled is mock_compiled
 
-        # Verify that the graph was built with the expected conditional edges
-        # The dispatcher routing function should use round-robin
         call_args_list = mock_graph.add_conditional_edges.call_args_list
         dispatcher_call = None
         for call in call_args_list:
@@ -162,15 +151,9 @@ class TestDispatcherRoundRobin:
 
         assert dispatcher_call is not None, "dispatcher conditional edges not found"
 
-        # Verify all 4 agent names are in the routing map
         routing_map = dispatcher_call.args[2] if len(dispatcher_call.args) > 2 else {}
         for agent_id in agent_order:
             assert agent_id in routing_map, f"Agent {agent_id!r} missing from routing map"
-
-
-# ---------------------------------------------------------------------------
-# Test 2: test_priority_activation_routes_to_critic_on_draft
-# ---------------------------------------------------------------------------
 
 
 class TestPriorityActivation:
@@ -196,14 +179,8 @@ class TestPriorityActivation:
         }
         agent_order = ["planner", "researcher", "executor", "critic"]
 
-        # rr_index=2 → should return agent_order[2] = "executor"
         result = _pick_priority_agent(state, agent_order, rr_index=2)  # type: ignore[arg-type]
         assert result == "executor", f"Expected 'executor', got {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# Test 3: test_consensus_threshold_writes_winner_signal
-# ---------------------------------------------------------------------------
 
 
 class TestConsensusThreshold:
@@ -211,10 +188,8 @@ class TestConsensusThreshold:
 
     def test_consensus_threshold_writes_winner_signal(self) -> None:
         """When vote_for='4' appears 3 times, consensus_reached=True and final_answer='4'."""
-        # Create a state with 3 identical votes
         votes = [_make_decision_msg(vote_for="4", sender=f"agent_{i}") for i in range(3)]
 
-        # Simulate what mesh_postprocess_node would do
         bus = votes
         vote_counts: dict[str, int] = {}
         for msg in bus:
@@ -256,11 +231,6 @@ class TestConsensusThreshold:
         assert winner is None
 
 
-# ---------------------------------------------------------------------------
-# Test 4: test_max_rounds_routes_to_end
-# ---------------------------------------------------------------------------
-
-
 class TestMaxRoundsRoutesToEnd:
     """When dispatch_round >= max_rounds (and no consensus), _should_stop triggers."""
 
@@ -271,7 +241,6 @@ class TestMaxRoundsRoutesToEnd:
         cfg = _make_cfg(max_rounds=6, consensus_threshold=3)
         state = _make_state(iter_total=5)
 
-        # Simulate: dispatch_round = 6 >= max_rounds=6, no consensus
         stop, reason = _should_stop(
             state,
             cfg,
@@ -298,27 +267,21 @@ class TestMaxRoundsRoutesToEnd:
         assert reason == ""
 
 
-# ---------------------------------------------------------------------------
-# Test 5: test_global_max_iterations_overrides_topology_max
-# ---------------------------------------------------------------------------
-
-
 class TestGlobalMaxIterationsOverride:
-    """Global max_iterations guard fires before topology_max (arch.md §7.1 precedence)."""
+    """Global max_iterations guard fires before topology_max."""
 
     def test_global_max_iterations_overrides_topology_max(self) -> None:
         """iter_total >= max_iterations → MAX_ITER reason, even with topology_max=True."""
         from atm.topology.base import _should_stop
 
         cfg = _make_cfg(max_iterations=10, max_rounds=6)
-        # iter_total == 10 == max_iterations → global guard fires first
         state = _make_state(iter_total=10)
 
         stop, reason = _should_stop(
             state,
             cfg,
             topology_success=False,
-            topology_max_reached=True,  # topology also wants to stop
+            topology_max_reached=True,
         )
         assert stop is True
         assert reason == "max_iter", f"Expected 'max_iter', got {reason!r}"
@@ -338,11 +301,6 @@ class TestGlobalMaxIterationsOverride:
         )
         assert stop is True
         assert reason == "max_iter"
-
-
-# ---------------------------------------------------------------------------
-# Test 6: test_build_returns_compiled_graph_with_expected_nodes
-# ---------------------------------------------------------------------------
 
 
 class TestBuildReturnsCompiledGraph:
@@ -369,7 +327,6 @@ class TestBuildReturnsCompiledGraph:
 
         assert compiled is mock_compiled
 
-        # Verify nodes were added
         added_node_names = {call.args[0] for call in mock_graph.add_node.call_args_list}
         expected_nodes = {
             "dispatcher",
@@ -402,11 +359,6 @@ class TestBuildReturnsCompiledGraph:
         mock_graph.compile.assert_called_once_with(checkpointer=mock_cp)
 
 
-# ---------------------------------------------------------------------------
-# Test 7: test_register_under_name_mesh
-# ---------------------------------------------------------------------------
-
-
 class TestRegisterUnderNameMesh:
     """MeshTopology is registered under name 'mesh' in TopologyRegistry."""
 
@@ -425,11 +377,6 @@ class TestRegisterUnderNameMesh:
     def test_mesh_has_callable_build(self) -> None:
         """MeshTopology has a callable build method."""
         assert callable(MeshTopology.build)
-
-
-# ---------------------------------------------------------------------------
-# Test 8: test_mesh_broadcast_writes_outbox_to_bus
-# ---------------------------------------------------------------------------
 
 
 class TestMeshBroadcastWritesOutboxToBus:
@@ -454,7 +401,6 @@ class TestMeshBroadcastWritesOutboxToBus:
             },
         }
 
-        # Reproduce the mesh_broadcast logic directly
         shared = dict(state["shared"])
         signals = dict(shared.get("signals", {}))
         active_agent = str(signals.get("_mesh_active_agent", ""))
@@ -488,18 +434,12 @@ class TestMeshBroadcastWritesOutboxToBus:
         assert new_msg in new_bus
 
 
-# ---------------------------------------------------------------------------
-# Test 9: test_broadcast_bus_does_not_unbound (MC-5)
-# ---------------------------------------------------------------------------
-
-
 class TestBroadcastBusDoesNotUnbound:
     """broadcast_bus is capped at broadcast_bus_cap — MC-5 invariant."""
 
     def test_broadcast_bus_does_not_unbound(self) -> None:
         """Adding messages beyond cap keeps only the last cap entries."""
         cap = 10
-        # Start with cap-1 existing messages
         existing_msgs = [_make_draft_msg(sender=f"agent_{i}") for i in range(cap - 1)]
         new_msgs = [_make_decision_msg(vote_for="x", sender=f"new_{i}") for i in range(5)]
 
@@ -519,7 +459,6 @@ class TestBroadcastBusDoesNotUnbound:
         if len(new_bus) > cap:
             new_bus = new_bus[-cap:]
 
-        # Should keep last 3: old_msgs[2] + both new_msgs
         assert len(new_bus) == cap
         assert old_msgs[0] not in new_bus, "oldest message should be dropped"
         assert new_msgs[-1] in new_bus, "newest message should be kept"
@@ -529,11 +468,6 @@ class TestBroadcastBusDoesNotUnbound:
         from atm.topology.mesh import _DEFAULT_BROADCAST_BUS_CAP
 
         assert _DEFAULT_BROADCAST_BUS_CAP == 200
-
-
-# ---------------------------------------------------------------------------
-# Test 10: test_consensus_vote_payload_str_format
-# ---------------------------------------------------------------------------
 
 
 class TestConsensusVotePayloadStrFormat:
@@ -564,7 +498,7 @@ class TestConsensusVotePayloadStrFormat:
             payload = getattr(msg, "payload", {}) or {}
             vote_for_val = payload.get("vote_for")
             if not isinstance(vote_for_val, str):
-                continue  # silently ignored
+                continue
             vote_counts[vote_for_val] = vote_counts.get(vote_for_val, 0) + 1
 
         assert len(vote_counts) == 0, f"Expected empty tally, got {vote_counts}"
@@ -585,11 +519,6 @@ class TestConsensusVotePayloadStrFormat:
             vote_counts[vote_for_val] = vote_counts.get(vote_for_val, 0) + 1
 
         assert len(vote_counts) == 0
-
-
-# ---------------------------------------------------------------------------
-# Test 11 + 12: Refactor-validation — namespaced extras (Step 3.2)
-# ---------------------------------------------------------------------------
 
 
 class TestMeshNamespacedExtras:
@@ -647,11 +576,6 @@ class TestMeshNamespacedExtras:
             f"Expected max_rounds to fall back to {_DEFAULT_MAX_ROUNDS} "
             f"when bucket is empty, got {resolved_max_rounds!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests 13 + 14: Regression — broadcast_bus_cap and agent_order (F1 fix)
-# ---------------------------------------------------------------------------
 
 
 class TestMeshNamespacedExtrasBroadcastCapAndOrder:

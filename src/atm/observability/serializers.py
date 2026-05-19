@@ -13,7 +13,7 @@ Design rules:
 
 Missing domain types (ScratchpadEntry, PhaseTransition.topology_used, etc.) are
 defined here as minimal dataclasses/Protocols until they are promoted to
-core/types.py in a later milestone (arch.md §3.4 / §8).
+core/types.py in a later milestone.
 """
 
 from __future__ import annotations
@@ -32,10 +32,6 @@ from atm.core.types import (
     ToolResult,
     TopologyTransition,
 )
-
-# ---------------------------------------------------------------------------
-# JSON helper — deterministic, compact, unicode-safe
-# ---------------------------------------------------------------------------
 
 _JSON_KW: dict[str, Any] = {
     "default": str,
@@ -57,28 +53,18 @@ def _dumps(obj: object) -> str:
     return json.dumps(obj, **_JSON_KW)
 
 
-# ---------------------------------------------------------------------------
-# Minimal local types for domain objects not yet in core/types.py
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ScratchpadEntry:
     """Minimal scratchpad entry type.
 
-    The full type will be defined in core/types.py in a later milestone
-    (arch.md §8 / §3.4). Fields match SCRATCHPAD_SCHEMA column names.
+    The full type will be defined in core/types.py in a later milestone.
+    Fields match SCRATCHPAD_SCHEMA column names.
     """
 
     at: datetime
-    role: str  # e.g. "assistant", "user", "tool"
+    role: str
     content: str
     tool_calls: list[Any] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# Serializers
-# ---------------------------------------------------------------------------
 
 
 def llm_response_to_row(
@@ -208,7 +194,7 @@ def topology_transition_to_row(
 ) -> dict[str, Any]:
     """Convert a TopologyTransition to a dict row matching TOPOLOGY_TRANSITION_SCHEMA.
 
-    Schema fields (arch.md §3.4 canonical names):
+    Schema fields:
     run_id, from_topology, to_topology, phase_at_decision, iter_within_phase,
     iter_within_topology, decided_by, reason, considered_alternatives_json,
     guards_applied_json, signals_snapshot_json, router_cost_usd, at.

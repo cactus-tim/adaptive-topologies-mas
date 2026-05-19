@@ -20,7 +20,6 @@ async def test_lint_clean_code() -> None:
     assert result.ok is True
     assert isinstance(result.output["ruff"], list)
     assert result.output["ruff"] == []
-    # pylint is either None or skipped (not installed in CI)
     assert result.output["pylint"] is None or result.output["pylint_skipped"] is not None
 
 
@@ -47,7 +46,6 @@ async def test_lint_pylint_missing_graceful() -> None:
     """When pylint binary is missing, tool returns ok=True with pylint_skipped='not installed'."""
     from atm.tools.local_.lint import LintTool
 
-    # Mock the subprocess to raise FileNotFoundError when calling pylint
     original_create = asyncio.create_subprocess_exec
 
     async def patched_create_subprocess(*args: Any, **kwargs: Any) -> Any:

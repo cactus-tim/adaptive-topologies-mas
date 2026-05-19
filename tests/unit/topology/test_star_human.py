@@ -31,10 +31,6 @@ from atm.core.types import HumanResponse, HumanRole, Message, MessageKind, Phase
 from atm.experiment.config import HumanCfg
 from atm.topology.base import TopologyConfig, TopologyRegistry
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(
     *,
@@ -184,11 +180,6 @@ def _build_star_graph(
     return topology.build(agents, cfg, **kwargs)
 
 
-# ---------------------------------------------------------------------------
-# 1. Back-compat: no human_cfg → no human_reviewer node
-# ---------------------------------------------------------------------------
-
-
 class TestStarBackCompatNoHumanCfg:
     """Without human_cfg (or disabled), graph is identical to M7."""
 
@@ -226,11 +217,6 @@ class TestStarBackCompatNoHumanCfg:
         edge_calls = [call.args for call in mock_graph.add_edge.call_args_list]
         assert ("critic_postprocess", "coordinator") in edge_calls
         assert ("critic_postprocess", "human_reviewer") not in edge_calls
-
-
-# ---------------------------------------------------------------------------
-# 2. Graph structure with HITL enabled
-# ---------------------------------------------------------------------------
 
 
 class TestStarHITLNodeInsertion:
@@ -291,11 +277,6 @@ class TestStarHITLNodeInsertion:
         cp_to_hr_idx = edge_calls.index(("critic_postprocess", "human_reviewer"))
         hr_to_coord_idx = edge_calls.index(("human_reviewer", "coordinator"))
         assert cp_to_hr_idx < hr_to_coord_idx
-
-
-# ---------------------------------------------------------------------------
-# 3. Reviewer mode: approve / reject
-# ---------------------------------------------------------------------------
 
 
 class TestStarReviewerApprove:
@@ -362,7 +343,6 @@ class TestStarReviewerReject:
         run_id = uuid.uuid4()
         initial = _make_initial_state(run_id=run_id)
 
-        # Reject on every call; graph will terminate via max_iterations cap
         reject_resp = _make_reject_response("Needs more work")
         call_count = 0
 
@@ -381,7 +361,6 @@ class TestStarReviewerReject:
             "executor": _make_mock_agent("executor"),
             "critic": _make_mock_agent_with_outbox("critic", [decision_msg]),
         }
-        # Small max_iterations so test terminates quickly
         cfg = _make_cfg(
             max_iterations=8,
             planning_max_iter=1,
@@ -407,14 +386,8 @@ class TestStarReviewerReject:
             config={"configurable": {"thread_id": f"test-reject-{uuid.uuid4()}"}},
         )
 
-        # Graph terminates via max_iter; gateway was called at least once with reject
         assert result is not None
         assert call_count >= 1
-
-
-# ---------------------------------------------------------------------------
-# 4. Coordinator-override: _route_from_coord reads human_phase_override
-# ---------------------------------------------------------------------------
 
 
 class TestRouteFromCoordOverride:
@@ -426,7 +399,6 @@ class TestRouteFromCoordOverride:
         We test _route_from_coord by calling it directly on a state dict that
         has signals["human_phase_override"] set.
         """
-        # Import the build_human_node_factory to build a real graph
         from atm.topology.star import StarTopology
 
         agents = {
@@ -437,8 +409,6 @@ class TestRouteFromCoordOverride:
         cfg = _make_cfg()
         topology = StarTopology()
 
-        # We capture the _route_from_coord closure via a build call
-        # by patching StateGraph to capture the conditional edges call
         captured_route_fn: list[Any] = []
 
         class CapturingGraph:
@@ -507,14 +477,13 @@ class TestRouteFromCoordOverride:
             phase=Phase.PLANNING,
         )
         result = route_fn(state)
-        # "stay" falls through to normal routing: planning → planner
         assert result == "planner"
 
     def test_no_override_signal_uses_normal_routing(self) -> None:
         """Without signals['human_phase_override'], routing is unchanged (planning → planner)."""
         route_fn = self._get_route_fn()
         state = _make_initial_state(
-            signals={},  # no override
+            signals={},
             phase=Phase.PLANNING,
         )
         result = route_fn(state)
@@ -539,7 +508,6 @@ class TestRouteFromCoordOverride:
             phase=Phase.VERIFICATION,
         )
         route_fn(state)
-        # The signals dict in shared should be cleared
         shared = state.get("shared", {})
         updated_signals = shared.get("signals", {})
         assert updated_signals.get("human_phase_override") is None
@@ -552,18 +520,7 @@ class TestRouteFromCoordOverride:
             phase=Phase.PLANNING,
         )
         result = route_fn(state)
-        # Should fall through to normal planning routing
         assert result == "planner"
-
-
-# ---------------------------------------------------------------------------
-# 5. Full graph run: back-compat (no HITL) — graph runs exactly like M7
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# 6. role_router integration: back-compat + dynamic
-# ---------------------------------------------------------------------------
 
 
 class TestStarRoleRouter:
@@ -703,7 +660,6 @@ class TestStarRoleRouter:
         fake_gateway.request = capturing_gateway_request
         mock_gw_cls = MagicMock(return_value=fake_gateway)
 
-        # cfg says REVIEWER but router overrides to JUDGE
         router = FixedRoleRouter(role=HumanRole.JUDGE)
 
         agents = {
@@ -725,7 +681,6 @@ class TestStarRoleRouter:
         ):
             human_cfg = _make_human_cfg(enabled=True, role=HumanRole.REVIEWER)
             graph = _build_star_graph(agents=agents, cfg=cfg, human_cfg=human_cfg)
-            # We need to build with role_router — use StarTopology directly
             from langgraph.checkpoint.memory import MemorySaver
 
             from atm.topology.star import StarTopology
@@ -744,7 +699,6 @@ class TestStarRoleRouter:
         )
 
         assert result is not None
-        # The node should have been called with JUDGE role
         assert len(captured_contexts) >= 1
         assert captured_contexts[0].role == HumanRole.JUDGE
 

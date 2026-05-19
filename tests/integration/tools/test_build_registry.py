@@ -11,10 +11,6 @@ from atm.core.errors import ToolError
 from atm.tools.defaults import build_default_registry
 from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture()
 def workspace(tmp_path: Path) -> Path:
@@ -32,11 +28,6 @@ def _create_dirs(workspace: Path, tmp_path: Path) -> None:
 @pytest.fixture()
 def corpus_dir(tmp_path: Path) -> Path:
     return tmp_path / "corpus"
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestBuildDefaultRegistry:
@@ -71,7 +62,6 @@ class TestBuildDefaultRegistry:
             sandbox=FakeDockerSandbox(),  # type: ignore[arg-type]
             prod_mode=True,
         )
-        # Should return a registry, not raise
         assert registry is not None
         assert len(registry.names()) == 12
 

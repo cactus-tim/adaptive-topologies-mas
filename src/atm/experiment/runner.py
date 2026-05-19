@@ -15,7 +15,7 @@ Full lifecycle:
     12. _update_run_success or _update_run_failed
     13. engine.dispose() in finally
 
-Flush-before-update invariant (arch.md §10.3):
+Flush-before-update invariant:
     parquet_writer.close() MUST be called BEFORE _update_run_success/_update_run_failed
     to ensure all buffered observability data is flushed to disk before the run record
     is marked complete.
@@ -80,11 +80,6 @@ from atm.topology.base import TopologyConfig, TopologyRegistry
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# _build_role_router — factory that constructs the appropriate HumanRoleRouter
-# ---------------------------------------------------------------------------
-
-
 def _build_role_router(
     human_cfg: HumanCfg | None,
     llm_factory: Callable[[], Any] | None = None,
@@ -124,11 +119,6 @@ def _build_role_router(
     raise ValueError(f"unknown role_router: {strategy!r}")
 
 
-# ---------------------------------------------------------------------------
-# RunResult — public contract for run_one() return value
-# ---------------------------------------------------------------------------
-
-
 class RunResult(BaseModel):
     """Result of a single experiment run.
 
@@ -150,11 +140,6 @@ class RunResult(BaseModel):
     final_answer: str = Field(default="")
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _load_pricing() -> Pricing:
     """Load Pricing from conf/pricing.yaml, with fallback to empty pricing table."""
     candidates = [
@@ -164,7 +149,6 @@ def _load_pricing() -> Pricing:
     for candidate in candidates:
         if candidate.exists():
             return Pricing.from_yaml(candidate)
-    # Fallback: empty pricing table (zero costs for all models)
     return Pricing(version=1, models={})
 
 
@@ -202,13 +186,9 @@ async def _ensure_experiment(
     """
     git_sha = _get_git_sha()
 
-    # m12-resume-replay decision (a): widen config_snapshot to the full
-    # cfg.model_dump(mode="json") so resume_one / replay_one can rehydrate
-    # ExperimentConfig without requiring the original YAML file on disk.
     full_snapshot = cfg.model_dump(mode="json")
 
     async with session_factory() as session:
-        # Try INSERT ... ON CONFLICT DO NOTHING RETURNING id
         stmt = (
             sa.dialects.postgresql.insert(Experiment)
             .values(
@@ -229,7 +209,6 @@ async def _ensure_experiment(
         if row is not None:
             exp_id: UUID = row[0]
         else:
-            # Conflict — SELECT the existing row
             select_result = await session.execute(
                 sa.select(Experiment.id).where(Experiment.name == cfg.name)
             )
@@ -260,9 +239,6 @@ async def _insert_run(
         cfg.human.role.value if cfg.human is not None and cfg.human.enabled else None
     )
 
-    # m12-resume-replay: capture host + pid so reconcile_zombies can verify
-    # liveness of stale 'running' rows on the same machine. Cross-host
-    # verification would need a heartbeat table — out of scope here.
     host = socket.gethostname()
     process_pid = os.getpid()
 
@@ -312,7 +288,6 @@ async def _register_worker_identity(
     effective_host = host if host is not None else socket.gethostname()
     effective_pid = pid if pid is not None else os.getpid()
 
-    # Defensive truncation — runs.host is VARCHAR(64) per Alembic 0004.
     if len(effective_host) > 64:
         effective_host = effective_host[:64]
 
@@ -454,7 +429,7 @@ def _build_initial_state(
 ) -> dict[str, Any]:
     """Build the initial GraphState with all 14 SharedState keys populated.
 
-    Required SharedState keys (arch.md §3.2):
+    Required SharedState keys:
         task_id, task_input, phase, iteration, iter_total, active_topology,
         final_answer, signals, phase_started_at_iter, topology_started_at_iter,
         topology_history, topology_switch_count, phase_history, human_requests,
@@ -482,7 +457,7 @@ def _build_initial_state(
             _spec = resolve_spec(cfg.task)
         except Exception:
             logger.warning(
-                "resolve_spec failed; task_input augmentation may be empty",
+                "resolve_spec failed",
                 task_name=cfg.task.name,
             )
 
@@ -501,9 +476,6 @@ def _build_initial_state(
             "phase": Phase.PLANNING,
             "iteration": 0,
             "iter_total": 0,
-            # For adaptive meta-graph, leave active_topology unset so the
-            # TopologyRouter picks a real sub-topology (e.g. "linear") on the
-            # first tick instead of recursing into the meta-graph itself.
             "active_topology": None if cfg.topology.name == "adaptive" else cfg.topology.name,
             "final_answer": "",
             "signals": {},
@@ -611,7 +583,6 @@ def _build_llm_wrappers(
         bare_model = model_id.split(":", 1)[1] if ":" in model_id else model_id
 
         if provider == "fake" and bare_model == "scripted":
-            # Resolve fixture path from cfg.model.fake_fixtures if available
             fixture_str = cfg.model.fake_fixtures.get(role)
             if fixture_str is None:
                 logger.warning(
@@ -628,15 +599,6 @@ def _build_llm_wrappers(
                 fixture_path=fixture_path,
             )
         elif provider == "fake" and bare_model == "replay":
-            # m12-resume-replay: route to FakeLLM(mode="replay") using the
-            # caller-supplied per-role Parquet table. Replay sources MUST be
-            # provided when any role uses fake:replay.
-            #
-            # When ``shared_replay_llm`` is supplied (typical for replay_one)
-            # we wrap the SAME FakeLLM instance for every role so the global
-            # row counter advances in original call order, preserving bit
-            # identity across roles. Otherwise each role gets its own table
-            # (useful when each role has a partitioned parquet).
             if shared_replay_llm is not None:
                 wrappers[role] = LLMWrapper(
                     model_id=model_id,
@@ -732,7 +694,6 @@ def _build_agents(
     from atm.tools.base import ToolRegistry
 
     if conf_dir is None:
-        # Try to find conf dir relative to this file or cwd
         here = Path(__file__).parent
         for candidate in [here.parent.parent.parent / "conf", Path("conf")]:
             if candidate.exists():
@@ -763,9 +724,6 @@ def _build_agents(
             continue
 
         tools = tool_registry if tool_registry is not None else ToolRegistry()
-        # Use role name as both the dict key and the agent_id so topology nodes
-        # (e.g. state["agents"]["critic"]) can find the agent by role directly.
-        # BUG-3 fix: use Critic subclass for the critic role so step() emits DECISION.
         agent_cls: type = Critic if role == "critic" else Agent
         agents[role] = agent_cls(
             agent_id=role,
@@ -774,51 +732,21 @@ def _build_agents(
             tools=tools,
         )
 
-    # ------------------------------------------------------------------
-    # Topology-specific extra workers.
-    #
-    # canonical_4 covers star/chain/mesh/adaptive but NOT:
-    #   - hierarchical: needs per-team worker agents listed under
-    #     cfg.topology.extra.sub_teams[*].workers (e.g. executor_a1).
-    #   - debate: needs debater_pro / debater_contra / judge agents
-    #     identified by cfg.topology.extra.{debater_pro_id,
-    #     debater_contra_id, judge_id} (defaults: those exact strings).
-    # We synthesise each extra worker as a fresh Agent (Critic subclass
-    # for the judge so it emits DECISION). The base config is borrowed
-    # from executor.yaml — workers ARE executors, just with team-scoped
-    # identifiers — which keeps tools (file_write/code_run/...) attached.
-    # The judge borrows critic.yaml so its prompt and DECISION semantics
-    # match the chain/star verifier.
-    # ------------------------------------------------------------------
     topo_name = getattr(cfg.topology, "name", "")
-    # Resolve topology-specific extras from the typed TopologyExtras model.
-    # cfg.topology.extra is a TopologyExtras Pydantic model post-refactor;
-    # using dict() on a BaseModel iterates __fields_set__, not values — we
-    # must use the typed attributes directly so user-configured values are
-    # not silently ignored.
     raw_extra = getattr(cfg.topology, "extra", None)
     if raw_extra is not None and hasattr(raw_extra, "model_dump"):
-        # Production path — typed TopologyExtras: read namespace bucket directly.
         hier_extra = raw_extra.hierarchical.model_dump(exclude_none=True)
         debate_extra = raw_extra.debate.model_dump(exclude_none=True)
     else:
-        # Legacy dict path (tests or direct TopologyConfig construction).
         flat = dict(raw_extra) if raw_extra else {}
         hier_extra = flat.get("hierarchical", flat)
         debate_extra = flat.get("debate", flat)
-    extra_workers: list[tuple[str, str]] = []  # [(agent_id, base_role), ...]
+    extra_workers: list[tuple[str, str]] = []
 
-    # Adaptive runtime can route to ANY sub-topology mid-run; pre-synthesise
-    # the union of workers required by hierarchical AND debate so the router
-    # never falls back to no-op nodes (which produce empty output → q=0).
     needs_hier = topo_name in ("hierarchical", "adaptive")
     needs_debate = topo_name in ("debate", "adaptive")
 
     if needs_hier:
-        # Mirror HierarchicalTopology.build defaults: if sub_teams is missing
-        # or has <2 teams, the topology synthesises team_a/team_b with two
-        # executor workers each. _build_agents has to use the SAME default
-        # set, otherwise the topology references agent ids we never built.
         sub_teams = list(hier_extra.get("sub_teams") or [])
         if len(sub_teams) < 2:
             sub_teams = [
@@ -837,7 +765,7 @@ def _build_agents(
 
     for worker_id, base_role in extra_workers:
         if worker_id in agents:
-            continue  # already built (e.g. judge_id == "critic")
+            continue
         base_yaml = agents_conf_dir / f"{base_role}.yaml"
         if not base_yaml.exists():
             logger.warning(
@@ -856,16 +784,6 @@ def _build_agents(
                 error=str(e),
             )
             continue
-        # Topology-specific prompt injection.
-        # For debate, the debater_pro / debater_contra agents inherit the
-        # executor.yaml system prompt, but the debate-stance framing tends to
-        # push the model toward "argue" rather than "execute". PREPEND a hard
-        # override at the very top of the system prompt — placement matters
-        # because the model treats the first paragraph as the highest-priority
-        # instruction. The override (a) makes solution.py writing imperative
-        # for code tasks, (b) imposes a structured DRAFT format for non-code
-        # tasks so downstream extraction can find the actual answer, not the
-        # debate argument around it.
         if topo_name in ("debate", "adaptive") and worker_id in (
             str(debate_extra.get("debater_pro_id") or "debater_pro"),
             str(debate_extra.get("debater_contra_id") or "debater_contra"),
@@ -909,16 +827,6 @@ def _build_agents(
             patched_prompt = debate_override + (agent_cfg.system_prompt or "")
             agent_cfg = agent_cfg.model_copy(update={"system_prompt": patched_prompt})
 
-        # Topology-specific prompt injection — Debate JUDGE.
-        # The judge (critic.yaml) is hardcoded around `solution.py` /
-        # file_read inspection. For non-code tasks (gsm8k, commongen,
-        # dabench) no `solution.py` is ever written, so the judge sees
-        # nothing to inspect and unconditionally REJECTs every round.
-        # After max_rounds the topology exits with approved=False and
-        # final_answer="" → quality_score=0. PREPEND an override that
-        # tells the judge how to evaluate the new ###ANSWER### marker
-        # format for non-code tasks. Mirrors the placement strategy used
-        # for debaters above.
         if topo_name in ("debate", "adaptive") and worker_id == str(
             debate_extra.get("judge_id") or "judge"
         ):
@@ -959,8 +867,6 @@ def _build_agents(
             patched_prompt = judge_override + (agent_cfg.system_prompt or "")
             agent_cfg = agent_cfg.model_copy(update={"system_prompt": patched_prompt})
 
-        # Per-worker LLM resolution: prefer cfg.model.by_role[worker_id]
-        # if explicitly mapped, then by_role[base_role], else default.
         llm = llms.get(worker_id) or llms.get(base_role) or llms.get("planner")
         if llm is None:
             logger.warning(
@@ -978,11 +884,6 @@ def _build_agents(
         )
 
     return agents
-
-
-# ---------------------------------------------------------------------------
-# Main public API
-# ---------------------------------------------------------------------------
 
 
 async def run_one(cfg: ExperimentConfig) -> RunResult:
@@ -1003,11 +904,9 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
     pg_dsn = cfg.observability.pg_dsn
     parquet_root = Path(cfg.observability.parquet_dir)
 
-    # Create engine and session factory
     engine: AsyncEngine = create_engine(pg_dsn)
     session_factory = create_session_factory(engine)
 
-    # Ensure schema exists (idempotent)
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -1022,36 +921,26 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
     budget_spent: float = 0.0
     iterations: int = 0
     final_answer: str = ""
-    llms: dict[str, LLMWrapper] | None = None  # populated in try; read in finally
-    sandbox: Any | None = None  # populated in try; read in finally for digest capture
+    llms: dict[str, LLMWrapper] | None = None
+    sandbox: Any | None = None
 
-    # Seed all RNGs for reproducibility before any stochastic work.
     seed_all(cfg.seed)
 
-    # Wall-clock start — captured once and reused across all terminal branches
-    # (success / budget_exceeded / failed) so runs.wall_time_s reflects total
-    # elapsed time including DB setup, topology build, evaluation, and finalize.
     _run_started_monotonic: float = time.monotonic()
 
     def _elapsed_s() -> float:
         return max(0.0, time.monotonic() - _run_started_monotonic)
 
     try:
-        # Step 1: ensure experiment row exists
         exp_id = await _ensure_experiment(session_factory, cfg)
 
-        # Step 2: insert run row
         run_id = await _insert_run(session_factory, exp_id, cfg)
 
-        # Step 2b (M12 grid-runner): register host + pid for worker tracking.
-        # Runs unconditionally (single-run benefits from observability too;
-        # m12-resume-replay needs this for crashed-worker reconcile).
         await _register_worker_identity(session_factory, run_id)
 
         log = logger.bind(run_id=str(run_id), exp_id=str(exp_id))
         log.info("run started", topology=cfg.topology.name, task=cfg.task.name)
 
-        # Step 3: build budget tracker and pricing
         budget = BudgetTracker(
             per_call_usd=cfg.budget.per_call_usd,
             per_run_usd=cfg.budget.per_run_usd,
@@ -1059,11 +948,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         )
         pricing = _load_pricing()
 
-        # Build judge LLM wrapper (shares the run's BudgetTracker).
-        # If construction fails (e.g. missing OPENAI_API_KEY when default judge_model
-        # is "openai:gpt-4o" but the run uses fake providers), silently fall back to
-        # judge_llm=None — the aggregator and ground_truth dispatch handle this and
-        # judge-required evaluators will surface a clear error at evaluation time.
         try:
             judge_llm = build_llm(
                 model_id=cfg.evaluation.judge_model,
@@ -1078,19 +962,11 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             )
             judge_llm = None
 
-        # Step 4: build LLM wrappers per role (assigned to outer-scope var for finally block)
         llms = _build_llm_wrappers(cfg, budget, pricing)
 
-        # Step 5: build agents — share a single tool registry pre-populated with the
-        # M4 default toolset so cfg.tools entries (code_run, file_*, calculator, etc.)
-        # resolve at agent dispatch time instead of emitting "tool name not in registry"
-        # warnings. Workspace and corpus dirs live under the parquet root scoped to
-        # this run; SubprocessSandbox is the dev default (Docker required for prod).
         from atm.tools.defaults import build_default_registry
         from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
 
-        # Resolve spec once — reused at staging, initial-state build, and evaluation
-        # so the total resolve_spec call count stays at 1 (required by test contract).
         _run_spec = resolve_spec(cfg.task)
 
         tools_workspace = parquet_root / "workspace" / str(run_id)
@@ -1111,7 +987,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             tool_registry = None
         agents = _build_agents(cfg, llms, tool_registry=tool_registry)
 
-        # Step 7: build parquet writer and callback
         parquet_writer = ParquetWriter(
             root=parquet_root,
             run_id=run_id,
@@ -1127,31 +1002,19 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
             budget_exceed_threshold=Decimal(str(cfg.budget.per_run_usd)),
         )
 
-        # Step 8: build initial state — pass the already-resolved spec so
-        # _build_initial_state can augment task_input with TaskSpec.metadata
-        # (e.g. DABench format/constraints/file_name) without a second lookup.
         initial_state = _build_initial_state(cfg, run_id, spec=_run_spec)
 
-        # Step 6: build topology
         topology_cfg = TopologyConfig(
             name=cfg.topology.name,
             max_iterations=cfg.topology.max_iterations,
             extra=cfg.topology.extra.model_dump(exclude_none=True),
         )
 
-        # Step 9: run graph
         final_state: dict[str, Any]
 
-        # HITL wiring (M9/M9.1/M9.2) — built only when cfg.human.enabled.
-        # Topology builders that pre-date M9.1 ignore unknown kwargs; the spread
-        # is deferred via conditional dict so legacy build(agents, topology_cfg,
-        # checkpointer=...) keeps working byte-identical when HITL is off.
         human_gateway_llm: LLMWrapper | None = None
         if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
             human_model_id = cfg.human.model or cfg.model.default
-            # For fake:scripted, look up the fixture under fake_fixtures["human"]
-            # so the simulator returns canned JSON instead of falling back to echo
-            # mode (which would emit the prompt verbatim and crash the gateway).
             human_fixture_str = (
                 cfg.model.fake_fixtures.get("human")
                 if human_model_id.startswith("fake:scripted")
@@ -1177,12 +1040,8 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         role_router = _build_role_router(cfg.human, llm_factory=_role_router_llm_factory)
 
         async with checkpointer_scope(pg_dsn) as checkpointer:
-            # BUG-4 fix: TopologyRegistry.get() returns the CLASS, not an instance.
-            # Instantiate the class before calling build() so that self is bound.
             topology_cls = TopologyRegistry.get(cfg.topology.name)
             topology_instance = topology_cls()
-            # Build topology_router LLM only for adaptive — cheap pass-through
-            # for other topologies (they ignore unknown kwargs).
             topology_router_llm: LLMWrapper | None = None
             if cfg.topology.name == "adaptive":
                 router_model_id = cfg.model.router or cfg.model.default
@@ -1215,17 +1074,10 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 },
             )
 
-        # Extract metrics
         shared_final: dict[str, Any] = final_state.get("shared") or {}
         final_answer = str(shared_final.get("final_answer") or "")
         iterations = int(shared_final.get("iter_total") or 0)
 
-        # Post-graph finalize hook (Path C). For non-code tasks where the
-        # executor never produced a usable DRAFT (most visible on DABench:
-        # the answer is a solution.py blob instead of the @name[value]
-        # templates the evaluator expects), do a SINGLE no-tool LLM call
-        # using the same executor wrapper so cost still counts against the
-        # run budget.
         _finalize_llm = llms.get("executor") or llms.get("default")
         if _finalize_llm is not None:
             final_answer = await maybe_finalize_answer(
@@ -1235,11 +1087,9 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 current_answer=final_answer,
             )
 
-        # Get actual budget spent from tracker
         budget_spent = budget.totals.get(BudgetLevel.RUN, 0.0)
 
-        # Step 11: evaluate
-        sandbox = SubprocessSandbox()  # assigned to outer-scope var for finally digest capture
+        sandbox = SubprocessSandbox()
         spec = _run_spec
         if spec is None:
             logger.debug(
@@ -1260,21 +1110,14 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 logger.warning("compute_quality raised unexpectedly; setting quality_score=None")
                 quality_score = None
 
-        # Write llm_calls in REPLAY_SCHEMA so replay_one(mode='deterministic') can read
-        # them back even when FakeLLM is used (FakeLLM doesn't fire on_llm_end callbacks).
         _run_dir = parquet_root / "experiments" / str(exp_id) / "runs" / str(run_id)
         try:
             _write_replay_parquet(_run_dir, list(final_state.get("llm_calls") or []))
         except Exception:
             logger.warning("_write_replay_parquet failed — replay may not work", exc_info=True)
 
-        # Step 10: FLUSH PARQUET BEFORE UPDATE (invariant)
         await parquet_writer.close()
 
-        # Step 12a: resolve dynamic human_role + cognitive_load_proxy (M9.2 RQ4).
-        # Both ops wrapped in try/except — DB or metric failure must NEVER prevent
-        # _update_run_success from completing. Budget-failed/exception branches
-        # skip this block; both fields remain NULL there (acceptable per arch).
         dynamic_human_role: str | None = None
         dynamic_cog_proxy: float | None = None
 
@@ -1307,7 +1150,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 exc_info=True,
             )
 
-        # Step 12: update run to completed
         await _update_run_success(
             session_factory,
             run_id,
@@ -1365,7 +1207,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 )
                 quality_score = None
 
-        # FLUSH PARQUET BEFORE UPDATE (invariant — even on budget exceeded)
         if parquet_writer is not None:
             try:
                 await parquet_writer.close()
@@ -1425,7 +1266,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                 quality_score = None
         error_text = traceback.format_exc()
 
-        # FLUSH PARQUET BEFORE UPDATE (invariant — even on failure)
         if parquet_writer is not None:
             try:
                 await parquet_writer.close()
@@ -1451,8 +1291,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
         raise
 
     finally:
-        # Persist actual model versions reported by providers (G2 reproducibility).
-        # Runs in finally so even failed runs record provider fingerprints.
         if run_id is not None and llms:
             try:
                 snap = {
@@ -1474,8 +1312,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                     error=str(_snap_exc)[:200],
                 )
 
-        # Persist sandbox image digest (G2 reproducibility).
-        # Only fires when sandbox has a non-None image_digest (i.e. DockerSandbox).
         if run_id is not None and sandbox is not None:
             _sandbox_digest = getattr(sandbox, "image_digest", None)
             if _sandbox_digest is not None:
@@ -1494,11 +1330,6 @@ async def run_one(cfg: ExperimentConfig) -> RunResult:
                     )
 
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# m12-resume-replay: snapshot rehydration + resume_one + replay_one
-# ---------------------------------------------------------------------------
 
 
 def _load_cfg_from_snapshot(snapshot: dict[str, Any]) -> ExperimentConfig:
@@ -1520,8 +1351,6 @@ def _load_cfg_from_snapshot(snapshot: dict[str, Any]) -> ExperimentConfig:
         ValueError: If the snapshot is missing required keys (typical of the
                     legacy 4-field shape from before m12-resume-replay).
     """
-    # Sparse legacy snapshots only carry {name, topology, task_name, seed}.
-    # We can't rehydrate without 'observability', 'budget', 'model', etc.
     required = {"name", "task", "model", "agents", "topology", "budget", "observability"}
     missing = required - snapshot.keys()
     if missing:
@@ -1657,18 +1486,10 @@ async def resume_one(
         Exception:         Re-raises any execution failure after persisting
                            ``status='failed'``.
     """
-    # Lazy import to avoid a top-level cycle with reconcile (which also lives
-    # in atm.experiment.*).
     from atm.experiment.reconcile import _pid_alive
 
-    # 1) Fetch the run row to discover its experiment + reconstruct cfg.
     bootstrap_engine = create_engine_for_dsn_discovery(cfg)
     if bootstrap_engine is None:
-        # Without a cfg we don't know the DSN yet — caller must supply at
-        # least one of (cfg, ATM_PG_DSN env). We rely on cfg being passed
-        # from the CLI which itself loads the snapshot. This branch only
-        # fires in the rare "no cfg" path; the CLI provides cfg=None and
-        # this function discovers it from the snapshot.
         raise RuntimeError(
             "resume_one: cannot determine pg_dsn — pass cfg explicitly or ensure ATM_PG_DSN is set."
         )
@@ -1682,7 +1503,6 @@ async def resume_one(
             snapshot = await _fetch_experiment_snapshot(session_factory, exp_id)
             cfg = _load_cfg_from_snapshot(snapshot)
 
-        # 2) Liveness gate: refuse to resume a still-alive worker unless --force.
         if not force:
             stored_host = run_row["host"]
             stored_pid = run_row["process_pid"]
@@ -1693,14 +1513,8 @@ async def resume_one(
                     f"(pid={stored_pid}). Pass force=True to override."
                 )
 
-        # 3) Flip status to 'running' (clears stale 'failed' / kept 'running').
         await _set_run_status_running(session_factory, run_id)
 
-        # 4) Reuse run_one's core execution path — but with the EXISTING run_id
-        # and exp_id. We replicate the inner machinery here because run_one's
-        # signature only takes cfg and always allocates new rows. Factoring
-        # the inner block out would touch a lot of well-tested code; the
-        # duplication is intentional and minimal.
         return await _execute_existing_run(
             cfg=cfg,
             run_id=run_id,
@@ -1752,7 +1566,6 @@ async def replay_one(
                         of the original is incompatible (caller can switch
                         to semantic mode).
     """
-    # 1) Discover pg_dsn + load original run + original cfg.
     bootstrap_engine = create_engine_for_dsn_discovery(cfg_override)
     if bootstrap_engine is None:
         raise RuntimeError(
@@ -1770,7 +1583,6 @@ async def replay_one(
         else:
             cfg = cfg_override
 
-        # 2) Mode-specific config mutation.
         if mode == "deterministic":
             parquet_root = Path(cfg.observability.parquet_dir)
             llm_calls_path = (
@@ -1788,52 +1600,34 @@ async def replay_one(
                     f"original run's parquet bundle."
                 )
 
-            # Verify model_version_snapshot parity. For fake models the
-            # snapshot is typically empty; we only enforce parity when the
-            # original used real providers.
             orig_versions = run_row["model_version_snapshot"] or {}
             if orig_versions:
-                # If any non-fake model appears, we'd need the same provider
-                # SDK at replay time; we surface this as a hint, but in
-                # deterministic mode we *replace* models with fake:replay
-                # anyway, so the snapshot is informational only.
                 logger.info(
                     "replay_one: deterministic mode overrides original model versions",
                     original_versions=orig_versions,
                 )
 
-            # Override cfg.model so every role uses fake:replay. To preserve
-            # bit identity of the final answer across the per-role LLM
-            # wrappers we build ONE FakeLLM and share it — its single row
-            # counter then advances in the original call order regardless
-            # of which role pulled the next call.
             import pyarrow.parquet as pq
 
             from atm.llm.fake import FakeLLM
 
             shared_table = pq.read_table(str(llm_calls_path))  # type: ignore[no-untyped-call]
             shared_fake: Any = FakeLLM(mode="replay", replay_table=shared_table)
-            replay_sources = None  # not needed when shared_replay_llm is used
+            replay_sources = None
 
             new_model_cfg = cfg.model.model_copy(update={"default": "fake:replay"})
             cfg = cfg.model_copy(update={"model": new_model_cfg})
 
         elif mode == "semantic":
-            # Semantic mode keeps cfg as-is and lets the aggregator handle the
-            # tolerance check post-run.
             replay_sources = None
             shared_fake = None
         else:
             raise ValueError(f"replay_one: unknown mode {mode!r}")
 
-        # 3) Insert a new run row with replay_of=original_run_id.
         new_run_id = await _insert_replay_run(
             session_factory, exp_id, cfg, replay_of=original_run_id
         )
 
-        # 4) Execute via the shared core. For deterministic mode the shared
-        # FakeLLM keeps all four LLMWrappers reading from a single row
-        # cursor — preserving call order across roles.
         return await _execute_existing_run(
             cfg=cfg,
             run_id=new_run_id,
@@ -1954,8 +1748,6 @@ async def _insert_replay_run(
     )
 
     async with session_scope(session_factory) as session:
-        # Parent equality: the replay run lives in the same experiment as the
-        # original. Verify before INSERT to surface the constraint clearly.
         parent_check = await session.execute(sa.select(Run.exp_id).where(Run.id == replay_of))
         parent_row = parent_check.fetchone()
         if parent_row is None:
@@ -2017,7 +1809,6 @@ async def _execute_existing_run(
     pg_dsn = cfg.observability.pg_dsn
     parquet_root = Path(cfg.observability.parquet_dir)
 
-    # Ensure schema (idempotent, harmless on existing DB).
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -2076,8 +1867,6 @@ async def _execute_existing_run(
         from atm.tools.defaults import build_default_registry
         from atm.tools.sandbox.subprocess_sandbox import SubprocessSandbox as _Sandbox
 
-        # Resolve spec once here so _pre_stage_workspace and _build_initial_state
-        # share a single resolve_spec call (mirrors run_one at lines 854-893).
         try:
             _resume_spec = resolve_spec(cfg.task)
         except Exception:
@@ -2119,7 +1908,6 @@ async def _execute_existing_run(
             extra=cfg.topology.extra.model_dump(exclude_none=True),
         )
 
-        # HITL wiring (replicated from run_one verbatim).
         human_gateway_llm: LLMWrapper | None = None
         if cfg.human is not None and cfg.human.enabled and cfg.human.gateway == "llm_simulated":
             human_model_id = cfg.human.model or cfg.model.default
@@ -2150,8 +1938,6 @@ async def _execute_existing_run(
         async with checkpointer_scope(pg_dsn) as checkpointer:
             topology_cls = TopologyRegistry.get(cfg.topology.name)
             topology_instance = topology_cls()
-            # Build topology_router LLM only for adaptive — cheap pass-through
-            # for other topologies (they ignore unknown kwargs).
             topology_router_llm: LLMWrapper | None = None
             if cfg.topology.name == "adaptive":
                 router_model_id = cfg.model.router or cfg.model.default
@@ -2189,7 +1975,6 @@ async def _execute_existing_run(
         sandbox = SubprocessSandbox()
         spec = resolve_spec(cfg.task)
 
-        # Post-graph finalize (Path C) — same hook as run_one.
         _finalize_llm = llms.get("executor") or llms.get("default")
         if _finalize_llm is not None and spec is not None:
             final_answer = await maybe_finalize_answer(
@@ -2213,8 +1998,6 @@ async def _execute_existing_run(
             except Exception:
                 quality_score = None
 
-        # Write llm_calls in REPLAY_SCHEMA so replay_one(mode='deterministic') can read
-        # them back even when FakeLLM is used (FakeLLM doesn't fire on_llm_end callbacks).
         _run_dir = parquet_root / "experiments" / str(exp_id) / "runs" / str(run_id)
         try:
             _write_replay_parquet(_run_dir, list(final_state.get("llm_calls") or []))

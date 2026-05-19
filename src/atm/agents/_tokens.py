@@ -32,8 +32,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-# Per-message overhead constant (OpenAI cookbook convention).
-# ~3 per message + 3 per conversation + 1 per role change → aggregate 4.
 _PER_MESSAGE_OVERHEAD = 4
 
 
@@ -89,10 +87,8 @@ def estimate_prompt_tokens(messages: list[Any], model_id: str) -> int:
                 total += len(encoder.encode(content)) + _PER_MESSAGE_OVERHEAD
             return max(1, total)
         except KeyError:
-            # Unknown OpenAI model name — fall through to heuristic below.
             pass
 
-    # Heuristic fallback: len(all_text) // 4 + overhead per message
     all_text = "".join(_extract_content(m) for m in messages)
     total = len(all_text) // 4 + _PER_MESSAGE_OVERHEAD * len(messages)
     return max(1, total)

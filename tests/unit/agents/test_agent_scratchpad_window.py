@@ -67,8 +67,6 @@ async def _run_steps_accumulating(
         delta = await agent.step(state)
         agent_delta = delta["agents"][agent.agent_id]
         full_scratchpad += list(agent_delta.get("scratchpad") or [])
-        # Merge the delta, then overwrite scratchpad with the full append-only
-        # list so the next step's _build_prompt sees the accumulated context.
         existing_agents = state.get("agents") or {}
         merged = merge_agent_states(existing_agents, delta["agents"])
         merged[agent.agent_id]["scratchpad"] = list(full_scratchpad)
@@ -92,7 +90,6 @@ class TestScratchpadWindow:
         registry = ToolRegistry()
         agent = Agent(agent_id="p1", cfg=cfg, llm=llm, tools=registry)
 
-        # Run 5 steps, accumulating state
         state: dict[str, Any] = {
             "shared": {"task_input": "Test windowing."},
             "agents": {},
@@ -100,13 +97,11 @@ class TestScratchpadWindow:
             "llm_calls": [],
         }
 
-        # After 5 steps, scratchpad has 5 reasoning events (one per step, no tools)
         accumulated_scratchpad = await _run_steps_accumulating(agent, state, 5)
         assert len(accumulated_scratchpad) == 5, (
             f"Expected 5 scratchpad events after 5 steps, got {len(accumulated_scratchpad)}"
         )
 
-        # Build the prompt for the 6th step (without calling step())
         view = AgentView(
             agent_id="p1",
             self_state=state["agents"]["p1"],
@@ -117,8 +112,6 @@ class TestScratchpadWindow:
         )
         prompt_messages = agent._build_prompt(view)
 
-        # Extract scratchpad-derived messages from the prompt
-        # System + Task are the first 2 messages; then scratchpad events
         scratchpad_msgs = [
             m
             for m in prompt_messages
@@ -127,7 +120,6 @@ class TestScratchpadWindow:
             or m.content.startswith("[Observation")
         ]
 
-        # Only last 3 events should be in the prompt window
         assert len(scratchpad_msgs) == 3, (
             f"Expected 3 scratchpad events in prompt (window_size=3), got {len(scratchpad_msgs)}"
         )
@@ -140,7 +132,7 @@ class TestScratchpadWindow:
             system_prompt="You are a planner.",
             tools=[],
             max_tool_iters=0,
-            window_size=2,  # small window
+            window_size=2,
         )
         registry = ToolRegistry()
         agent = Agent(agent_id="p1", cfg=cfg, llm=llm, tools=registry)
@@ -152,7 +144,6 @@ class TestScratchpadWindow:
             "llm_calls": [],
         }
 
-        # Full scratchpad must have all 5 events (window_size=2 but scratchpad is append-only)
         full_scratchpad = await _run_steps_accumulating(agent, state, 5)
         assert len(full_scratchpad) == 5, (
             f"Original scratchpad must have all 5 events, got {len(full_scratchpad)}"
@@ -178,7 +169,6 @@ class TestScratchpadWindow:
             "llm_calls": [],
         }
 
-        # Build prompt with the final accumulated scratchpad
         full_scratchpad = await _run_steps_accumulating(agent, state, 5)
         view = AgentView(
             agent_id="p1",
@@ -191,13 +181,9 @@ class TestScratchpadWindow:
         prompt_messages = agent._build_prompt(view)
         prompt_text = " ".join(m.content for m in prompt_messages)
 
-        # The fixture entries have content: "R2: reasoning step two", etc.
-        # These appear in scratchpad events content field
-        # Last 3 events in the window: events[2], events[3], events[4] (R2, R3, R4)
         assert "R2:" in prompt_text, f"R2 should be in prompt window. Prompt: {prompt_text[:500]}"
         assert "R3:" in prompt_text, f"R3 should be in prompt window. Prompt: {prompt_text[:500]}"
         assert "R4:" in prompt_text, f"R4 should be in prompt window. Prompt: {prompt_text[:500]}"
 
-        # R0 and R1 should NOT be in the window
         assert "R0:" not in prompt_text, f"R0 should NOT be in window. Prompt: {prompt_text[:500]}"
         assert "R1:" not in prompt_text, f"R1 should NOT be in window. Prompt: {prompt_text[:500]}"

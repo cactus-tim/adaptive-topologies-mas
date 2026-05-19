@@ -1,4 +1,4 @@
-"""Tests for ToolRegistry.tools_for() and _load_policy() — tools policy (arch.md §5.3)."""
+"""Tests for ToolRegistry.tools_for() and _load_policy() — tools policy."""
 
 from __future__ import annotations
 
@@ -11,10 +11,6 @@ import yaml
 from atm.core.errors import ToolError
 from atm.core.types import ToolCall, ToolResult
 from atm.tools.base import ToolRegistry, ToolSchema
-
-# ---------------------------------------------------------------------------
-# Minimal stub tool for registration in tests
-# ---------------------------------------------------------------------------
 
 
 class _StubTool:
@@ -36,11 +32,6 @@ def _write_policy(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         yaml.safe_dump(data, f)
-
-
-# ---------------------------------------------------------------------------
-# (a) Happy path — tools_for returns global + per_role[role]
-# ---------------------------------------------------------------------------
 
 
 def test_tools_for_happy_path(tmp_path: Path) -> None:
@@ -78,11 +69,6 @@ def test_tools_for_critic_role(tmp_path: Path) -> None:
     assert result == ["calculator", "diff", "lint", "test_run"]
 
 
-# ---------------------------------------------------------------------------
-# (b) Missing tool name in policy → tools_for succeeds; ToolError raised by get()
-# ---------------------------------------------------------------------------
-
-
 def test_tools_for_missing_tool_name_not_validated(tmp_path: Path) -> None:
     """tools_for() should succeed even if the tool isn't registered."""
     policy_file = tmp_path / "tools_policy.yaml"
@@ -95,7 +81,6 @@ def test_tools_for_missing_tool_name_not_validated(tmp_path: Path) -> None:
     )
 
     reg = ToolRegistry(policy_path=policy_file)
-    # Should not raise
     names = reg.tools_for("Executor")
     assert "nonexistent_tool" in names
 
@@ -116,11 +101,6 @@ def test_tools_for_missing_tool_raises_on_get(tmp_path: Path) -> None:
         reg.get("nonexistent_tool")
 
 
-# ---------------------------------------------------------------------------
-# (c) ATM_TOOLS_POLICY_PATH env override works
-# ---------------------------------------------------------------------------
-
-
 def test_tools_for_env_var_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     policy_file = tmp_path / "env_policy.yaml"
     _write_policy(
@@ -133,15 +113,9 @@ def test_tools_for_env_var_override(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setenv("ATM_TOOLS_POLICY_PATH", str(policy_file))
 
-    # No policy_path arg — should pick up env var
     reg = ToolRegistry()
     result = reg.tools_for("Researcher")
     assert result == ["url_fetch", "semantic_search"]
-
-
-# ---------------------------------------------------------------------------
-# (d) ctor-arg policy_path takes precedence over env var
-# ---------------------------------------------------------------------------
 
 
 def test_tools_for_ctor_arg_beats_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,16 +141,10 @@ def test_tools_for_ctor_arg_beats_env_var(tmp_path: Path, monkeypatch: pytest.Mo
 
     reg = ToolRegistry(policy_path=ctor_policy)
     result = reg.tools_for("Planner")
-    # Should come from ctor_policy, not env_policy
     assert "calculator" in result
     assert "plan_update" in result
     assert "url_fetch" not in result
     assert "todo_write" not in result
-
-
-# ---------------------------------------------------------------------------
-# (e) Unknown role returns just global list
-# ---------------------------------------------------------------------------
 
 
 def test_tools_for_unknown_role_returns_global(tmp_path: Path) -> None:
@@ -194,11 +162,6 @@ def test_tools_for_unknown_role_returns_global(tmp_path: Path) -> None:
     assert result == ["calculator", "file_read"]
 
 
-# ---------------------------------------------------------------------------
-# (f) Missing YAML file → returns empty global + per_role
-# ---------------------------------------------------------------------------
-
-
 def test_tools_for_missing_yaml_returns_empty(tmp_path: Path) -> None:
     nonexistent = tmp_path / "does_not_exist.yaml"
     reg = ToolRegistry(policy_path=nonexistent)
@@ -211,11 +174,6 @@ def test_tools_for_missing_yaml_unknown_role_returns_empty(tmp_path: Path) -> No
     reg = ToolRegistry(policy_path=nonexistent)
     result = reg.tools_for("UnknownRole")
     assert result == []
-
-
-# ---------------------------------------------------------------------------
-# Existing behaviour — register/get/names/ainvoke_by_name still work
-# ---------------------------------------------------------------------------
 
 
 def test_existing_register_get_names_unaffected() -> None:
@@ -251,11 +209,6 @@ async def test_existing_ainvoke_by_name_works() -> None:
     assert result.ok is True
 
 
-# ---------------------------------------------------------------------------
-# Policy caching — _load_policy called once per instance
-# ---------------------------------------------------------------------------
-
-
 def test_policy_cached_after_first_call(tmp_path: Path) -> None:
     """tools_for() should cache the policy after first load."""
     policy_file = tmp_path / "tools_policy.yaml"
@@ -270,7 +223,6 @@ def test_policy_cached_after_first_call(tmp_path: Path) -> None:
     reg = ToolRegistry(policy_path=policy_file)
     first = reg.tools_for("Executor")
 
-    # Overwrite policy file — cached result should still return original
     _write_policy(
         policy_file,
         {
@@ -280,12 +232,7 @@ def test_policy_cached_after_first_call(tmp_path: Path) -> None:
     )
 
     second = reg.tools_for("Executor")
-    assert first == second  # cache hit, not re-read
-
-
-# ---------------------------------------------------------------------------
-# Empty-value policy fields
-# ---------------------------------------------------------------------------
+    assert first == second
 
 
 def test_tools_for_empty_global_and_role(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-# Per-role tools policy (arch.md §5.3).
+# Per-role tools policy.
 # Role keys MUST match `AgentRole` values in src/atm/core/types.py (lowercase).
 # Tools listed here MUST already be registered in `ToolRegistry` (see src/atm/tools/);
 # unknown names raise ToolError lazily at `tools_for(role)` -> get(name) call sites.

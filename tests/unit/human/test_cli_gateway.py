@@ -14,10 +14,6 @@ from atm.core.types import HumanContext, HumanResponse, HumanRole, Message, Mess
 from atm.human.cli_gateway import CLIGateway
 from atm.human.gateway import HumanGateway
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_ctx(
     *,
@@ -55,19 +51,9 @@ async def _call_gateway(
         return await gw.request(ctx, request_id=request_id)
 
 
-# ---------------------------------------------------------------------------
-# 1. Protocol conformance
-# ---------------------------------------------------------------------------
-
-
 def test_cli_gateway_satisfies_human_gateway_protocol() -> None:
     gw = CLIGateway()
     assert isinstance(gw, HumanGateway)
-
-
-# ---------------------------------------------------------------------------
-# 2. Happy-path — plain action (no comment)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -82,11 +68,6 @@ async def test_plain_action_no_comment() -> None:
     assert resp.timed_out is False
 
 
-# ---------------------------------------------------------------------------
-# 3. Happy-path — action with comment
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_action_with_comment() -> None:
     ctx = _make_ctx()
@@ -96,11 +77,6 @@ async def test_action_with_comment() -> None:
     assert resp.action == "reject"
     assert resp.comment == "looks wrong"
     assert resp.source == "human"
-
-
-# ---------------------------------------------------------------------------
-# 4. JSON input
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -128,18 +104,13 @@ async def test_json_input_action_only() -> None:
     assert resp.payload == {}
 
 
-# ---------------------------------------------------------------------------
-# 5. Invalid action → fallback to allowed_actions[0]
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_invalid_action_falls_back_to_first_allowed() -> None:
     ctx = _make_ctx(allowed_actions=("approve", "reject"))
     gw = CLIGateway()
     resp = await _call_gateway(gw, ctx, "req-005", "UNKNOWN_CMD")
 
-    assert resp.action == "approve"  # first allowed
+    assert resp.action == "approve"
     assert resp.comment is not None
     assert "UNKNOWN_CMD" in resp.comment
     assert resp.source == "human"
@@ -166,25 +137,18 @@ async def test_invalid_json_falls_back() -> None:
     assert resp.source == "human"
 
 
-# ---------------------------------------------------------------------------
-# 6. Idempotency — second call with same (run_id, request_id) returns cached
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_idempotency_same_request_id_cached() -> None:
     run_id = uuid.uuid4()
     ctx = _make_ctx(run_id=run_id)
     gw = CLIGateway()
 
-    # First call
     resp1 = await _call_gateway(gw, ctx, "req-idem", "approve")
     assert resp1.action == "approve"
 
-    # Second call with different input — should return the cached first response
     resp2 = await _call_gateway(gw, ctx, "req-idem", "reject")
-    assert resp2.action == "approve"  # still the first answer
-    assert resp1 is resp2  # exact same object from cache
+    assert resp2.action == "approve"
+    assert resp1 is resp2
 
 
 @pytest.mark.asyncio
@@ -199,11 +163,6 @@ async def test_different_request_ids_not_cached_together() -> None:
     assert resp1.action == "approve"
     assert resp2.action == "reject"
     assert resp1 is not resp2
-
-
-# ---------------------------------------------------------------------------
-# 7. source and timed_out fields
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -222,11 +181,6 @@ async def test_response_timed_out_is_false() -> None:
     assert resp.timed_out is False
 
 
-# ---------------------------------------------------------------------------
-# 8. With recent_messages (smoke-test render path doesn't crash)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_with_recent_messages() -> None:
     msgs = (_make_msg("first msg"), _make_msg("second msg"))
@@ -234,11 +188,6 @@ async def test_with_recent_messages() -> None:
     gw = CLIGateway()
     resp = await _call_gateway(gw, ctx, "req-msgs", "approve")
     assert resp.action == "approve"
-
-
-# ---------------------------------------------------------------------------
-# 9. asyncio.to_thread is called with input builtin and a prompt string
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -250,7 +199,6 @@ async def test_to_thread_receives_input_builtin() -> None:
         mock_thread.return_value = "approve"
         await gw.request(ctx, request_id="req-builtin")
 
-    # to_thread must have been called; first positional arg is `input`
     assert mock_thread.called
     call_args = mock_thread.call_args
     assert call_args is not None

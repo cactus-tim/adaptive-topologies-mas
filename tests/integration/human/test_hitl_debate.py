@@ -47,16 +47,8 @@ from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 from atm.topology.base import TopologyConfig
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 _PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -132,11 +124,6 @@ def _build_handler(
     )
 
 
-# ---------------------------------------------------------------------------
-# JudgeAgent — converts DRAFT outbox to DECISION (from test_debate_e2e.py)
-# ---------------------------------------------------------------------------
-
-
 class JudgeAgent(Agent):
     """Judge role: evaluates debate and emits DECISION messages."""
 
@@ -197,16 +184,10 @@ class JudgeAgent(Agent):
         return delta
 
 
-# ---------------------------------------------------------------------------
-# Agent factories
-# ---------------------------------------------------------------------------
-
-
 def _make_planner_agent() -> Agent:
     """Build planner agent with scripted FakeLLM fixture."""
     fixture_path = _FIXTURES_DIR / "m91_debate_planner.yaml"
     if not fixture_path.exists():
-        # Fallback to existing debate fixture if specific one not found
         fixture_path = _FIXTURES_DIR / "m7_debate_judge_decides.yaml"
     cfg = AgentConfig(
         role="planner",
@@ -258,8 +239,6 @@ def _make_debater_contra_agent() -> Debater:
 
 def _make_judge_agent() -> JudgeAgent:
     """Build judge agent with scripted FakeLLM fixture (LLM path not used in human mode)."""
-    # In human mode, the judge LLM is not called — the human gateway replaces it.
-    # We still need an agent registered under "judge" to satisfy topology agent lookup.
     fixture_path = _FIXTURES_DIR / "m91_debate_planner.yaml"
     if not fixture_path.exists():
         fixture_path = _FIXTURES_DIR / "m7_debate_judge_decides.yaml"
@@ -279,7 +258,6 @@ def _make_human_judge_gateway() -> LLMSimulatedGateway:
     """Build LLMSimulatedGateway that returns 'approve' for judge mode."""
     fixture_path = _FIXTURES_DIR / "m91_debate_human_judge_approve.yaml"
     if not fixture_path.exists():
-        # Fallback to generic approve fixture
         fixture_path = _FIXTURES_DIR / "m9_human_reviewer_approve.yaml"
     llm_wrapper = _make_llm_wrapper(fixture_path.name)
     return LLMSimulatedGateway(llm=llm_wrapper)
@@ -314,11 +292,6 @@ def _make_initial_state(run_id: uuid.UUID) -> dict[str, Any]:
         "budget_events": [],
         "topology_transitions": [],
     }
-
-
-# ---------------------------------------------------------------------------
-# Integration test: Debate HITL "human" mode
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -360,7 +333,6 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
 
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
 
-        # Build topology cfg with human mode
         topology_cfg = TopologyConfig(
             name="debate",
             max_iterations=12,
@@ -379,7 +351,6 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
             extra={"judge": "human"},
         )
 
-        # Build agents
         agents = {
             "planner": _make_planner_agent(),
             "debater_pro": _make_debater_pro_agent(),
@@ -387,10 +358,8 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
             "judge": _make_judge_agent(),
         }
 
-        # Build gateway (pre-built to use our scripted fixture)
         gateway = _make_human_judge_gateway()
 
-        # Build compiled graph
         topology = DebateTopology()
         compiled_graph = topology.build(
             agents,
@@ -399,7 +368,6 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
             gateway=gateway,
         )
 
-        # Run with callback handler
         initial_state = _make_initial_state(run_id)
         final_state = await compiled_graph.ainvoke(
             initial_state,
@@ -411,10 +379,8 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
             },
         )
 
-        # Allow async background operations to complete
         await asyncio.sleep(0.15)
 
-        # Close parquet writer to flush
         import contextlib
 
         async with contextlib.AsyncExitStack() as _stack:
@@ -422,10 +388,8 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
         with contextlib.suppress(Exception):
             await handler._parquet_writer.close()
 
-        # ── Assertion 1: Graph completed ─────────────────────────────────────
         assert final_state is not None, "Graph should complete without exception"
 
-        # ── Assertion 2: human_interactions count >= 1 ───────────────────────
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -440,7 +404,6 @@ async def test_debate_hitl_human_mode_completes_and_writes_interaction(
             "The human_judge node must have dispatched human_request events."
         )
 
-        # ── Assertion 3: runs.human_role == 'judge' ──────────────────────────
         async with session_scope(factory) as session:
             run_result = await session.execute(select(Run).where(Run.id == run_id))
             run_row = run_result.scalar_one_or_none()

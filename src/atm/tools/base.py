@@ -121,17 +121,13 @@ class ToolRegistry:
     async def ainvoke_by_name(self, name: str, call: ToolCall) -> ToolResult:
         """Invoke a registered tool by name, wrapping any exception in ToolResult.
 
-        Measures wall-clock latency via ``time.monotonic``.
-
-        If the tool raises, the exception is caught, and a ``ToolResult`` with
-        ``ok=False`` and ``error`` containing the traceback is returned.
+        Measures wall-clock latency via ``time.monotonic``. On tool exception,
+        returns a ``ToolResult`` with ``ok=False`` and the traceback in ``error``.
 
         Parameters
         ----------
-        name:
-            Name of the tool to invoke.
-        call:
-            The ``ToolCall`` whose ``args`` are forwarded to ``ainvoke``.
+        name: Name of the tool to invoke.
+        call: The ``ToolCall`` whose ``args`` are forwarded to ``ainvoke``.
 
         Returns
         -------
@@ -145,7 +141,6 @@ class ToolRegistry:
         try:
             result = await tool.ainvoke(call.args)
             elapsed_ms = int((time.monotonic() - t0) * 1000)
-            # Return a new ToolResult with accurate latency from registry perspective
             return ToolResult(
                 call_id=call_id,
                 ok=result.ok,

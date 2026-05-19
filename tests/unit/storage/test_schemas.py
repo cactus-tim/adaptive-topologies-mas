@@ -10,10 +10,6 @@ from __future__ import annotations
 
 import pyarrow as pa
 
-# ---------------------------------------------------------------------------
-# 1. Import test
-# ---------------------------------------------------------------------------
-
 
 def test_import_all_schemas() -> None:
     """All 6 schemas and _TS_UTC alias must be importable."""
@@ -26,11 +22,6 @@ def test_import_all_schemas() -> None:
         TOOL_CALL_SCHEMA,
         TOPOLOGY_TRANSITION_SCHEMA,
     )
-
-
-# ---------------------------------------------------------------------------
-# 2. UTC timezone on timestamp columns
-# ---------------------------------------------------------------------------
 
 
 def test_llm_call_schema_at_tz_utc() -> None:
@@ -86,11 +77,6 @@ def test_scratchpad_schema_at_tz_utc() -> None:
     field = SCRATCHPAD_SCHEMA.field("at")
     assert pa.types.is_timestamp(field.type)
     assert field.type.tz == "UTC"
-
-
-# ---------------------------------------------------------------------------
-# 3. Field names spot-check
-# ---------------------------------------------------------------------------
 
 
 def test_schemas_field_names_match_expected() -> None:
@@ -184,22 +170,12 @@ def test_schemas_field_names_match_expected() -> None:
     }, f"SCRATCHPAD_SCHEMA field names mismatch: {scratch_names}"
 
 
-# ---------------------------------------------------------------------------
-# 4. _TS_UTC alias is correct type
-# ---------------------------------------------------------------------------
-
-
 def test_ts_utc_alias_type() -> None:
     """_TS_UTC must equal pa.timestamp('us', tz='UTC')."""
     from atm.storage.schemas import _TS_UTC
 
     expected = pa.timestamp("us", tz="UTC")
     assert expected == _TS_UTC
-
-
-# ---------------------------------------------------------------------------
-# 5. Schema field types spot check
-# ---------------------------------------------------------------------------
 
 
 def test_llm_call_schema_numeric_types() -> None:

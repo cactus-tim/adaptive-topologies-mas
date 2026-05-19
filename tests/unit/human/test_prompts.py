@@ -8,10 +8,6 @@ import pytest
 
 from atm.core.types import HumanContext, HumanRole, Message, MessageKind
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_ctx(
     role: HumanRole,
@@ -34,11 +30,6 @@ def _make_ctx(
 ALL_ROLES = list(HumanRole)
 
 
-# ---------------------------------------------------------------------------
-# 1. build_role_prompt returns (str, str) for each of the 5 roles
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("role", ALL_ROLES)
 def test_build_role_prompt_returns_two_strings(role: HumanRole) -> None:
     from atm.human.prompts import build_role_prompt
@@ -54,27 +45,16 @@ def test_build_role_prompt_returns_two_strings(role: HumanRole) -> None:
     assert len(user_prompt) > 0, "user_prompt must not be empty"
 
 
-# ---------------------------------------------------------------------------
-# 2. System prompt mentions the role name (case-insensitive sanity check)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("role", ALL_ROLES)
 def test_system_prompt_mentions_role(role: HumanRole) -> None:
     from atm.human.prompts import build_role_prompt
 
     ctx = _make_ctx(role)
     system_prompt, _ = build_role_prompt(role, ctx)
-    # role.value is e.g. "coordinator", "reviewer", etc.
     assert role.value.lower() in system_prompt.lower(), (
         f"System prompt for role '{role.value}' must mention the role name; "
         f"got: {system_prompt[:120]!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# 3. User prompt embeds ctx.question
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("role", ALL_ROLES)
@@ -90,11 +70,6 @@ def test_user_prompt_embeds_question(role: HumanRole) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# 4. User prompt lists allowed_actions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("role", ALL_ROLES)
 def test_user_prompt_lists_allowed_actions(role: HumanRole) -> None:
     from atm.human.prompts import build_role_prompt
@@ -105,11 +80,6 @@ def test_user_prompt_lists_allowed_actions(role: HumanRole) -> None:
         assert action in user_prompt, (
             f"User prompt must list allowed action '{action}'; user_prompt={user_prompt[:200]!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# 5. Different roles produce different system prompts
-# ---------------------------------------------------------------------------
 
 
 def test_different_roles_have_different_system_prompts() -> None:

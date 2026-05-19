@@ -39,10 +39,6 @@ from atm.experiment.config import HumanCfg
 from atm.topology.adaptive import AdaptiveTopology, apply_transition_gate
 from atm.topology.base import TopologyConfig
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_human_cfg(
     *,
@@ -132,11 +128,6 @@ def _make_abstain_response() -> HumanResponse:
     )
 
 
-# ---------------------------------------------------------------------------
-# Group 0 — Literal widening (task 2.13 acceptance in test)
-# ---------------------------------------------------------------------------
-
-
 class TestLiteralWidening:
     """TopologyDecision and TopologyTransition accept decided_by='human_override'."""
 
@@ -175,11 +166,6 @@ class TestLiteralWidening:
                 decided_by=val,  # type: ignore[arg-type]
             )
             assert dec.decided_by == val
-
-
-# ---------------------------------------------------------------------------
-# Group 1 — Back-compat: without HITL graph is identical to M8
-# ---------------------------------------------------------------------------
 
 
 class TestBackCompat:
@@ -236,11 +222,6 @@ class TestBackCompat:
 
         edge_calls = [call.args for call in mock_graph.add_edge.call_args_list]
         assert ("topology_router_node", "dispatch_topology_node") in edge_calls
-
-
-# ---------------------------------------------------------------------------
-# Group 2 — Graph structure with HITL enabled
-# ---------------------------------------------------------------------------
 
 
 class TestGraphStructureWithHITL:
@@ -301,7 +282,6 @@ class TestGraphStructureWithHITL:
         edge_calls = [call.args for call in mock_graph.add_edge.call_args_list]
         assert ("topology_router_node", "human_advisor_node") in edge_calls
         assert ("human_advisor_node", "dispatch_topology_node") in edge_calls
-        # Direct router→dispatch edge should NOT exist
         assert ("topology_router_node", "dispatch_topology_node") not in edge_calls
 
     def test_no_llm_wrapper_disables_hitl(self) -> None:
@@ -321,16 +301,10 @@ class TestGraphStructureWithHITL:
             patch("atm.topology.adaptive.StateGraph", return_value=mock_graph),
             patch("atm.topology.adaptive._LLMSimulatedGateway", mock_gw_cls),
         ):
-            # no human_gateway_llm kwarg → falls back silently
             AdaptiveTopology().build(agents, cfg, human_cfg=human_cfg)
 
         node_names = [call.args[0] for call in mock_graph.add_node.call_args_list]
         assert "human_advisor_node" not in node_names
-
-
-# ---------------------------------------------------------------------------
-# Group 3 — human_advisor_node advisory mode
-# ---------------------------------------------------------------------------
 
 
 class _FakeAdaptiveWithAdvisor:
@@ -419,15 +393,8 @@ class TestAdvisoryMode:
             patch("atm.topology.adaptive._gateway", fake_gw, create=True),
             patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch),
         ):
-            # We need to patch the node's closure _gateway
-            # Since we can't easily patch closure vars, test via the full pipeline
-            # The node is already bound — we test it by calling it with a patched gateway
             pass
 
-        # Alternative: test advisory mode by verifying the node writes hint
-        # We do this through a direct invocation with the closed-over _gateway mocked
-        # The factory helper already sets self._gateway as an AsyncMock
-        # We just need to configure its return value and invoke the node
         helper = _FakeAdaptiveWithAdvisor(human_can_override=False)
         helper._gateway.request = AsyncMock(return_value=fake_response)
         node = helper._build_and_extract_node()
@@ -465,15 +432,8 @@ class TestAdvisoryMode:
             delta = asyncio.run(node(state))
 
         signals = delta.get("shared", {}).get("signals", {})
-        # abstain with empty comment → no hint added
         assert "human_advisor_hint" not in signals or not signals["human_advisor_hint"]
-        # Existing signal preserved
         assert signals.get("existing_signal") is True
-
-
-# ---------------------------------------------------------------------------
-# Group 4 — Override mode (guards allow)
-# ---------------------------------------------------------------------------
 
 
 class TestOverrideModeGuardsAllow:
@@ -501,7 +461,6 @@ class TestOverrideModeGuardsAllow:
         assert "human_advisor_hint" in signals
         assert "override_applied" in signals["human_advisor_hint"]
 
-        # human_request and human_response events should have been dispatched
         assert "human_request" in dispatched
         assert "human_response" in dispatched
 
@@ -524,16 +483,12 @@ class TestOverrideModeGuardsAllow:
             delta = asyncio.run(node(state))
 
         signals = delta.get("shared", {}).get("signals", {})
-        # Hint should mention the invalid topology
         assert "human_advisor_hint" in signals
         hint = signals["human_advisor_hint"]
         assert "invalid_topology" in hint or "nonexistent_topology_xyz" in hint
 
     def test_override_mode_decided_by_is_human_override(self) -> None:
         """After successful override, TopologyDecision.decided_by='human_override'."""
-        # We test this via apply_transition_gate: if we manually set _topo_dec_slot[0]
-        # to a human_override decision, transition_gate_node will produce a
-        # TopologyTransition with decided_by='human_override'.
         dec = TopologyDecision(
             topology="mesh",
             reason="human_override: switch to mesh",
@@ -561,7 +516,6 @@ class TestOverrideModeGuardsAllow:
         """Advisory mode: even with action='switch_topology', slot is NOT replaced
         unless human_can_override_router=True."""
         helper = _FakeAdaptiveWithAdvisor(human_can_override=False, use_guards=False)
-        # Send switch_topology action in advisory mode
         helper._gateway.request = AsyncMock(return_value=_make_switch_response("mesh"))
         node = helper._build_and_extract_node()
         if node is None:
@@ -575,18 +529,11 @@ class TestOverrideModeGuardsAllow:
         with patch("atm.topology.adaptive.adispatch_custom_event", side_effect=fake_dispatch):
             delta = asyncio.run(node(state))
 
-        # In advisory mode, switch_topology treated as advisory — hint written but
-        # no mention of "override_applied" (that's an override mode hint)
         signals = delta.get("shared", {}).get("signals", {})
         hint = signals.get("human_advisor_hint", "")
         assert "override_applied" not in hint, (
             f"Advisory mode should not write 'override_applied' hint; got {hint!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Group 5 — Dispatch events emitted correctly
-# ---------------------------------------------------------------------------
 
 
 class TestDispatchEvents:
@@ -639,12 +586,7 @@ class TestDispatchEvents:
 
         assert "request_id" in captured
         assert "adaptive" in captured["request_id"]
-        assert "5" in captured["request_id"]  # iter_total=5
-
-
-# ---------------------------------------------------------------------------
-# Group 6 — Override mode with guards that BLOCK the override (Fix #2 test)
-# ---------------------------------------------------------------------------
+        assert "5" in captured["request_id"]
 
 
 class TestOverrideModeGuardsBlock:
@@ -667,7 +609,6 @@ class TestOverrideModeGuardsBlock:
           - hint contains 'override_blocked_by_guards'
           - considered_alternatives contains 'mesh' (the proposed topology)
         """
-        # Build with switch_guards=True (min_dwell_iters defaults to 2)
         mock_agent = MagicMock()
         mock_agent.step = AsyncMock(return_value={})
         agents = {"planner": mock_agent}
@@ -711,7 +652,6 @@ class TestOverrideModeGuardsBlock:
         if node is None:
             pytest.skip("Could not extract human_advisor_node")
 
-        # State: iter_total=0, topology_started_at_iter=0 → dwell=0 < min_dwell=2
         state = _make_state(
             run_id=uuid.uuid4(),
             active_topology="linear",
@@ -729,7 +669,6 @@ class TestOverrideModeGuardsBlock:
         signals = delta.get("shared", {}).get("signals", {})
         hint = signals.get("human_advisor_hint", "")
 
-        # Override must be blocked
         assert "override_blocked_by_guards" in hint, (
             f"Expected 'override_blocked_by_guards' in hint when min_dwell violated; got {hint!r}"
         )
@@ -753,8 +692,6 @@ class TestOverrideModeGuardsBlock:
 
         captured_nodes: dict[str, Any] = {}
 
-        # We verify guard-blocking by inspecting the delta signal hint
-        # (the slot is closure-internal but the hint reflects the guard outcome)
         mock_graph = MagicMock()
         mock_graph.compile.return_value = MagicMock()
 
@@ -783,7 +720,6 @@ class TestOverrideModeGuardsBlock:
         if node is None:
             pytest.skip("Could not extract human_advisor_node")
 
-        # State: dwell = iter_total - topology_started_at_iter = 1 - 0 = 1 < min_dwell=5
         state = _make_state(
             run_id=uuid.uuid4(),
             active_topology="linear",
@@ -801,10 +737,7 @@ class TestOverrideModeGuardsBlock:
         signals = delta.get("shared", {}).get("signals", {})
         hint = signals.get("human_advisor_hint", "")
 
-        # The override must be blocked and hint must reflect it
         assert "override_blocked_by_guards" in hint, f"Expected guard block hint; got {hint!r}"
-        # 'mesh' (the proposed topology) should be in considered_alternatives
-        # We verify by checking the hint mentions the blocked topology
         assert "mesh" in hint
 
     def test_guards_allow_override_when_no_violations(self) -> None:
@@ -863,7 +796,6 @@ class TestOverrideModeGuardsBlock:
         if node is None:
             pytest.skip("Could not extract human_advisor_node")
 
-        # Dwell = iter_total - topology_started_at_iter = 10 - 0 = 10 >= min_dwell=2
         state = _make_state(
             run_id=uuid.uuid4(),
             active_topology="linear",
@@ -883,15 +815,9 @@ class TestOverrideModeGuardsBlock:
         signals = delta.get("shared", {}).get("signals", {})
         hint = signals.get("human_advisor_hint", "")
 
-        # Override must be accepted when no guards fire
         assert "override_applied" in hint, (
             f"Expected 'override_applied' when guards allow; got {hint!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Group 7 — role_router integration (M9.2)
-# ---------------------------------------------------------------------------
 
 
 class _FakeAdaptiveWithRoleRouter:
@@ -1026,16 +952,13 @@ class TestAdaptiveRoleRouter:
         """RuleBasedRoleRouter returns different roles per phase (planning→COORDINATOR, etc.)."""
         from atm.human.role_router import RuleBasedRoleRouter
 
-        # Use default role table: planning→coordinator, execution→peer, etc.
         router = RuleBasedRoleRouter()
 
-        # We'll invoke the node twice: once with phase=planning, once with phase=execution.
-        # Re-build for each phase to start fresh (closure state is independent per build).
         captured_roles_by_phase: dict[str, Any] = {}
 
         for phase_str in ("planning", "execution"):
             helper = _FakeAdaptiveWithRoleRouter(
-                human_cfg_role=HumanRole.REVIEWER,  # static fallback, should be overridden
+                human_cfg_role=HumanRole.REVIEWER,
                 role_router=router,
             )
 
@@ -1053,7 +976,6 @@ class TestAdaptiveRoleRouter:
                 pytest.skip("Could not extract human_advisor_node")
 
             state = _make_state(run_id=uuid.uuid4(), iter_total=0)
-            # Override phase in shared state
             state["shared"]["phase"] = phase_str
 
             async def fake_dispatch(name: str, data: Any) -> None:
@@ -1065,7 +987,6 @@ class TestAdaptiveRoleRouter:
             if captured:
                 captured_roles_by_phase[phase_str] = captured[0]
 
-        # planning → coordinator, execution → peer (per DEFAULT_ROLE_TABLE)
         assert "planning" in captured_roles_by_phase, "No role captured for planning phase"
         assert "execution" in captured_roles_by_phase, "No role captured for execution phase"
 

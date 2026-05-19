@@ -42,10 +42,6 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
-# ---------------------------------------------------------------------------
-# Module-level gate (also enforced by the ephemeral_pg_dsn fixture)
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 
 pytestmark = [
@@ -53,17 +49,11 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-# Path to the grid mini YAML fixture (topology sweep 2x1x2 = 4 cells).
 _FIXTURE_YAML = (
     Path(__file__).parent.parent.parent / "fixtures" / "experiment" / "grid_runner_mini.yaml"
 )
 
 _FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
-
-
-# ---------------------------------------------------------------------------
-# Helper: write a temporary YAML for the subprocess
-# ---------------------------------------------------------------------------
 
 
 def _write_grid_yaml(
@@ -139,11 +129,6 @@ def _write_grid_yaml(
     return cfg_path
 
 
-# ---------------------------------------------------------------------------
-# Main test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_reconcile_zombie_on_grid_start(
     ephemeral_pg_dsn: str,
@@ -166,8 +151,6 @@ async def test_reconcile_zombie_on_grid_start(
     parquet_dir = tmp_path / "parquet"
     parquet_dir.mkdir(exist_ok=True)
 
-    # ── Step 1a: load the config the same way ``atm grid`` will ─────────────
-    # We load a single-cell version (no sweep) for speed and predictability.
     cfg_path = _write_grid_yaml(
         tmp_path,
         pg_dsn=ephemeral_pg_dsn,
@@ -179,21 +162,14 @@ async def test_reconcile_zombie_on_grid_start(
     assert len(configs) >= 1, "Expected at least one config cell"
     cfg = configs[0]
 
-    # ── Step 1b: build engine + session factory ──────────────────────────────
     engine = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     session_factory = create_session_factory(engine)
 
-    # ── Step 1c: create the experiment row via ORM helper ────────────────────
     exp_id = await _ensure_experiment(session_factory, cfg)
 
-    # ── Step 1d: create a run row via ORM helper (status='running', host, pid) ─
     zombie_run_id = await _insert_run(session_factory, exp_id, cfg)
 
-    # ── Step 1e: UPDATE the row to be a zombie (dead PID, same host) ─────────
-    # Use os.getpid() + 999999 as a virtually guaranteed dead PID.
-    # The PID wraps at the OS limit (usually 2^22 on Linux) so we clamp it.
     dead_pid = (os.getpid() + 999999) % 4_194_304
-    # Avoid accidentally picking our own pid (vanishingly unlikely but safe).
     if dead_pid == os.getpid():
         dead_pid = (dead_pid + 1) % 4_194_304
 
@@ -210,7 +186,6 @@ async def test_reconcile_zombie_on_grid_start(
 
     await engine.dispose()
 
-    # ── Step 2: run ``atm grid`` subprocess (reconcile ON by default) ────────
     env = os.environ.copy()
     env["ATM_PG_DSN"] = ephemeral_pg_dsn
     env["ATM_PARQUET_DIR"] = str(parquet_dir)
@@ -235,15 +210,11 @@ async def test_reconcile_zombie_on_grid_start(
         timeout=180,
     )
 
-    # Diagnostics on failure (exit 0 = all completed, 1 = partial — both are acceptable
-    # since the seed-zombie run is intentionally marked failed by reconcile).
     assert result.returncode in (0, 1), result.stderr
 
-    # ── Step 3: verify the zombie row was reconciled ─────────────────────────
     engine2 = create_engine(ephemeral_pg_dsn, echo=False, pool_size=2, max_overflow=1)
     try:
         async with engine2.connect() as conn:
-            # The zombie row must now be failed with finish_reason='zombie'.
             zombie_row = (
                 await conn.execute(
                     sa.text("SELECT status, finish_reason FROM runs WHERE id = :rid").bindparams(
@@ -263,9 +234,6 @@ async def test_reconcile_zombie_on_grid_start(
                 f"got '{zombie_row.finish_reason}'"
             )
 
-            # ── Step 4: verify new grid runs were created ────────────────────
-            # The grid should have created at least 1 new completed run row for
-            # the experiment (beyond the seeded zombie).
             run_rows = (
                 await conn.execute(
                     sa.text(

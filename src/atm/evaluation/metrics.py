@@ -1,23 +1,4 @@
-"""Pure metric functions for RQ1-RQ4.
-
-All functions are stateless and side-effect-free.
-
-Quality metrics (RQ1):
-    aggregate_quality      — arithmetic mean of per-run quality scores
-    humaneval_pass_at_k    — unbiased pass@k estimator (Chen et al. 2021)
-
-Efficiency metrics (RQ2):
-    cost_per_quality       — cost / max(quality, eps)
-    time_per_quality       — latency / max(quality, eps)
-
-Human-load metric (RQ4):
-    aggregate_human_load   — mean NASA-TLX raw_score across a list of ratings
-                             (delegates to atm.evaluation.tlx.aggregate_tlx)
-
-Reference:
-    Chen et al. 2021, "Evaluating Large Language Models Trained on Code"
-    arXiv:2107.03374 — Appendix A, unbiased estimator of pass@k.
-"""
+"""Pure metric functions for RQ1-RQ4 (stateless, side-effect-free)."""
 
 from __future__ import annotations
 
@@ -36,20 +17,11 @@ from atm.storage.models import HumanInteraction
 
 _EPS: float = 1e-6
 
-# ---------------------------------------------------------------------------
-# Cognitive load proxy — weights file (M9.2)
-# ---------------------------------------------------------------------------
-
 WEIGHTS_PATH = Path("conf/evaluation/cognitive_load.yaml")
 
 DEFAULT_WEIGHTS: dict[str, float] = {"alpha": 1.0, "beta": 0.001, "gamma": 0.1}
 
 _log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Quality
-# ---------------------------------------------------------------------------
 
 
 def aggregate_quality(scores: list[float]) -> float:
@@ -85,14 +57,7 @@ def humaneval_pass_at_k(n: int, c: int, k: int) -> float:
         return 0.0
     if n - c < k:
         return 1.0
-    # Unbiased estimator: iterate c times, each factor is (1 - k/(n-i))
-    # Equivalent to 1 - C(n-c, k) / C(n, k) but numerically stable for large n.
     return 1.0 - math.prod(1.0 - k / (n - i) for i in range(c))
-
-
-# ---------------------------------------------------------------------------
-# Efficiency
-# ---------------------------------------------------------------------------
 
 
 def cost_per_quality(cost: float, quality: float) -> float:
@@ -121,11 +86,6 @@ def time_per_quality(time_s: float, quality: float) -> float:
     return time_s / max(quality, _EPS)
 
 
-# ---------------------------------------------------------------------------
-# Human load
-# ---------------------------------------------------------------------------
-
-
 def aggregate_human_load(tlx_list: list[NasaTLX]) -> float:
     """Return the mean NASA-TLX raw_score across *tlx_list*.
 
@@ -136,11 +96,6 @@ def aggregate_human_load(tlx_list: list[NasaTLX]) -> float:
     if not tlx_list:
         return 0.0
     return aggregate_tlx(tlx_list)
-
-
-# ---------------------------------------------------------------------------
-# Cognitive load proxy — internal helper (M9.2)
-# ---------------------------------------------------------------------------
 
 
 def _load_weights(path: Path = WEIGHTS_PATH) -> dict[str, float]:
@@ -162,11 +117,6 @@ def _load_weights(path: Path = WEIGHTS_PATH) -> dict[str, float]:
             exc,
         )
         return dict(DEFAULT_WEIGHTS)
-
-
-# ---------------------------------------------------------------------------
-# Cognitive load proxy — public metric (M9.2 RQ4)
-# ---------------------------------------------------------------------------
 
 
 async def human_sim_cognitive_load_proxy(

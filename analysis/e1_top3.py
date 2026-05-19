@@ -51,9 +51,6 @@ async def _run(exp_id: str, top_n: int, out_path: Path) -> int:
         sys.stderr.write("No completed runs.\n")
         return 4
 
-    # task_id is stored as ``cfg.task.name`` (e.g. "humaneval", "dabench") —
-    # task_type from _infer_task_type returns "unknown" because the prefix
-    # map expects "humaneval/<id>". Group by task_id directly.
     matrix = (
         completed.groupby(["task_id", "topology"], as_index=False)
         .agg(avg_quality=("quality_score", "mean"), n=("quality_score", "size"))
@@ -78,9 +75,7 @@ async def _run(exp_id: str, top_n: int, out_path: Path) -> int:
 
     print(f"Top-{top_n} per task_type:")
     for task, entries in top_per_task.items():
-        winners = ", ".join(
-            f"{e['topology']} ({e['avg_quality']:.3f})" for e in entries
-        )
+        winners = ", ".join(f"{e['topology']} ({e['avg_quality']:.3f})" for e in entries)
         print(f"  {task}: {winners}")
 
     artifact = {

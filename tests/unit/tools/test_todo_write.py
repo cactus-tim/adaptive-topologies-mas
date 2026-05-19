@@ -50,7 +50,6 @@ async def test_todo_write_invalid_todo_missing_required_field() -> None:
     from atm.tools.local_.todo_write import TodoWriteTool
 
     tool = TodoWriteTool()
-    # Missing 'id' field
     result = await tool.ainvoke({"todos": [{"content": "no id here", "status": "open"}]})
     assert result.ok is False
 

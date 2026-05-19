@@ -18,10 +18,6 @@ import pytest
 
 from atm.evaluation.tlx import persist_tlx
 
-# ---------------------------------------------------------------------------
-# 1. persist_tlx executes a SQL UPDATE statement
-# ---------------------------------------------------------------------------
-
 
 @pytest.mark.asyncio
 async def test_persist_tlx_executes_update() -> None:
@@ -36,11 +32,6 @@ async def test_persist_tlx_executes_update() -> None:
     assert stmt is not None
 
 
-# ---------------------------------------------------------------------------
-# 2. persist_tlx commits after executing
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_persist_tlx_commits_after_execute() -> None:
     """persist_tlx awaits session.commit() after session.execute()."""
@@ -50,19 +41,12 @@ async def test_persist_tlx_commits_after_execute() -> None:
     await persist_tlx(mock_session, interaction_id, raw_score=42.5)
 
     mock_session.commit.assert_called_once()
-    # Verify both execute and commit were called exactly once
     assert mock_session.execute.call_count == 1
     assert mock_session.commit.call_count == 1
-    # Verify call order: execute appears before commit in mock_calls
     call_names = [c[0] for c in mock_session.mock_calls]
     assert "execute" in call_names
     assert "commit" in call_names
     assert call_names.index("execute") < call_names.index("commit")
-
-
-# ---------------------------------------------------------------------------
-# 3. Idempotency: two calls are independent; each issues its own UPDATE
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -78,11 +62,6 @@ async def test_persist_tlx_idempotent_two_calls() -> None:
     assert mock_session.commit.call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# 4. UPDATE statement targets correct table and binds correct values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_persist_tlx_statement_shape() -> None:
     """The compiled SQL UPDATE targets human_interactions with raw_tlx_score."""
@@ -95,7 +74,6 @@ async def test_persist_tlx_statement_shape() -> None:
     await persist_tlx(mock_session, interaction_id, raw_score=raw_score)
 
     stmt = mock_session.execute.call_args[0][0]
-    # Compile to string to inspect table/column targeting
     compiled = stmt.compile(dialect=sqlite_dialect.dialect())
     sql_str = str(compiled).lower()
     assert "human_interactions" in sql_str

@@ -50,7 +50,6 @@ async def test_plan_update_invalid_step_missing_required_field() -> None:
     from atm.tools.local_.plan_update import PlanUpdateTool
 
     tool = PlanUpdateTool()
-    # Missing 'id' field
     result = await tool.ainvoke({"plan": [{"title": "no id", "status": "open"}]})
     assert result.ok is False
 

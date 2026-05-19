@@ -85,19 +85,11 @@ from atm.storage.models import Base, Experiment, HumanInteraction, Run
 from atm.storage.parquet_writer import ParquetWriter
 from atm.storage.session import create_engine, create_session_factory, session_scope
 
-# ---------------------------------------------------------------------------
-# Environment / PG availability
-# ---------------------------------------------------------------------------
-
 _PG_ENABLED = os.environ.get("ATM_ENABLE_PG_TESTS", "") in ("1", "true", "yes")
 _DEFAULT_DSN = "postgresql+asyncpg://atm:atm@localhost:5432/atm_test"
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "llm"
 PRICING_PATH = Path(__file__).parent.parent.parent.parent / "conf" / "pricing.yaml"
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_pricing() -> Pricing:
@@ -184,18 +176,6 @@ def _build_handler(
     )
 
 
-# ---------------------------------------------------------------------------
-# Scenario A — Reviewer end-to-end via direct callback dispatch (PG required)
-# ---------------------------------------------------------------------------
-#
-# This test verifies the full callback -> PG write path by dispatching
-# human_request and human_response events with the payload format that
-# _handle_human_request and _handle_human_response actually expect.
-#
-# It uses RunnableLambda + adispatch_custom_event (same pattern as
-# test_smoke_run.py) to provide a proper LangChain callback context.
-
-
 @pytest.mark.integration
 async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_path: Path) -> None:
     """Scenario A: human_request + human_response events write exactly 1 row in PG.
@@ -226,7 +206,6 @@ async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_p
 
         ctx = _make_context(run_id)
 
-        # Build the response that the gateway would return
         llm_response = HumanResponse(
             action="approve",
             comment="LGTM",
@@ -235,9 +214,7 @@ async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_p
             timed_out=False,
         )
 
-        # Dispatch both events inside a RunnableLambda to get a proper callback context
         async def _dispatch_hitl_events(inputs: dict[str, Any]) -> dict[str, Any]:
-            # Dispatch human_request with the format _handle_human_request expects
             await adispatch_custom_event(
                 "human_request",
                 {
@@ -248,7 +225,6 @@ async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_p
                     "requested_at": datetime.now(UTC),
                 },
             )
-            # Dispatch human_response with the format _handle_human_response expects
             await adispatch_custom_event(
                 "human_response",
                 {
@@ -275,10 +251,8 @@ async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_p
             },
         )
 
-        # Allow async background operations to complete
         await asyncio.sleep(0.1)
 
-        # Assert: exactly 1 row in human_interactions for this run_id
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -291,7 +265,6 @@ async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_p
             f"Expected exactly 1 row in human_interactions for run_id={run_id}, got {count}"
         )
 
-        # Assert: response_json contains source='llm_sim'
         async with session_scope(factory) as session:
             row_result = await session.execute(
                 select(HumanInteraction).where(
@@ -314,17 +287,6 @@ async def test_reviewer_e2e_callback_writes_one_row(ephemeral_pg_dsn: str, tmp_p
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Scenario A2 — Chain node dispatch format (FINDING-1 fixed verification)
-# ---------------------------------------------------------------------------
-#
-# After fixing F1/F2, the chain node now dispatches human_request with the
-# canonical payload shape that _handle_human_request expects:
-#   {"run_id": ..., "request_id": ..., "role": ..., "context_json": ..., "requested_at": ...}
-#
-# This test verifies that the FIXED chain dispatch format DOES write a PG row.
 
 
 @pytest.mark.integration
@@ -360,7 +322,6 @@ async def test_chain_node_dispatch_format_writes_row_after_f1_fix(
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
         ctx = _make_context(run_id)
 
-        # Dispatch using the FIXED canonical chain node format
         async def _dispatch_fixed_chain_format(inputs: dict[str, Any]) -> dict[str, Any]:
             await adispatch_custom_event(
                 "human_request",
@@ -387,7 +348,6 @@ async def test_chain_node_dispatch_format_writes_row_after_f1_fix(
         )
         await asyncio.sleep(0.1)
 
-        # After F1 fix: exactly 1 row should be written
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -401,7 +361,6 @@ async def test_chain_node_dispatch_format_writes_row_after_f1_fix(
             "The canonical payload shape must match _handle_human_request's expectations."
         )
 
-        # Verify role is correctly recorded
         async with session_scope(factory) as session:
             row_result = await session.execute(
                 select(HumanInteraction).where(
@@ -418,11 +377,6 @@ async def test_chain_node_dispatch_format_writes_row_after_f1_fix(
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Scenario B — Timeout + fallback (no PG required)
-# ---------------------------------------------------------------------------
 
 
 class _SlowGateway:
@@ -529,15 +483,9 @@ async def test_timeout_with_llm_simulated_fallback_returns_fallback_source() -> 
         llm_fallback_gateway=fallback_gw,
     )
 
-    # LLMSimulatedGateway returns source='llm_sim'; _handle_timeout overrides to 'fallback'
     assert response.source == "fallback", (
         f"Expected source='fallback' (overridden by _handle_timeout), got {response.source!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Scenario C — Idempotency on resume (PG required)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -564,7 +512,6 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
     run_id = uuid.uuid4()
     request_id = "chain:0:reviewer-idem"
 
-    # Use alembic upgrade to get the UNIQUE constraint
     import subprocess
 
     env = os.environ.copy()
@@ -600,7 +547,6 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
             "requested_at": datetime.now(UTC),
         }
 
-        # First dispatch
         async def _first_dispatch(inputs: dict[str, Any]) -> dict[str, Any]:
             await adispatch_custom_event("human_request", human_request_payload)
             return inputs
@@ -616,7 +562,6 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
         )
         await asyncio.sleep(0.05)
 
-        # Second dispatch with IDENTICAL (run_id, request_id)
         async def _second_dispatch(inputs: dict[str, Any]) -> dict[str, Any]:
             await adispatch_custom_event("human_request", human_request_payload)
             return inputs
@@ -632,7 +577,6 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
         )
         await asyncio.sleep(0.05)
 
-        # Assert: exactly 1 row (ON CONFLICT DO NOTHING prevented the duplicate)
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -651,7 +595,6 @@ async def test_idempotency_duplicate_request_id_writes_one_row(
 
     finally:
         await engine.dispose()
-        # Downgrade to clean state
         try:
             env2 = os.environ.copy()
             env2["PG_DSN"] = ephemeral_pg_dsn
@@ -732,7 +675,6 @@ async def test_idempotency_human_response_update_is_idempotent(
         async def _full_sequence(inputs: dict[str, Any]) -> dict[str, Any]:
             await adispatch_custom_event("human_request", request_payload)
             await adispatch_custom_event("human_response", response_payload_1)
-            # Second human_response with different content — should be ignored
             await adispatch_custom_event("human_response", response_payload_2)
             return inputs
 
@@ -747,7 +689,6 @@ async def test_idempotency_human_response_update_is_idempotent(
         )
         await asyncio.sleep(0.1)
 
-        # Assert: only 1 row, response_json has the FIRST response (approve, not reject)
         async with session_scope(factory) as session:
             count_result = await session.execute(
                 select(func.count())
@@ -772,7 +713,6 @@ async def test_idempotency_human_response_update_is_idempotent(
 
         assert row is not None
         assert row.response_json is not None, "response_json should be filled after first update"
-        # The first response (approve) should be preserved, not overwritten by the second (reject)
         assert row.response_json.get("action") == "approve", (
             f"Expected action='approve' (first response preserved), "
             f"got {row.response_json.get('action')!r}"
@@ -782,15 +722,6 @@ async def test_idempotency_human_response_update_is_idempotent(
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Scenario D — LLMSimulatedGateway + callback handler cross-component flow
-# ---------------------------------------------------------------------------
-#
-# Tests that LLMSimulatedGateway -> HumanResponse -> callback handler forms a
-# coherent pipeline: the response from the gateway can be serialized and passed
-# to _handle_human_response with all required fields intact.
 
 
 @pytest.mark.integration
@@ -828,7 +759,6 @@ async def test_llm_simulated_gateway_response_flows_to_callback(
         handler = _build_handler(run_id, exp_id, factory, tmp_path)
         ctx = _make_context(run_id)
 
-        # Get a real response from LLMSimulatedGateway
         llm_wrapper = _make_llm_wrapper("m9_human_reviewer_approve.yaml")
         gateway = LLMSimulatedGateway(llm_wrapper)
         response = await gateway.request(ctx, request_id=request_id)
@@ -836,9 +766,7 @@ async def test_llm_simulated_gateway_response_flows_to_callback(
         assert response.source == "llm_sim"
         assert response.action == "approve"
 
-        # Now flow this response through the callback handler
         async def _dispatch_with_gateway_response(inputs: dict[str, Any]) -> dict[str, Any]:
-            # INSERT (using direct format)
             await adispatch_custom_event(
                 "human_request",
                 {
@@ -849,7 +777,6 @@ async def test_llm_simulated_gateway_response_flows_to_callback(
                     "requested_at": datetime.now(UTC),
                 },
             )
-            # UPDATE with the actual gateway response
             await adispatch_custom_event(
                 "human_response",
                 {
@@ -877,7 +804,6 @@ async def test_llm_simulated_gateway_response_flows_to_callback(
         )
         await asyncio.sleep(0.1)
 
-        # Verify the full data flow
         async with session_scope(factory) as session:
             row_result = await session.execute(
                 select(HumanInteraction).where(

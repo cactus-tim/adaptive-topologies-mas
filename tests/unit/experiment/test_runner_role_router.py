@@ -25,19 +25,10 @@ from atm.human.role_router import (
     RuleBasedRoleRouter,
 )
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _cfg(role_router: str, role: HumanRole = HumanRole.REVIEWER, **kw: Any) -> HumanCfg:
     """Build a minimal HumanCfg for testing _build_role_router."""
     return HumanCfg(role_router=role_router, role=role, **kw)  # type: ignore[arg-type]
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 def test_fixed_returns_none() -> None:
@@ -59,9 +50,7 @@ def test_rule_no_table_uses_default_table() -> None:
     router = _build_role_router(human_cfg)
 
     assert isinstance(router, RuleBasedRoleRouter)
-    # The internal table should match DEFAULT_ROLE_TABLE
     assert router._table == DEFAULT_ROLE_TABLE
-    # Fallback should be the HumanCfg.role
     assert router._fallback == HumanRole.REVIEWER
 
 
@@ -76,10 +65,8 @@ async def test_rule_custom_table_resolves_correctly() -> None:
     router = _build_role_router(human_cfg)
 
     assert isinstance(router, RuleBasedRoleRouter)
-    # For PLANNING phase the custom table maps to JUDGE
     resolved = await router.decide(Phase.PLANNING, {})
     assert resolved == HumanRole.JUDGE
-    # Fallback is the HumanCfg.role
     assert router._fallback == HumanRole.COORDINATOR
 
 
@@ -92,15 +79,12 @@ def test_llm_returns_llm_router_with_rule_fallback() -> None:
     router = _build_role_router(human_cfg, llm_factory=llm_factory)
 
     assert isinstance(router, LLMRoleRouter)
-    # The LLMRoleRouter fallback must be a RuleBasedRoleRouter
     assert isinstance(router._fallback, RuleBasedRoleRouter)
-    # llm_factory was called once to build the LLM
     llm_factory.assert_called_once()
 
 
 def test_unknown_role_router_raises_value_error() -> None:
     """role_router="other" → ValueError with informative message."""
-    # We construct HumanCfg bypassing pydantic literal validation by model_construct
     human_cfg = HumanCfg.model_construct(
         enabled=False,
         gateway="llm_simulated",

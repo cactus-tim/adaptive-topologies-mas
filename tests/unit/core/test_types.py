@@ -9,10 +9,6 @@ from uuid import UUID
 import pydantic
 import pytest
 
-# ---------------------------------------------------------------------------
-# 1. Import test — all 17 symbols must be importable
-# ---------------------------------------------------------------------------
-
 
 def test_import_all_symbols() -> None:
     from atm.core.types import (  # noqa: F401
@@ -34,11 +30,6 @@ def test_import_all_symbols() -> None:
         ToolResult,
         TopologyTransition,
     )
-
-
-# ---------------------------------------------------------------------------
-# 2. Enum membership tests
-# ---------------------------------------------------------------------------
 
 
 def test_agent_role_members() -> None:
@@ -82,11 +73,6 @@ def test_message_kind_members() -> None:
     assert MessageKind.PHASE_EMIT.value == "phase_emit"
 
 
-# ---------------------------------------------------------------------------
-# 3. Message instantiation and defaults
-# ---------------------------------------------------------------------------
-
-
 def test_message_creation_minimal() -> None:
     from atm.core.types import Message, MessageKind
 
@@ -98,7 +84,7 @@ def test_message_creation_minimal() -> None:
     assert msg.payload == {}
     assert msg.refs == ()
     assert isinstance(msg.created_at, datetime)
-    assert msg.created_at.tzinfo is not None  # timezone-aware
+    assert msg.created_at.tzinfo is not None
 
 
 def test_message_creation_with_string_kind() -> None:
@@ -115,11 +101,6 @@ def test_message_is_frozen() -> None:
     msg = Message(sender="a", kind=MessageKind.REQUEST, content="x")
     with pytest.raises(pydantic.ValidationError):
         msg.content = "y"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# 4. ToolCall instantiation
-# ---------------------------------------------------------------------------
 
 
 def test_tool_call_defaults() -> None:
@@ -139,11 +120,6 @@ def test_tool_call_is_frozen() -> None:
     tc = ToolCall(tool_name="run", args={}, issued_by="a")
     with pytest.raises(pydantic.ValidationError):
         tc.tool_name = "other"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# 5. TokenUsage and LLMResponse
-# ---------------------------------------------------------------------------
 
 
 def test_token_usage_creation() -> None:
@@ -217,11 +193,6 @@ def test_llm_response_started_at_explicit() -> None:
     assert resp.started_at == ts
 
 
-# ---------------------------------------------------------------------------
-# 6. ToolResult
-# ---------------------------------------------------------------------------
-
-
 def test_tool_result_creation() -> None:
     from uuid import uuid4
 
@@ -234,11 +205,6 @@ def test_tool_result_creation() -> None:
     assert result.error is None
     assert isinstance(result.finished_at, datetime)
     assert result.finished_at.tzinfo is not None
-
-
-# ---------------------------------------------------------------------------
-# 7. HumanContext and HumanResponse
-# ---------------------------------------------------------------------------
 
 
 def test_human_context_creation() -> None:
@@ -272,11 +238,6 @@ def test_human_response_defaults() -> None:
     assert resp.answered_at.tzinfo is not None
 
 
-# ---------------------------------------------------------------------------
-# 8. TaskSpec and TaskResult
-# ---------------------------------------------------------------------------
-
-
 def test_task_spec_creation() -> None:
     from atm.core.types import TaskSpec
 
@@ -303,11 +264,6 @@ def test_task_result_creation() -> None:
     assert result.artifacts == {}
 
 
-# ---------------------------------------------------------------------------
-# 9. RunResult
-# ---------------------------------------------------------------------------
-
-
 def test_run_result_creation() -> None:
     from uuid import uuid4
 
@@ -317,11 +273,6 @@ def test_run_result_creation() -> None:
     rr = RunResult(run_id=run_id, status="completed", task_result=None)
     assert rr.error is None
     assert rr.metrics == {}
-
-
-# ---------------------------------------------------------------------------
-# 10. PhaseTransition and TopologyTransition
-# ---------------------------------------------------------------------------
 
 
 def test_phase_transition_creation() -> None:
@@ -368,11 +319,6 @@ def test_topology_transition_creation() -> None:
     assert tt.at.tzinfo is not None
 
 
-# ---------------------------------------------------------------------------
-# 11. BudgetEvent
-# ---------------------------------------------------------------------------
-
-
 def test_budget_event_creation() -> None:
     from uuid import uuid4
 
@@ -390,11 +336,6 @@ def test_budget_event_creation() -> None:
     assert ev.at.tzinfo is not None
 
 
-# ---------------------------------------------------------------------------
-# 12. No DeprecationWarning on model creation (filterwarnings=["error"])
-# ---------------------------------------------------------------------------
-
-
 def test_no_deprecation_warning_on_creation() -> None:
     """datetime.now(timezone.utc) must be used — not deprecated utcnow()."""
     import warnings
@@ -407,11 +348,6 @@ def test_no_deprecation_warning_on_creation() -> None:
         Message(sender="a", kind=MessageKind.REQUEST, content="x")
         ToolCall(tool_name="t", args={}, issued_by="a")
         BudgetEvent(run_id=uuid4(), level="call", event="warn", limit_usd=1.0, current_usd=0.5)
-
-
-# ---------------------------------------------------------------------------
-# 13. Frozen models raise TypeError on mutation attempt
-# ---------------------------------------------------------------------------
 
 
 def test_all_models_are_frozen() -> None:
@@ -453,11 +389,6 @@ def test_all_models_are_frozen() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 14. CI-2 (M2): to_lc / from_lc are implemented (no longer raise NotImplementedError)
-# ---------------------------------------------------------------------------
-
-
 def test_to_lc_returns_lc_message() -> None:
     """CI-2 (M2): Message.to_lc() is implemented and returns a BaseMessage."""
     from langchain_core.messages import BaseMessage, HumanMessage
@@ -482,11 +413,6 @@ def test_from_lc_returns_message() -> None:
     assert isinstance(msg, Message)
     assert msg.content == "hello"
     assert msg.sender == "a"
-
-
-# ---------------------------------------------------------------------------
-# 15. IR-3: Enum JSON roundtrip
-# ---------------------------------------------------------------------------
 
 
 def test_enum_json_roundtrip_raw() -> None:
@@ -539,11 +465,6 @@ def test_budget_event_model_dump_json_roundtrip() -> None:
     assert restored.at == ev.at
 
 
-# ---------------------------------------------------------------------------
-# 16. Enums are str subclasses (for Postgres/JSON compatibility)
-# ---------------------------------------------------------------------------
-
-
 def test_enums_are_str_subclass() -> None:
     from atm.core.types import AgentRole, HumanRole, MessageKind, Phase
 
@@ -553,11 +474,6 @@ def test_enums_are_str_subclass() -> None:
                 f"{enum_class.__name__}.{member.name} should be a str subclass"
             )
             assert member == member.value, "str enum member should compare equal to its value"
-
-
-# ---------------------------------------------------------------------------
-# 17. Datetime fields are timezone-aware UTC
-# ---------------------------------------------------------------------------
 
 
 def test_datetime_fields_are_utc_aware() -> None:
@@ -571,11 +487,6 @@ def test_datetime_fields_are_utc_aware() -> None:
     for dt_val in [msg.created_at, tc.issued_at, hr.answered_at]:
         assert dt_val.tzinfo is not None, "datetime must be timezone-aware"
         assert dt_val.tzinfo == UTC or str(dt_val.tzinfo) in ("UTC", "utc")
-
-
-# ---------------------------------------------------------------------------
-# 18. TopologyDecision — new frozen type (Step 1.2/1.4, M8)
-# ---------------------------------------------------------------------------
 
 
 def test_topology_decision_frozen_immutability() -> None:
@@ -608,12 +519,10 @@ def test_topology_decision_literal_validation() -> None:
     """TopologyDecision.decided_by must only accept valid Literal values."""
     from atm.core.types import TopologyDecision
 
-    # valid values should not raise
     for valid in ("rule", "llm_router", "oracle", "guard_override", "initial"):
         d = TopologyDecision(topology="star", reason="ok", decided_by=valid)  # type: ignore[arg-type]
         assert d.decided_by == valid
 
-    # invalid value must raise ValidationError
     with pytest.raises(pydantic.ValidationError):
         TopologyDecision(topology="star", reason="bad", decided_by="unknown")  # type: ignore[arg-type]
 
@@ -622,7 +531,6 @@ def test_topology_decision_router_cost_usd_non_negative() -> None:
     """TopologyDecision.router_cost_usd must be >= 0; negative raises ValidationError."""
     from atm.core.types import TopologyDecision
 
-    # valid: zero and positive
     d_zero = TopologyDecision(topology="star", reason="r", decided_by="rule", router_cost_usd=0.0)
     assert d_zero.router_cost_usd == 0.0
     d_pos = TopologyDecision(
@@ -630,14 +538,8 @@ def test_topology_decision_router_cost_usd_non_negative() -> None:
     )
     assert d_pos.router_cost_usd == 0.005
 
-    # invalid: negative
     with pytest.raises(pydantic.ValidationError):
         TopologyDecision(topology="star", reason="r", decided_by="rule", router_cost_usd=-0.01)
-
-
-# ---------------------------------------------------------------------------
-# 19. PhaseDecision — new frozen type (Step 1.2/1.4, M8)
-# ---------------------------------------------------------------------------
 
 
 def test_phase_decision_frozen_immutability() -> None:
@@ -671,11 +573,9 @@ def test_phase_decision_literal_validation() -> None:
     """PhaseDecision.decided_by must only accept valid Literal values."""
     from atm.core.types import Phase, PhaseDecision
 
-    # valid values
     for valid in ("rule", "llm_router", "agent_emit", "initial"):
         d = PhaseDecision(next_phase=Phase.PLANNING, reason="ok", decided_by=valid)  # type: ignore[arg-type]
         assert d.decided_by == valid
 
-    # invalid value must raise ValidationError
     with pytest.raises(pydantic.ValidationError):
         PhaseDecision(next_phase=Phase.PLANNING, reason="bad", decided_by="unknown")  # type: ignore[arg-type]

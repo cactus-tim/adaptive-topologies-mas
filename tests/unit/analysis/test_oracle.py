@@ -15,22 +15,11 @@ from __future__ import annotations
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Row structure used by build_loo_from_rows:
-#   {"task_id": str, "task_type": str, "topology": str, "quality_score": float}
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def rows_basic() -> list[dict]:
     """Three tasks of the same type with unambiguous winner."""
     return [
-        # task_A: mesh wins clearly
         {
             "task_id": "HumanEval/10",
             "task_type": "programming",
@@ -43,7 +32,6 @@ def rows_basic() -> list[dict]:
             "topology": "linear",
             "quality_score": 0.40,
         },
-        # task_B: mesh wins clearly
         {
             "task_id": "HumanEval/11",
             "task_type": "programming",
@@ -56,7 +44,6 @@ def rows_basic() -> list[dict]:
             "topology": "linear",
             "quality_score": 0.45,
         },
-        # task_C: mesh wins clearly
         {
             "task_id": "HumanEval/12",
             "task_type": "programming",
@@ -95,7 +82,6 @@ def rows_flip() -> list[dict]:
     Note: all task_ids use "HumanEval/N" (capital H, capital E).
     """
     rows: list[dict] = []
-    # HumanEval/0: 5 mesh runs at 0.95, 1 linear run at 0.50
     for _ in range(5):
         rows.append(
             {
@@ -113,7 +99,6 @@ def rows_flip() -> list[dict]:
             "quality_score": 0.50,
         }
     )
-    # HumanEval/1: 2 linear runs at 0.80, 1 mesh run at 0.40
     for _ in range(2):
         rows.append(
             {
@@ -131,7 +116,6 @@ def rows_flip() -> list[dict]:
             "quality_score": 0.40,
         }
     )
-    # HumanEval/2: 2 linear runs at 0.80, 1 mesh run at 0.40
     for _ in range(2):
         rows.append(
             {
@@ -150,11 +134,6 @@ def rows_flip() -> list[dict]:
         }
     )
     return rows
-
-
-# ---------------------------------------------------------------------------
-# 1. OracleTable serialization roundtrip
-# ---------------------------------------------------------------------------
 
 
 class TestOracleTableSerializationRoundtrip:
@@ -183,11 +162,6 @@ class TestOracleTableSerializationRoundtrip:
         assert restored.default_topology == original.default_topology
 
 
-# ---------------------------------------------------------------------------
-# 2. build_loo_from_rows — basic case
-# ---------------------------------------------------------------------------
-
-
 class TestBuildLooFromRowsBasic:
     """build_loo_from_rows returns the correct topology for a clear winner."""
 
@@ -196,19 +170,11 @@ class TestBuildLooFromRowsBasic:
 
         table: OracleTable = build_loo_from_rows(rows_basic)
 
-        # All three tasks are "programming" type; mesh wins in every LOO fold
-        # because the other two tasks also clearly prefer mesh.
         assert table.by_task_id["HumanEval/10"] == "mesh"
         assert table.by_task_id["HumanEval/11"] == "mesh"
         assert table.by_task_id["HumanEval/12"] == "mesh"
 
-        # by_task_type should also reflect mesh as best for "programming"
         assert table.by_task_type["programming"] == "mesh"
-
-
-# ---------------------------------------------------------------------------
-# 3. build_loo_from_rows — exclusion flips winner (non-tautology test)
-# ---------------------------------------------------------------------------
 
 
 class TestBuildOracleTop1PerTaskIsIndependent:
@@ -229,19 +195,12 @@ class TestBuildOracleTop1PerTaskIsIndependent:
 
         table: OracleTable = build_loo_from_rows(rows_flip)
 
-        # /0: own rows clearly prefer mesh (0.95 vs 0.50). NOT excluded.
         assert table.by_task_id["HumanEval/0"] == "mesh", (
             "Top-1 must pick the best topology FOR THIS task — mesh wins HumanEval/0"
         )
 
-        # /1 and /2: own rows clearly prefer linear (0.80 vs 0.40).
         assert table.by_task_id["HumanEval/1"] == "linear"
         assert table.by_task_id["HumanEval/2"] == "linear"
-
-
-# ---------------------------------------------------------------------------
-# 4. Edge case: empty rows
-# ---------------------------------------------------------------------------
 
 
 class TestBuildLooEdgeCaseEmptyRows:
@@ -255,14 +214,8 @@ class TestBuildLooEdgeCaseEmptyRows:
         assert isinstance(table, OracleTable)
         assert table.by_task_id == {}
         assert table.by_task_type == {}
-        # default_topology must be a non-empty string (typically "linear")
         assert isinstance(table.default_topology, str)
         assert len(table.default_topology) > 0
-
-
-# ---------------------------------------------------------------------------
-# 5. Edge case: single task (LOO leaves empty fold → fallback)
-# ---------------------------------------------------------------------------
 
 
 class TestBuildLooEdgeCaseSingleTask:
@@ -288,15 +241,8 @@ class TestBuildLooEdgeCaseSingleTask:
 
         table: OracleTable = build_loo_from_rows(rows)
 
-        # Top-1 semantics: the task picks its own empirical winner (mesh@0.90 > linear@0.50).
-        # No LOO exclusion → no need to fall back to default.
         assert isinstance(table, OracleTable)
         assert table.by_task_id["HumanEval/99"] == "mesh"
-
-
-# ---------------------------------------------------------------------------
-# 6. Edge case: OracleTable default fallback for unknown task_id
-# ---------------------------------------------------------------------------
 
 
 class TestOracleTableDefaultFallback:
@@ -315,11 +261,6 @@ class TestOracleTableDefaultFallback:
         assert result == "linear"
 
 
-# ---------------------------------------------------------------------------
-# 7. OracleTable by_task_id lookup takes priority over by_task_type
-# ---------------------------------------------------------------------------
-
-
 class TestOracleTableByTaskIdPriority:
     """by_task_id lookup has higher priority than by_task_type."""
 
@@ -332,14 +273,8 @@ class TestOracleTableByTaskIdPriority:
             default_topology="linear",
         )
 
-        # HumanEval/0 is in by_task_id → "debate", not "mesh" from by_task_type
         result = table.lookup(task_id="HumanEval/0", task_type="programming")
         assert result == "debate"
-
-
-# ---------------------------------------------------------------------------
-# 8. OracleTable by_task_type fallback (task_id not found, task_type found)
-# ---------------------------------------------------------------------------
 
 
 class TestOracleTableByTaskTypeFallback:
@@ -354,14 +289,8 @@ class TestOracleTableByTaskTypeFallback:
             default_topology="linear",
         )
 
-        # Not in by_task_id → falls back to by_task_type["programming"] = "mesh"
         result = table.lookup(task_id="HumanEval/999", task_type="programming")
         assert result == "mesh"
-
-
-# ---------------------------------------------------------------------------
-# 9. Cross-contract: OracleTopologyRouter can consume a built OracleTable
-# ---------------------------------------------------------------------------
 
 
 class TestBuildLooOracleTopologyRouterContract:
@@ -379,18 +308,14 @@ class TestBuildLooOracleTopologyRouterContract:
 
         table: OracleTable = build_loo_from_rows(rows_flip)
 
-        # OracleTopologyRouter accepts a dict; convert OracleTable to the expected format.
-        # The router expects {"by_task_id": {...}, "by_task_type": {...}, "_default": "..."}.
         router_dict = table.to_router_dict()
         router = OracleTopologyRouter(oracle_table=router_dict)
 
-        # State with task_id present → resolved via by_task_id
         state: dict = {
             "task_id": "HumanEval/0",
-            "task_type": "programming",  # state["task_type"] must be populated
+            "task_type": "programming",
             "phase": "planning",
         }
         decision = asyncio.get_event_loop().run_until_complete(router.decide(state))  # type: ignore[arg-type]
         assert decision.decided_by == "oracle"
-        # Top-1 per task: HumanEval/0's own rows (5x mesh@0.95 + 1x linear@0.50) pick mesh.
         assert decision.topology == "mesh"

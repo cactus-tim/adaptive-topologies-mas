@@ -6,10 +6,6 @@ import pytest
 
 from atm.core.errors import AtmError, BudgetExceededError, LLMError, PhaseError, ToolError
 
-# ---------------------------------------------------------------------------
-# Test 1: Inheritance hierarchy
-# ---------------------------------------------------------------------------
-
 
 class TestAtmErrorHierarchy:
     """All custom exceptions must inherit from AtmError (which inherits from Exception)."""
@@ -25,11 +21,6 @@ class TestAtmErrorHierarchy:
 
     def test_tool_error_inherits_atm_error(self) -> None:
         assert issubclass(ToolError, AtmError)
-
-
-# ---------------------------------------------------------------------------
-# Test 2: BudgetExceededError fields
-# ---------------------------------------------------------------------------
 
 
 class TestBudgetExceededError:
@@ -49,7 +40,6 @@ class TestBudgetExceededError:
     def test_str_contains_useful_info(self) -> None:
         exc = BudgetExceededError(level="experiment", limit_usd=5.0, spent_usd=6.0)
         text = str(exc)
-        # str representation should mention key values or at least be non-empty
         assert len(text) > 0
 
     def test_level_values(self) -> None:
@@ -57,11 +47,6 @@ class TestBudgetExceededError:
         for level in ("call", "run", "experiment"):
             exc = BudgetExceededError(level=level, limit_usd=1.0, spent_usd=2.0)
             assert exc.level == level
-
-
-# ---------------------------------------------------------------------------
-# Test 3: PhaseError fields
-# ---------------------------------------------------------------------------
 
 
 class TestPhaseError:
@@ -81,11 +66,6 @@ class TestPhaseError:
     def test_str_non_empty(self) -> None:
         exc = PhaseError(attempted="verification", current="planning")
         assert len(str(exc)) > 0
-
-
-# ---------------------------------------------------------------------------
-# Test 4: ToolError — cause via exception chaining
-# ---------------------------------------------------------------------------
 
 
 class TestToolError:
@@ -142,11 +122,6 @@ class TestToolError:
             assert isinstance(exc.__cause__, OSError)
 
 
-# ---------------------------------------------------------------------------
-# Test 6: AtmError directly
-# ---------------------------------------------------------------------------
-
-
 class TestAtmErrorDirect:
     """AtmError is a valid base exception that can be raised directly."""
 
@@ -162,11 +137,6 @@ class TestAtmErrorDirect:
             LLMError(provider="openai", model="gpt-4o", attempts=3, message="exhausted"),
         ]:
             assert isinstance(exc, AtmError)
-
-
-# ---------------------------------------------------------------------------
-# Test 7: LLMError — M2 step 1.1
-# ---------------------------------------------------------------------------
 
 
 class TestLLMError:

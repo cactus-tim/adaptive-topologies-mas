@@ -20,16 +20,12 @@ import pytest
 from atm.core.types import TaskSpec
 from atm.tasks.base import EvalResult
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_spec(evaluator_key: str, **meta: Any) -> TaskSpec:
     """Create a minimal TaskSpec for testing."""
     return TaskSpec(
         id="test-001",
-        type="programming",  # always valid in this worktree
+        type="programming",
         input="test input",
         expected="42",
         evaluator_key=evaluator_key,
@@ -40,11 +36,6 @@ def _make_spec(evaluator_key: str, **meta: Any) -> TaskSpec:
 def _ok_result() -> EvalResult:
     """Return a canonical passing EvalResult."""
     return EvalResult(score=1.0, passed=True)
-
-
-# ---------------------------------------------------------------------------
-# Test 1: gsm8k_numeric smoke — dispatches without requiring extra deps
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -64,7 +55,6 @@ async def test_gsm8k_numeric_smoke() -> None:
         mock_reg.get.return_value = mock_cls
         mock_reg.names.return_value = ["gsm8k_numeric"]
 
-        # Patch _DEPS to only include our key so unknown-key logic is bypassed
         with patch.dict(
             "atm.evaluation.ground_truth._DEPS",
             {"gsm8k_numeric": ()},
@@ -77,11 +67,6 @@ async def test_gsm8k_numeric_smoke() -> None:
     assert result.passed is True
     mock_cls.assert_called_once_with()
     mock_evaluator.evaluate.assert_awaited_once_with(spec, "42")
-
-
-# ---------------------------------------------------------------------------
-# Test 2: commongen_rouge_coverage smoke — no extra deps required
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -117,11 +102,6 @@ async def test_commongen_rouge_coverage_smoke() -> None:
     mock_cls.assert_called_once_with()
 
 
-# ---------------------------------------------------------------------------
-# Test 3: dabench_numeric_exact smoke — no extra deps required
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_dabench_numeric_exact_smoke() -> None:
     """score_ground_truth dispatches dabench_numeric_exact and returns EvalResult."""
@@ -149,11 +129,6 @@ async def test_dabench_numeric_exact_smoke() -> None:
     assert isinstance(result, EvalResult)
     assert result.score == 1.0
     mock_cls.assert_called_once_with()
-
-
-# ---------------------------------------------------------------------------
-# Test 4: humaneval_pytest smoke — sandbox mock provided
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -194,11 +169,6 @@ async def test_humaneval_pytest_smoke_with_sandbox() -> None:
     mock_cls.assert_called_once_with(sandbox=mock_sandbox)
 
 
-# ---------------------------------------------------------------------------
-# Test 5: humaneval_pytest raises ValueError when sandbox is None
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_humaneval_raises_when_sandbox_none() -> None:
     """score_ground_truth raises ValueError for humaneval_pytest when sandbox=None."""
@@ -221,11 +191,6 @@ async def test_humaneval_raises_when_sandbox_none() -> None:
         await score_ground_truth(spec, "def double(x): return x * 2", sandbox=None)
 
 
-# ---------------------------------------------------------------------------
-# Test 6: unknown evaluator_key raises KeyError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_unknown_evaluator_key_raises_key_error() -> None:
     """score_ground_truth raises KeyError for an unrecognised evaluator_key."""
@@ -235,11 +200,6 @@ async def test_unknown_evaluator_key_raises_key_error() -> None:
 
     with pytest.raises(KeyError, match="nonexistent_key_xyz"):
         await score_ground_truth(spec, "some answer")
-
-
-# ---------------------------------------------------------------------------
-# Test 7: Drift test — EVALUATORS.names() == _DEPS.keys()
-# ---------------------------------------------------------------------------
 
 
 def test_evaluators_drift() -> None:

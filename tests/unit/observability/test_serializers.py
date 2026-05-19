@@ -18,10 +18,6 @@ from uuid import UUID, uuid4
 
 import pyarrow as pa
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -29,11 +25,6 @@ def _utcnow() -> datetime:
 
 def _make_run_id() -> UUID:
     return uuid4()
-
-
-# ---------------------------------------------------------------------------
-# _dumps tests
-# ---------------------------------------------------------------------------
 
 
 def test_dumps_sort_keys() -> None:
@@ -58,11 +49,6 @@ def test_dumps_compact_no_spaces() -> None:
 
     result = _dumps({"x": 1, "y": 2})
     assert " " not in result, f"Unexpected spaces in: {result}"
-
-
-# ---------------------------------------------------------------------------
-# Fixtures / sample builders
-# ---------------------------------------------------------------------------
 
 
 def _make_llm_response() -> object:
@@ -162,11 +148,6 @@ def _make_scratchpad_entry() -> object:
     )
 
 
-# ---------------------------------------------------------------------------
-# llm_response_to_row
-# ---------------------------------------------------------------------------
-
-
 def test_llm_response_row_keys_match_schema() -> None:
     """set(row.keys()) == set(LLM_CALL_SCHEMA.names)."""
     from atm.observability.serializers import llm_response_to_row
@@ -227,11 +208,6 @@ def test_llm_response_json_fields_deterministic() -> None:
     assert row1["cache_scope"] == row2["cache_scope"]
 
 
-# ---------------------------------------------------------------------------
-# message_to_row
-# ---------------------------------------------------------------------------
-
-
 def test_message_row_keys_match_schema() -> None:
     """set(row.keys()) == set(MESSAGE_SCHEMA.names)."""
     from atm.observability.serializers import message_to_row
@@ -267,11 +243,6 @@ def test_message_json_fields_deterministic() -> None:
     row1 = message_to_row(run_id=run_id, msg=msg)  # type: ignore[arg-type]
     row2 = message_to_row(run_id=run_id, msg=msg)  # type: ignore[arg-type]
     assert row1["payload_json"] == row2["payload_json"]
-
-
-# ---------------------------------------------------------------------------
-# tool_call_to_row
-# ---------------------------------------------------------------------------
 
 
 def test_tool_call_row_keys_match_schema() -> None:
@@ -328,11 +299,6 @@ def test_tool_call_json_fields_deterministic() -> None:
     row2 = tool_call_to_row(run_id=run_id, agent_id="a", call=call, result=result)  # type: ignore[arg-type]
     assert row1["args_json"] == row2["args_json"]
     assert row1["result_json"] == row2["result_json"]
-
-
-# ---------------------------------------------------------------------------
-# phase_transition_to_row
-# ---------------------------------------------------------------------------
 
 
 def test_phase_transition_row_keys_match_schema() -> None:
@@ -408,11 +374,6 @@ def test_phase_transition_json_fields_deterministic() -> None:
     assert row1["phase_name"] == row2["phase_name"]
 
 
-# ---------------------------------------------------------------------------
-# topology_transition_to_row
-# ---------------------------------------------------------------------------
-
-
 def test_topology_transition_row_keys_match_schema() -> None:
     """set(row.keys()) == set(TOPOLOGY_TRANSITION_SCHEMA.names)."""
     from atm.observability.serializers import topology_transition_to_row
@@ -459,11 +420,6 @@ def test_topology_transition_json_fields_deterministic() -> None:
     assert row1["considered_alternatives_json"] == row2["considered_alternatives_json"]
     assert row1["guards_applied_json"] == row2["guards_applied_json"]
     assert row1["signals_snapshot_json"] == row2["signals_snapshot_json"]
-
-
-# ---------------------------------------------------------------------------
-# scratchpad_entry_to_row
-# ---------------------------------------------------------------------------
 
 
 def test_scratchpad_entry_row_keys_match_schema() -> None:
@@ -516,11 +472,6 @@ def test_scratchpad_entry_json_fields_deterministic() -> None:
     row1 = scratchpad_entry_to_row(run_id=run_id, agent_id="a", step_idx=0, entry=entry)  # type: ignore[arg-type]
     row2 = scratchpad_entry_to_row(run_id=run_id, agent_id="a", step_idx=0, entry=entry)  # type: ignore[arg-type]
     assert row1["tool_calls_json"] == row2["tool_calls_json"]
-
-
-# ---------------------------------------------------------------------------
-# Edge cases
-# ---------------------------------------------------------------------------
 
 
 def test_broadcast_message_to_agent_empty() -> None:

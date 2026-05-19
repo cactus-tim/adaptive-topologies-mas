@@ -35,10 +35,6 @@ from atm.experiment.config import (
 )
 from atm.experiment.runner import _insert_run, _update_run_success
 
-# ---------------------------------------------------------------------------
-# Helpers — ExperimentConfig factory
-# ---------------------------------------------------------------------------
-
 
 def _make_cfg(human: HumanCfg | None = None, **overrides: Any) -> ExperimentConfig:
     defaults: dict[str, Any] = {
@@ -59,11 +55,6 @@ def _make_cfg(human: HumanCfg | None = None, **overrides: Any) -> ExperimentConf
     return ExperimentConfig.model_validate(defaults)
 
 
-# ---------------------------------------------------------------------------
-# Helper: captures what Run was created with
-# ---------------------------------------------------------------------------
-
-
 class _RunCapture:
     """Captures the kwargs passed to Run(...) constructor."""
 
@@ -74,11 +65,6 @@ class _RunCapture:
         self.kwargs = kwargs
         obj = MagicMock()
         return obj
-
-
-# ---------------------------------------------------------------------------
-# 1. enabled=True → human_role = role.value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -98,7 +84,6 @@ async def test_insert_run_writes_human_role_when_enabled() -> None:
         patch("atm.experiment.runner.Run", side_effect=capture),
         patch("atm.experiment.runner.session_scope") as mock_scope,
     ):
-        # session_scope is an async context manager
         mock_scope.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_scope.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -106,11 +91,6 @@ async def test_insert_run_writes_human_role_when_enabled() -> None:
 
     assert capture.kwargs.get("human_role") == "reviewer"
     assert run_id is not None
-
-
-# ---------------------------------------------------------------------------
-# 2. enabled=False → human_role = None
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -137,11 +117,6 @@ async def test_insert_run_human_role_none_when_disabled() -> None:
     assert capture.kwargs.get("human_role") is None
 
 
-# ---------------------------------------------------------------------------
-# 3. cfg.human is None → human_role = None
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_insert_run_human_role_none_when_no_human_cfg() -> None:
     """When cfg.human is None, _insert_run passes human_role=None to Run(...)."""
@@ -165,11 +140,6 @@ async def test_insert_run_human_role_none_when_no_human_cfg() -> None:
     assert capture.kwargs.get("human_role") is None
 
 
-# ---------------------------------------------------------------------------
-# 4. _update_run_success — backward-compatible call (no new kwargs)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_update_run_success_backward_compatible() -> None:
     """_update_run_success accepts new kwargs with defaults (backward-compatible).
@@ -190,7 +160,6 @@ async def test_update_run_success_backward_compatible() -> None:
     mock_cm.__aexit__ = AsyncMock(return_value=False)
 
     with patch("atm.experiment.runner.session_scope", return_value=mock_cm):
-        # Call with old-style args only — no human_role, no cognitive_load_proxy
         await _update_run_success(
             AsyncMock(),
             run_id,
@@ -199,13 +168,6 @@ async def test_update_run_success_backward_compatible() -> None:
             budget_spent_usd=0.0,
             iterations=1,
         )
-
-    # Reaches here without raising — backward compatibility confirmed.
-
-
-# ---------------------------------------------------------------------------
-# 5. _update_run_success — human_role and cognitive_load_proxy written correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -249,12 +211,9 @@ async def test_update_run_success_with_human_role_and_cog_proxy() -> None:
     assert len(captured_stmt) == 1, "Expected exactly one SQL statement to be executed"
     stmt = captured_stmt[0]
 
-    # Compile against SQLite dialect (available in all unit-test environments)
-    # to inspect the bound parameter values.
     compiled = stmt.compile(dialect=sqlite_dialect.dialect())
     params = compiled.params
 
-    # SQLAlchemy may suffix param names with "_1" when deduplicating; try both.
     human_role_val = params.get("human_role_1") or params.get("human_role")
     cog_val = params.get("cognitive_load_proxy_1") or params.get("cognitive_load_proxy")
     status_val = params.get("status_1") or params.get("status")
@@ -264,11 +223,6 @@ async def test_update_run_success_with_human_role_and_cog_proxy() -> None:
         f"cognitive_load_proxy mismatch: {cog_val!r}"
     )
     assert status_val == "completed", f"status not found in params: {params}"
-
-
-# ---------------------------------------------------------------------------
-# 6. cognitive_load_proxy raises → _update_run_success still called, proxy=NULL
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -304,7 +258,6 @@ async def test_finalization_cog_proxy_exception_yields_null(
                 "cognitive_load_proxy": cognitive_load_proxy,
             }
         )
-        # Call through so the function itself must not raise.
         mock_session = AsyncMock()
         mock_session.commit = AsyncMock()
         mock_session.rollback = AsyncMock()
@@ -325,13 +278,11 @@ async def test_finalization_cog_proxy_exception_yields_null(
 
     monkeypatch.setattr(runner_mod, "_update_run_success", _spy_update)
 
-    # Patch the metric to always raise.
     async def _raising_cog_proxy(session: Any, run_id: Any) -> float:
         raise RuntimeError("simulated metric failure")
 
     monkeypatch.setattr(runner_mod, "human_sim_cognitive_load_proxy", _raising_cog_proxy)
 
-    # Patch session_scope so the role query returns no rows.
     empty_result = MagicMock()
     empty_result.fetchone.return_value = None
     mock_role_session = AsyncMock()
@@ -344,7 +295,6 @@ async def test_finalization_cog_proxy_exception_yields_null(
 
     monkeypatch.setattr(runner_mod, "session_scope", lambda *_a, **_kw: mock_role_cm)
 
-    # ---- replicate the finalization block from run_one ----
     run_id = uuid.uuid4()
     session_factory = AsyncMock()
 
@@ -364,7 +314,7 @@ async def test_finalization_cog_proxy_exception_yields_null(
             if last_role_row is not None:
                 dynamic_human_role = str(last_role_row[0])
     except Exception:
-        pass  # leave dynamic_human_role = None
+        pass
 
     try:
         async with runner_mod.session_scope(session_factory) as _cog_session:
@@ -372,7 +322,7 @@ async def test_finalization_cog_proxy_exception_yields_null(
                 _cog_session, run_id
             )
     except Exception:
-        pass  # leave dynamic_cog_proxy = None (metric raised)
+        pass
 
     await _spy_update(
         session_factory,
@@ -384,13 +334,10 @@ async def test_finalization_cog_proxy_exception_yields_null(
         human_role=dynamic_human_role,
         cognitive_load_proxy=dynamic_cog_proxy,
     )
-    # ---- end finalization block ----
 
     assert len(update_calls) == 1
     call = update_calls[0]
-    # Metric raised → cognitive_load_proxy must be None (NULL in DB)
     assert call["cognitive_load_proxy"] is None, (
         f"Expected None but got {call['cognitive_load_proxy']!r}"
     )
-    # No interaction rows → human_role also None
     assert call["human_role"] is None, f"Expected None but got {call['human_role']!r}"

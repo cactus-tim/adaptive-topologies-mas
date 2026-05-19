@@ -80,10 +80,6 @@ class FileWriteTool:
         self._workspace = workspace.resolve()
         self._create_parents = create_parents
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     async def ainvoke(self, args: dict[str, Any]) -> ToolResult:
         """Execute the file write.
 
@@ -125,10 +121,6 @@ class FileWriteTool:
             latency_ms=elapsed,
         )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _write(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         """Validate arguments, then perform the atomic write.
 
@@ -140,45 +132,35 @@ class FileWriteTool:
         raw_path: str = args.get("path", "")
         content: str = args.get("content", "")
         overwrite: bool = bool(args.get("overwrite", False))
-        # Per-call create_parents may override the constructor default if
-        # the caller passes it explicitly in args.
         create_parents: bool = bool(args.get("create_parents", self._create_parents))
 
-        # 1. Reject absolute paths in the input
         if raw_path.startswith("/"):
             return None, "absolute paths not allowed"
 
-        # 2. Resolve path relative to workspace
         resolved = (self._workspace / raw_path).resolve()
 
-        # 3. Ensure the resolved path stays within the workspace
         if not resolved.is_relative_to(self._workspace):
             return None, "outside workspace"
 
-        # 4. Check existing file
         if resolved.exists() and not overwrite:
             return None, "file exists"
 
-        # 5. Check/create parent directory
         parent = resolved.parent
         if not parent.exists():
             if not create_parents:
                 return None, "parent directory missing"
             parent.mkdir(parents=True, exist_ok=True)
 
-        # 6. Atomic write
         encoded: bytes = content.encode("utf-8")
         tmp_path = resolved.parent / f"{resolved.name}.tmp.{uuid.uuid4().hex}"
         try:
             tmp_path.write_bytes(encoded)
             os.replace(str(tmp_path), str(resolved))
         except Exception as exc:
-            # Clean up the tmp file if it exists
             with contextlib.suppress(OSError):
                 tmp_path.unlink(missing_ok=True)
             return None, f"write failed: {exc}"
 
-        # 7. Build a clean relative path string for the output
         try:
             rel_path = str(resolved.relative_to(self._workspace))
         except ValueError:  # pragma: no cover

@@ -51,12 +51,9 @@ class TestEmitSignal:
         shared: dict = {"signals": original_signals, "iter_total": 1}
         updated = emit_signal(shared, CRITIC_APPROVED, True)
 
-        # Input dict unchanged
         assert shared["signals"][CRITIC_APPROVED] is False
         assert original_signals[CRITIC_APPROVED] is False
-        # Output has new value
         assert updated["signals"][CRITIC_APPROVED] is True
-        # They are different objects
         assert updated is not shared
         assert updated["signals"] is not original_signals
 
@@ -97,10 +94,8 @@ class TestEmitSignal:
         logging to ensure the call completes without error.
         """
         shared: dict = {"iter_total": 7}
-        # Should not raise regardless of LangGraph availability
         with patch("atm.phases.signals.logger") as mock_logger:
             updated = emit_signal(shared, NEEDS_DEBATE, True)
-            # debug was called at least once
             mock_logger.debug.assert_called()
         assert updated["signals"][NEEDS_DEBATE] is True
 
@@ -137,7 +132,7 @@ class TestIncrementSignal:
         """increment_signal returns a new dict without mutating input."""
         shared: dict = {"signals": {REJECTED_COUNT: 2}}
         new_shared, _ = increment_signal(shared, REJECTED_COUNT)
-        assert shared["signals"][REJECTED_COUNT] == 2  # unchanged
+        assert shared["signals"][REJECTED_COUNT] == 2
         assert new_shared["signals"][REJECTED_COUNT] == 3
 
 

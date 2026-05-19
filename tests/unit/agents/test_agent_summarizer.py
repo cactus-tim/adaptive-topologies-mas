@@ -45,7 +45,6 @@ def _make_primary_llm(fixture_name: str) -> LLMWrapper:
 def _make_summarizer_llm(fixture_name: str) -> LLMWrapper:
     """Create summarizer LLMWrapper with its own loose BudgetTracker."""
     fake = FakeLLM(mode="scripted", fixture=FIXTURES_DIR / fixture_name)
-    # Summarizer uses its own separate BudgetTracker per plan spec
     budget = BudgetTracker(per_call_usd=1.0, per_run_usd=10.0, per_experiment_usd=100.0)
     return LLMWrapper(
         model_id="fake:deterministic",
@@ -95,14 +94,13 @@ class TestSummarizerInvokedWhenOverBudget:
         primary_llm = _make_primary_llm("m5_agent_summarizer_primary.yaml")
         summarizer_llm = _make_summarizer_llm("m5_agent_summarizer_secondary.yaml")
 
-        # Very small context_token_budget to force summarization
         cfg = AgentConfig(
             role="planner",
             system_prompt="You are a planner.",
             tools=[],
             max_tool_iters=0,
             window_size=3,
-            context_token_budget=1,  # impossibly small — always triggers summarization
+            context_token_budget=1,
         )
         registry = ToolRegistry()
         agent = Agent(
@@ -113,12 +111,10 @@ class TestSummarizerInvokedWhenOverBudget:
             summarizer_llm=summarizer_llm,
         )
 
-        # State with enough events that pre-window events exist
         state = _make_state_with_long_scratchpad(n_events=10)
         delta = await agent.step(state)
 
         agent_state = delta["agents"]["p1"]
-        # summary_before_window should contain the summarizer's output
         summary = agent_state["summary_before_window"]
         assert summary == "SUMMARY_TEXT", f"Expected 'SUMMARY_TEXT' as summary, got: {summary!r}"
 
@@ -130,7 +126,6 @@ class TestSummarizerNotInvokedWhenUnderBudget:
         """When under budget, summary_before_window should remain unchanged."""
         primary_llm = _make_primary_llm("m5_agent_summarizer_primary.yaml")
 
-        # Track if summarizer is called via mock
         mock_summarizer = MagicMock()
         mock_summarizer.ainvoke = AsyncMock(
             side_effect=AssertionError("Summarizer should NOT be called")
@@ -142,7 +137,7 @@ class TestSummarizerNotInvokedWhenUnderBudget:
             tools=[],
             max_tool_iters=0,
             window_size=100,
-            context_token_budget=999999,  # enormous — never triggered
+            context_token_budget=999999,
         )
         registry = ToolRegistry()
         agent = Agent(
@@ -153,16 +148,13 @@ class TestSummarizerNotInvokedWhenUnderBudget:
             summarizer_llm=mock_summarizer,
         )
 
-        # Small state — well under budget
         state: dict[str, Any] = {
             "shared": {"task_input": "Short task."},
             "agents": {},
             "messages": [],
             "llm_calls": [],
         }
-        # This must not raise AssertionError from the mock
         delta = await agent.step(state)
-        # If we get here, summarizer was not called
         assert delta is not None
 
 
@@ -179,7 +171,7 @@ class TestSummarizerNoopWhenSummarizerLlmIsNone:
             tools=[],
             max_tool_iters=0,
             window_size=3,
-            context_token_budget=1,  # very small — would trigger summarization if llm existed
+            context_token_budget=1,
         )
         registry = ToolRegistry()
         agent = Agent(
@@ -187,13 +179,12 @@ class TestSummarizerNoopWhenSummarizerLlmIsNone:
             cfg=cfg,
             llm=primary_llm,
             tools=registry,
-            summarizer_llm=None,  # No summarizer
+            summarizer_llm=None,
         )
 
         state = _make_state_with_long_scratchpad(n_events=10)
         delta = await agent.step(state)
 
-        # summary should not be updated (remains empty)
         summary = delta["agents"]["p1"]["summary_before_window"]
         assert summary == "", (
             f"Expected empty summary when summarizer_llm is None, got: {summary!r}"
@@ -232,6 +223,5 @@ class TestSummarizerNoopWhenSummarizerLlmIsNone:
             summary_before_window=None,
         )
         returned_view = await agent._maybe_summarize(view)
-        # View must be unchanged (same scratchpad length)
         assert returned_view.scratchpad == original_scratchpad
         assert returned_view.summary_before_window is None

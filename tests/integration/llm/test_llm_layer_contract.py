@@ -22,20 +22,11 @@ from atm.llm.fake import REPLAY_SCHEMA, FakeLLM
 from atm.llm.pricing import Pricing
 from atm.llm.wrapper import LLMWrapper
 
-# ---------------------------------------------------------------------------
-# Shared fixture paths
-# ---------------------------------------------------------------------------
-
 _PRICING_YAML = "conf/pricing.yaml"
 _PLANNER_FIXTURE = "tests/fixtures/llm/planner_simple.yaml"
 _PLANNER_EXPECTED_TEXT = (
     "Plan: Step 1 — gather requirements. Step 2 — design solution. Step 3 — implement."
 )
-
-
-# ---------------------------------------------------------------------------
-# Scenario 1: Scripted FakeLLM + LLMWrapper end-to-end
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -71,15 +62,9 @@ async def test_scripted_fake_llm_wrapper_end_to_end() -> None:
     assert resp.latency_ms >= 0
     assert resp.model == "fake:deterministic"
     assert isinstance(resp.started_at, datetime.datetime)
-    assert resp.started_at.tzinfo is not None  # timezone-aware
+    assert resp.started_at.tzinfo is not None
 
-    # Budget must have recorded the 0.0 cost at the RUN level
     assert budget.totals[BudgetLevel.RUN] == 0.0
-
-
-# ---------------------------------------------------------------------------
-# Scenario 2: Budget-exceed path — BudgetExceededError raised before LLM call
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -92,14 +77,12 @@ async def test_budget_exceed_raises_before_llm_call() -> None:
     """
     pricing = Pricing.from_yaml(_PRICING_YAML)
     budget = BudgetTracker(
-        per_call_usd=0.0000001,  # effectively zero — any prompt triggers exceed
+        per_call_usd=0.0000001,
         per_run_usd=1.0,
         per_experiment_usd=10.0,
     )
 
-    # Build a FakeLLM that, if called, returns a valid LLMResponse
     inner_fake = FakeLLM(mode="echo")
-    # Wrap in MagicMock so we can assert it was NOT called
     llm_spy = MagicMock(wraps=inner_fake)
     llm_spy.ainvoke = AsyncMock(wraps=inner_fake.ainvoke)
 
@@ -116,16 +99,9 @@ async def test_budget_exceed_raises_before_llm_call() -> None:
             agent_id="a",
         )
 
-    # Exception must be the ATM type, not a bare Exception
     assert isinstance(exc_info.value, BudgetExceededError)
 
-    # The underlying LLM must not have been invoked
     llm_spy.ainvoke.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 3: Replay round-trip — FakeLLM reproduces a saved call
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -160,6 +136,5 @@ async def test_replay_round_trip() -> None:
     fake = FakeLLM(mode="replay", replay_table=table)
     resp = await fake.ainvoke([], agent_id="a")
 
-    # call_id column maps to LLMResponse.id (per REPLAY_SCHEMA contract)
     assert str(resp.id) == table.column("call_id")[0].as_py()
     assert resp.text == "replayed text"

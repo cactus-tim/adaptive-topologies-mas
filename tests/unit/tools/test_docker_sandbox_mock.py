@@ -15,10 +15,6 @@ import pytest
 from atm.tools.sandbox.base import SandboxConfig
 from atm.tools.sandbox.docker_sandbox import DockerSandbox
 
-# ---------------------------------------------------------------------------
-# Helpers — fake docker objects
-# ---------------------------------------------------------------------------
-
 _SECCOMP = '{"defaultAction":"SCMP_ACT_ERRNO","syscalls":[]}'
 
 
@@ -37,7 +33,6 @@ def _make_fake_container(
     """
     container = MagicMock()
 
-    # container.logs(stdout=True, stderr=False) / logs(stdout=False, stderr=True)
     if raise_logs:
         container.logs.side_effect = raise_logs
     else:
@@ -49,17 +44,15 @@ def _make_fake_container(
                 return stderr if isinstance(stderr, bytes) else b""
             return stdout if isinstance(stdout, bytes) else b""
 
-        # Return stdout bytes for stdout=True,stderr=False; stderr bytes otherwise
         container.logs.side_effect = lambda **kw: (
             stdout
             if (kw.get("stdout") and not kw.get("stderr"))
             else (
-                globals()["_make_fake_container"]  # never called — just for type hints
+                globals()["_make_fake_container"]
                 if False
                 else (stderr if (kw.get("stderr") and not kw.get("stdout")) else b"")
             )
         )
-        # Simpler: use a closure
         _stdout_bytes = stdout
         _stderr_bytes = stderr
 
@@ -73,13 +66,11 @@ def _make_fake_container(
         container.logs.side_effect = None
         container.logs.side_effect = _logs
 
-    # container.wait() returns {"StatusCode": exit_code}
     if raise_wait:
         container.wait.side_effect = raise_wait
     else:
         container.wait.return_value = {"StatusCode": exit_code}
 
-    # container.attrs for OOM check
     container.attrs = {
         "State": {
             "OOMKilled": oom_killed,
@@ -87,7 +78,6 @@ def _make_fake_container(
         }
     }
 
-    # container.put_archive() — no-op
     container.put_archive.return_value = True
 
     return container
@@ -101,11 +91,6 @@ def _make_fake_docker_client(container: MagicMock) -> MagicMock:
     client = MagicMock()
     client.containers.create.return_value = container
     return client
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -122,19 +107,9 @@ def sandbox_config() -> SandboxConfig:
     )
 
 
-# ---------------------------------------------------------------------------
-# IS_ISOLATED class variable
-# ---------------------------------------------------------------------------
-
-
 def test_is_isolated_true() -> None:
     """DockerSandbox must declare IS_ISOLATED = True."""
     assert DockerSandbox.IS_ISOLATED is True
-
-
-# ---------------------------------------------------------------------------
-# Constructor — prefetch
-# ---------------------------------------------------------------------------
 
 
 def test_prefetch_true_pulls_images(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
@@ -149,7 +124,7 @@ def test_prefetch_true_pulls_images(seccomp_json: str, sandbox_config: SandboxCo
         )
 
     assert fake_client.images.pull.called, "images.pull should have been called when prefetch=True"
-    _ = sandbox  # silence unused warning
+    _ = sandbox
 
 
 def test_prefetch_false_no_pull(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
@@ -192,11 +167,6 @@ def test_auto_pull_env_triggers_pull(seccomp_json: str, sandbox_config: SandboxC
     _ = sandbox
 
 
-# ---------------------------------------------------------------------------
-# containers.create kwargs — hardening parameters
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_container_create_kwargs_hardening(
     seccomp_json: str, sandbox_config: SandboxConfig
@@ -217,27 +187,22 @@ async def test_container_create_kwargs_hardening(
         await sandbox.execute(lang="python", code="print(1+1)")
 
     assert fake_client.containers.create.called, "containers.create must be called"
-    call_kwargs = fake_client.containers.create.call_args[1]  # keyword args
+    call_kwargs = fake_client.containers.create.call_args[1]
 
-    # Core hardening
     assert call_kwargs.get("read_only") is True, "read_only must be True"
     assert call_kwargs.get("cap_drop") == ["ALL"], "cap_drop must be ['ALL']"
     assert call_kwargs.get("network_mode") == "none", "network_mode must be 'none'"
 
-    # security_opt must include no-new-privileges and the seccomp profile
     security_opt = call_kwargs.get("security_opt", [])
     assert "no-new-privileges" in security_opt, "security_opt must include no-new-privileges"
     seccomp_opt = next((o for o in security_opt if "seccomp=" in o), None)
     assert seccomp_opt is not None, "security_opt must include seccomp=<json>"
     assert _SECCOMP in seccomp_opt, "seccomp option must contain the seccomp JSON string"
 
-    # tmpfs must include /tmp. /work is bind-mounted (see moby#41037 — put_archive
-    # cannot write into a read_only rootfs even when target is tmpfs).
     tmpfs = call_kwargs.get("tmpfs", {})
     assert "/tmp" in tmpfs, "tmpfs must include /tmp"
     assert "/work" not in tmpfs, "/work must NOT be tmpfs; it is bind-mounted"
 
-    # volumes must bind a host dir onto /work
     volumes = call_kwargs.get("volumes", {})
     bind_targets = [v.get("bind") for v in volumes.values()]
     assert "/work" in bind_targets, "/work must be provided via volumes bind mount"
@@ -317,18 +282,11 @@ async def test_lifecycle_create_then_start(
 
     assert call_order[:2] == ["create", "start"], f"Expected create→start, got {call_order}"
 
-    # Verify the host bind was populated with main.py before create was called
     create_kwargs = fake_client.containers.create.call_args[1]
     volumes = create_kwargs.get("volumes", {})
     host_path = next(iter(volumes.keys()))
-    # Host dir is cleaned up in finally, so we can only assert on the mount kwargs here
     assert volumes[host_path]["bind"] == "/work"
     assert volumes[host_path]["mode"] == "rw"
-
-
-# ---------------------------------------------------------------------------
-# container.remove — called even on exception
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -370,16 +328,10 @@ async def test_container_remove_called_on_wait_exception(
             seccomp_json_str=seccomp_json,
             prefetch=False,
         )
-        # Should not raise — exceptions during wait become error result or re-raised after remove
         with contextlib.suppress(Exception):
             await sandbox.execute(lang="python", code="pass")
 
     fake_container.remove.assert_called_with(force=True)
-
-
-# ---------------------------------------------------------------------------
-# Timeout path — kill + timed_out=True
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -393,7 +345,6 @@ async def test_timeout_kills_container_and_sets_timed_out(
     fake_container = _make_fake_container(
         raise_wait=requests.exceptions.ReadTimeout("timed out"),
     )
-    # After timeout kill, allow logs to return normally
     fake_container.logs.side_effect = None
     fake_container.logs.return_value = b""
 
@@ -413,11 +364,6 @@ async def test_timeout_kills_container_and_sets_timed_out(
     assert result.timed_out is True, "timed_out must be True after timeout"
     fake_container.kill.assert_called()
     fake_container.remove.assert_called_with(force=True)
-
-
-# ---------------------------------------------------------------------------
-# ExecResult shape
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -463,11 +409,6 @@ async def test_exec_result_oom_killed(seccomp_json: str, sandbox_config: Sandbox
     assert result.oom_killed is True
 
 
-# ---------------------------------------------------------------------------
-# image_map — default and custom
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_default_image_map_python(seccomp_json: str, sandbox_config: SandboxConfig) -> None:
     """Default image for 'python' lang must be python:3.11-slim."""
@@ -486,7 +427,6 @@ async def test_default_image_map_python(seccomp_json: str, sandbox_config: Sandb
         await sandbox.execute(lang="python", code="pass")
 
     call_args = fake_client.containers.create.call_args
-    # First positional arg is image
     image_used = call_args[0][0] if call_args[0] else call_args[1].get("image")
     assert image_used == "python:3.11-slim"
 
@@ -516,11 +456,6 @@ async def test_custom_image_map_overrides(seccomp_json: str, sandbox_config: San
     assert image_used == custom_image
 
 
-# ---------------------------------------------------------------------------
-# Unsupported language raises ValueError (finding #15)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_unsupported_lang_raises_value_error(
     seccomp_json: str, sandbox_config: SandboxConfig
@@ -538,4 +473,4 @@ async def test_unsupported_lang_raises_value_error(
             prefetch=False,
         )
         with pytest.raises(ValueError, match="Unsupported language"):
-            await sandbox.execute(lang="pyhton", code="pass")  # intentional typo
+            await sandbox.execute(lang="pyhton", code="pass")

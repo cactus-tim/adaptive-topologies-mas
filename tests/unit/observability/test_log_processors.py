@@ -19,10 +19,6 @@ from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _call_filter(event_dict: dict[str, Any]) -> dict[str, Any]:
     """Invoke filter_secrets with dummy logger/method arguments."""
@@ -32,11 +28,6 @@ def _call_filter(event_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 _REDACTED = "<redacted>"
-
-
-# ---------------------------------------------------------------------------
-# 1. Flat dict redaction
-# ---------------------------------------------------------------------------
 
 
 def test_flat_dict_redacts_secret_keys() -> None:
@@ -67,11 +58,6 @@ def test_flat_dict_redacts_secret() -> None:
     result = _call_filter(event)
     assert result["secret"] == _REDACTED
     assert result["level"] == "info"
-
-
-# ---------------------------------------------------------------------------
-# 2. Nested dict redaction
-# ---------------------------------------------------------------------------
 
 
 def test_nested_dict_secrets_redacted() -> None:
@@ -106,11 +92,6 @@ def test_deeply_nested_dict_secrets_redacted() -> None:
     assert result["outer"]["token"] == _REDACTED
 
 
-# ---------------------------------------------------------------------------
-# 3. List of dicts
-# ---------------------------------------------------------------------------
-
-
 def test_list_of_dicts_secrets_redacted() -> None:
     """Each dict in a list has its secret values redacted."""
     event: dict[str, Any] = {
@@ -133,11 +114,6 @@ def test_list_with_non_dict_items_unchanged() -> None:
     event: dict[str, Any] = {"tags": ["a", "b", 42]}
     result = _call_filter(event)
     assert result["tags"] == ["a", "b", 42]
-
-
-# ---------------------------------------------------------------------------
-# 4. Mixed-case key matching
-# ---------------------------------------------------------------------------
 
 
 def test_mixed_case_api_key() -> None:
@@ -164,11 +140,6 @@ def test_mixed_case_secret() -> None:
     assert result["MY_SECRET_VALUE"] == _REDACTED
 
 
-# ---------------------------------------------------------------------------
-# 5. No-op for clean event_dict
-# ---------------------------------------------------------------------------
-
-
 def test_no_op_for_clean_dict() -> None:
     """A dict with no secret keys is returned unchanged (values preserved)."""
     event: dict[str, Any] = {"event": "heartbeat", "host": "server1", "count": 42}
@@ -176,25 +147,14 @@ def test_no_op_for_clean_dict() -> None:
     assert result == event
 
 
-# ---------------------------------------------------------------------------
-# 6. Cyclic dict — does not infinite-loop
-# ---------------------------------------------------------------------------
-
-
 def test_cyclic_dict_does_not_infinite_loop() -> None:
     """A self-referencing dict must not cause infinite recursion."""
     event: dict[str, Any] = {"key": "value", "api_key": "secret"}
-    event["self"] = event  # cyclic reference
+    event["self"] = event
 
-    # Must complete without RecursionError
     result = _call_filter(event)
     assert result["api_key"] == _REDACTED
     assert result["key"] == "value"
-
-
-# ---------------------------------------------------------------------------
-# 7. configure_structlog idempotency
-# ---------------------------------------------------------------------------
 
 
 def test_configure_structlog_idempotent() -> None:
@@ -202,12 +162,7 @@ def test_configure_structlog_idempotent() -> None:
     from atm.observability.log_processors import configure_structlog
 
     configure_structlog()
-    configure_structlog()  # second call — should not raise
-
-
-# ---------------------------------------------------------------------------
-# 8. Bootstrap respects ATM_DISABLE_STRUCTLOG_BOOTSTRAP=1
-# ---------------------------------------------------------------------------
+    configure_structlog()
 
 
 def test_bootstrap_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -245,11 +200,6 @@ def test_bootstrap_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         mock_cfg.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# 9. filter_secrets does NOT mutate input dict
-# ---------------------------------------------------------------------------
-
-
 def test_filter_secrets_does_not_mutate_input() -> None:
     """The original event_dict passed to filter_secrets must remain unchanged."""
     original: dict[str, Any] = {
@@ -257,7 +207,6 @@ def test_filter_secrets_does_not_mutate_input() -> None:
         "name": "unchanged",
         "nested": {"password": "nested-secret", "safe": "value"},
     }
-    # Deep copy to compare later
     import copy
 
     original_copy = copy.deepcopy(original)
@@ -265,11 +214,6 @@ def test_filter_secrets_does_not_mutate_input() -> None:
     _call_filter(original)
 
     assert original == original_copy, "filter_secrets must not mutate its input"
-
-
-# ---------------------------------------------------------------------------
-# 10. Public re-exports from atm.observability
-# ---------------------------------------------------------------------------
 
 
 def test_filter_secrets_exported_from_observability() -> None:

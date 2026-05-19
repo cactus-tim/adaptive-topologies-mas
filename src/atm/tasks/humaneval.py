@@ -1,10 +1,4 @@
-"""HumanEval task loader and evaluator for the ATM tasks module.
-
-Public API:
-- ``_strip_code_fences(text: str) -> str``  — remove markdown code fences
-- ``HumanEvalLoader``                        — TaskLoader for openai/openai_humaneval
-- ``HumanEvalEvaluator``                     — Evaluator using subprocess code execution
-"""
+"""HumanEval task loader and subprocess-execution evaluator."""
 
 from __future__ import annotations
 
@@ -25,20 +19,11 @@ __all__ = [
     "_strip_code_fences",
 ]
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _CODE_FENCE_RE = re.compile(
     r"^```(?:python)?\n(.*?)\n```$",
     re.DOTALL,
 )
 
-# Embedded fence — finds ```python ... ``` (or untagged) anywhere in the
-# text. Used as a fallback for chatty responses that surround the code with
-# explanatory prose ("Here is the solution: ```python ... ```. This works
-# because..."). When multiple fences are present, the LAST one wins — typical
-# LLM output puts revisions / final code at the end.
 _EMBEDDED_FENCE_RE = re.compile(
     r"```(?:python|py)?[ \t]*\n(.*?)\n```",
     re.DOTALL,
@@ -46,21 +31,7 @@ _EMBEDDED_FENCE_RE = re.compile(
 
 
 def _strip_code_fences(text: str) -> str:
-    """Remove markdown code fences from ``text``.
-
-    Handles:
-    - ````python\\n...\\n``` `` — language-tagged fences (whole-text match)
-    - ````\\n...\\n``` `` — plain fences (whole-text match)
-    - Code surrounded by prose — extracts the LAST embedded fenced block.
-    - Plain text — returned unchanged.
-    - Unclosed fences (opening only) — returned unchanged.
-
-    Args:
-        text: Raw text that may contain a markdown code fence.
-
-    Returns:
-        The inner code content if a fence is found, otherwise ``text``.
-    """
+    """Remove markdown code fences; returns last embedded block or plain text unchanged."""
     stripped = text.strip()
     match = _CODE_FENCE_RE.match(stripped)
     if match:
@@ -71,34 +42,18 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
-# ---------------------------------------------------------------------------
-# HumanEvalLoader
-# ---------------------------------------------------------------------------
-
 _CACHE_KEY = "humaneval"
 _HF_DATASET = "openai/openai_humaneval"
 
 
 @TASKS.register
 class HumanEvalLoader:
-    """Task loader for the OpenAI HumanEval benchmark.
-
-    Uses Parquet cache (``data/cache/tasks/humaneval.parquet``) to avoid
-    repeated network calls.  Falls back to ``datasets.load_dataset`` on first
-    call.
-    """
+    """Task loader for the OpenAI HumanEval benchmark (openai/openai_humaneval)."""
 
     name: str = "humaneval"
 
     def load(self, cache_dir: Path | None = None) -> list[TaskSpec]:
-        """Load HumanEval tasks, hitting cache when available.
-
-        Args:
-            cache_dir: Override for the default Parquet cache directory.
-
-        Returns:
-            List of ``TaskSpec`` instances, one per HumanEval problem.
-        """
+        """Load HumanEval tasks; uses Parquet cache when available."""
         if is_cached(_CACHE_KEY, cache_dir):
             rows: list[dict[str, Any]] = read_cache(_CACHE_KEY, cache_dir)
         else:
@@ -134,19 +89,9 @@ def _row_to_spec(row: dict[str, Any]) -> TaskSpec:
     )
 
 
-# ---------------------------------------------------------------------------
-# HumanEvalEvaluator
-# ---------------------------------------------------------------------------
-
-
 @EVALUATORS.register
 class HumanEvalEvaluator:
-    """Evaluator for HumanEval tasks using subprocess code execution.
-
-    Builds a Python script from the task prompt, the model's answer, the
-    test harness, and the entry-point call.  Executes it in a
-    ``SubprocessSandbox`` and determines pass/fail by exit code.
-    """
+    """Evaluator for HumanEval: executes generated code in SubprocessSandbox."""
 
     name: str = "humaneval_pytest"
 
@@ -160,29 +105,12 @@ class HumanEvalEvaluator:
         *,
         artifacts: dict[str, Any] | None = None,
     ) -> EvalResult:
-        """Evaluate ``answer`` against the HumanEval ``spec``.
-
-        Steps:
-        1. Strip markdown code fences from ``answer``.
-        2. Build executable payload: prompt + answer + test harness + check call.
-        3. Execute in sandbox with a 10-second timeout.
-        4. passed = exit_code == 0; score = 1.0 if passed else 0.0.
-
-        Args:
-            spec:      The ``TaskSpec`` from ``HumanEvalLoader``.
-            answer:    Model-generated code (may be fenced or plain).
-            artifacts: Unused. Present for ``Evaluator`` Protocol compatibility.
-
-        Returns:
-            An ``EvalResult`` with score, passed, details, and optional error.
-        """
+        """Evaluate ``answer`` against the HumanEval ``spec``."""
         clean_answer = _strip_code_fences(answer)
 
         test_code = spec.metadata["test"]
         entry_point = spec.metadata["entry_point"]
 
-        # HumanEval prompt already contains the function signature.
-        # Concatenate: prompt (signature+docstring) + answer (body) + test + check call.
         payload = f"{spec.input}{clean_answer}\n\n{test_code}\n\ncheck({entry_point})"
 
         exec_result = await self._sandbox.execute(

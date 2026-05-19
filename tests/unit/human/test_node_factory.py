@@ -23,10 +23,6 @@ import pytest
 from atm.core.types import HumanResponse, HumanRole
 from atm.human._node_factory import build_human_node_factory
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_human_cfg(
     role: HumanRole = HumanRole.REVIEWER,
@@ -90,11 +86,6 @@ def _make_gateway(response: HumanResponse) -> Any:
     return gw
 
 
-# ---------------------------------------------------------------------------
-# 1. Factory returns an async callable
-# ---------------------------------------------------------------------------
-
-
 def test_build_human_node_factory_returns_callable() -> None:
     """build_human_node_factory must return an async callable."""
     cfg = _make_human_cfg()
@@ -110,11 +101,6 @@ def test_build_human_node_factory_returns_callable() -> None:
 
     assert callable(node)
     assert asyncio.iscoroutinefunction(node)
-
-
-# ---------------------------------------------------------------------------
-# 2. Default apply_decision: approve → human_approved=True
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -139,11 +125,6 @@ async def test_default_apply_decision_approve() -> None:
     assert result["shared"].get("needs_rerun") is not True
 
 
-# ---------------------------------------------------------------------------
-# 3. Default apply_decision: reject → needs_rerun=True
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_default_apply_decision_reject() -> None:
     """Reject action sets shared['needs_rerun']=True."""
@@ -164,11 +145,6 @@ async def test_default_apply_decision_reject() -> None:
 
     assert result["shared"].get("needs_rerun") is True
     assert result["shared"].get("human_approved") is not True
-
-
-# ---------------------------------------------------------------------------
-# 4. Gateway is invoked with correct request_id
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -198,11 +174,6 @@ async def test_gateway_invoked_with_correct_request_id() -> None:
     assert call_kwargs.kwargs.get("request_id") == expected_request_id
 
 
-# ---------------------------------------------------------------------------
-# 5. Idempotency-key passthrough via request_id_template with iter_total
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_request_id_template_iter_total_passthrough() -> None:
     """iter_total is correctly embedded in the request_id."""
@@ -230,11 +201,6 @@ async def test_request_id_template_iter_total_passthrough() -> None:
         assert call_kwargs.kwargs.get("request_id") == expected
 
 
-# ---------------------------------------------------------------------------
-# 6. Timed-out response triggers needs_rerun via default handler
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_timed_out_response_triggers_needs_rerun() -> None:
     """Timeout action (timed_out=True) is treated as reject → needs_rerun=True."""
@@ -253,13 +219,7 @@ async def test_timed_out_response_triggers_needs_rerun() -> None:
     with patch("atm.human._node_factory.adispatch_custom_event", new_callable=AsyncMock):
         result = await node(state)
 
-    # Timeout action != "approve" → needs_rerun=True
     assert result["shared"].get("needs_rerun") is True
-
-
-# ---------------------------------------------------------------------------
-# 7. Custom apply_decision callback
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -287,25 +247,15 @@ async def test_custom_apply_decision_callback() -> None:
     with patch("atm.human._node_factory.adispatch_custom_event", new_callable=AsyncMock):
         result = await node(state)
 
-    # Custom callback was invoked
     assert custom_called == ["approve"]
-    # Custom side effect applied
     assert result["shared"].get("custom_flag") is True
-    # Default behavior NOT applied (human_approved not set by default handler)
     assert "human_approved" not in result["shared"]
-
-
-# ---------------------------------------------------------------------------
-# 8. Lazy imports: module-level names are patchable
-# ---------------------------------------------------------------------------
 
 
 def test_lazy_imports_are_patchable() -> None:
     """LLMSimulatedGateway, CLIGateway, request_with_timeout are module-level names."""
     import atm.human._node_factory as _nf
 
-    # The module exposes these at module level (may be None if import failed,
-    # or the actual class if imports succeeded).
     assert hasattr(_nf, "LLMSimulatedGateway")
     assert hasattr(_nf, "CLIGateway")
     assert hasattr(_nf, "request_with_timeout")
@@ -326,21 +276,14 @@ async def test_node_factory_works_when_request_with_timeout_is_none() -> None:
         question_extractor=lambda s: "Q?",
     )
 
-    # Patch request_with_timeout to None to simulate failed import
     with (
         patch("atm.human._node_factory.request_with_timeout", None),
         patch("atm.human._node_factory.adispatch_custom_event", new_callable=AsyncMock),
     ):
         result = await node(state)
 
-    # Should fall back to direct gateway.request()
     gw.request.assert_called_once()
     assert result["shared"]["human_approved"] is True
-
-
-# ---------------------------------------------------------------------------
-# 9. role_router=None (back-compat) — role comes from human_cfg.role
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -378,22 +321,16 @@ async def test_role_router_none_uses_human_cfg_role() -> None:
     assert captured_ctx[0].role == HumanRole.REVIEWER
 
 
-# ---------------------------------------------------------------------------
-# 10. role_router=FixedRoleRouter(JUDGE) — dynamic role used instead of cfg.role
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_role_router_dynamic_overrides_human_cfg_role() -> None:
     """role_router provided → HumanContext.role uses router's decide() result."""
     from atm.core.types import HumanContext
     from atm.human.role_router import FixedRoleRouter
 
-    cfg = _make_human_cfg(role=HumanRole.REVIEWER)  # cfg says REVIEWER
+    cfg = _make_human_cfg(role=HumanRole.REVIEWER)
     gw = _make_gateway(_make_approve_response())
     state = _make_state()
 
-    # Router always returns JUDGE — different from cfg.role
     router = FixedRoleRouter(role=HumanRole.JUDGE)
 
     captured_ctx: list[HumanContext] = []
@@ -419,13 +356,7 @@ async def test_role_router_dynamic_overrides_human_cfg_role() -> None:
         await node(state)
 
     assert len(captured_ctx) == 1
-    # Dynamic role from router is used, not cfg.role
     assert captured_ctx[0].role == HumanRole.JUDGE
-
-
-# ---------------------------------------------------------------------------
-# 11. role_router=None → human_interactions.role reflects human_cfg.role
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -453,13 +384,7 @@ async def test_role_router_none_event_payload_role_matches_cfg() -> None:
         await node(state)
 
     assert "human_request" in captured_events
-    # role in payload reflects cfg.role
     assert captured_events["human_request"]["role"] == "coordinator"
-
-
-# ---------------------------------------------------------------------------
-# 12. role_router=FixedRoleRouter(PEER) → human_request event role is "peer"
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -467,11 +392,10 @@ async def test_role_router_dynamic_event_payload_role_reflects_router() -> None:
     """role_router provided → human_request event 'role' field == router-decided role."""
     from atm.human.role_router import FixedRoleRouter
 
-    cfg = _make_human_cfg(role=HumanRole.REVIEWER)  # cfg says REVIEWER
+    cfg = _make_human_cfg(role=HumanRole.REVIEWER)
     gw = _make_gateway(_make_approve_response())
     state = _make_state()
 
-    # Router returns PEER
     router = FixedRoleRouter(role=HumanRole.PEER)
 
     node = build_human_node_factory(
@@ -492,5 +416,4 @@ async def test_role_router_dynamic_event_payload_role_reflects_router() -> None:
         await node(state)
 
     assert "human_request" in captured_events
-    # role in payload reflects dynamic router result, not cfg.role
     assert captured_events["human_request"]["role"] == "peer"

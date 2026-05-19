@@ -21,16 +21,8 @@ from pathlib import Path
 import nbformat
 from nbformat import v4 as nbv4
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _OUTPUT_PATH = _REPO_ROOT / "notebooks" / "analysis_template.ipynb"
-
-# ---------------------------------------------------------------------------
-# Cell building helpers
-# ---------------------------------------------------------------------------
 
 
 def _md(text: str) -> nbformat.NotebookNode:
@@ -41,11 +33,6 @@ def _md(text: str) -> nbformat.NotebookNode:
 def _code(text: str) -> nbformat.NotebookNode:
     """Create a code cell with stripped source."""
     return nbv4.new_code_cell(text.strip())  # type: ignore[no-untyped-call,no-any-return]
-
-
-# ---------------------------------------------------------------------------
-# Section builders
-# ---------------------------------------------------------------------------
 
 
 def _setup_cells() -> list[nbformat.NotebookNode]:
@@ -160,7 +147,7 @@ def _rq2_cells() -> list[nbformat.NotebookNode]:
     return [
         _md(
             "## RQ2 — Safety: do adaptive guards reduce quality regression?\n\n"
-            "Derived G11 metrics (experiment_plan.md §4) and their visualisations."
+            "Derived G11 metrics and their visualisations."
         ),
         _code(
             "# RQ2 — Derived metrics\n"
@@ -317,11 +304,6 @@ def generate_notebook() -> nbformat.NotebookNode:
     }
 
     return nb  # type: ignore[no-any-return]
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 
 
 def _write_notebook(nb: nbformat.NotebookNode, path: Path) -> None:
