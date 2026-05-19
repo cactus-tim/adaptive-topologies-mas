@@ -392,6 +392,79 @@
 
 Блок до получения результатов E1–E4 и confirmation runs (вечер 17 мая).
 
+### Этап 10 — Пост-fix переработка диплома под новый нарратив (2026-05-19)
+
+Триггер: получены финальные данные после внутренней проверки реализации
+adaptive-роутера. E3 переснят на скорректированной реализации
+(n=237 adaptive + 406 static, $29.38); E4 переснят (n=540, $11.82);
+подтверждающие запуски на qwen-3-235b-a22b: confirmation E3 mini (n=120,
+$5.32), confirmation E4 mini (n=142, $3.84). Итог серии: 4230 завершенных
+запусков, $105.35.
+
+Применённые правки
+
+E1 и E2 не меняются (E1 не затронут проверкой реализации, E2 на статических
+топологиях). Старые числа E3/E4/Confirmations выбрасываются полностью —
+никаких pre/post сравнений в основном тексте.
+
+- Глава 2 (методология):
+  - $\Delta_{\text{oracle}}$ переопределена как разрыв до теоретического
+    per-task best-of референса из E1 (oracle-режим router'а в пост-fix
+    отсутствует);
+  - DABench reframing — «model-sensitive», не universal;
+  - Воронка обновлена (E3 ~640, Conf ~260);
+  - RQ2 разложен на (a) advantage + (б) per-family decision;
+  - RQ4 — добавлен кросс-семейный аспект.
+- Глава 4 (эксперименты):
+  - 4.1 totals — пост-fix объёмы и стоимости;
+  - 4.2 (E1) — одна фраза про DABench как model-specific;
+  - 4.4 (E3) — переписан полностью под Claim 1 (task-difficulty-conditional
+    advantage + minimum-regret + design contributions); oracle-режим
+    убран, добавлен per-task best-of как теоретический референс;
+  - 4.5 (E4) — переписан полностью под Claim 3 (universal negative);
+    введено понятие 3-task pooling; CI llm−fixed 3-task устойчиво
+    исключает нуль;
+  - 4.6 (Confirmations) — переписан полностью под Claim 2 (Pareto-инверсия
+    + family-divergence + LLM-router collapse + DABench reframing);
+  - 4.7 (Stat) — обновлены Cohen's d и bootstrap-CI; ANOVA E1 без
+    изменений; три CI устойчиво исключают границу;
+  - 4.8 (Ablation) — эталон переориентирован на adaptive(llm) + reviewer
+    HITL; family-switch вынесен из таблицы в текст;
+  - 4.9 (Выводы) — переписаны под 4 RQ verdict'а.
+- Глава 5 (анализ):
+  - Ответы на RQ переписаны под Claim 1+Claim 2+Claim 3;
+  - Главный нарратив — три claim'а, Claim 2 как центральный structural
+    finding;
+  - Таблица гипотез: H2 «Частично подтверждена», H4 «Опровергнута
+    (universal negative)»;
+  - Угрозы валидности обновлены (n=45 на ячейку, conf_e4 ±0.17, DABench
+    reframing, фраза про внутреннюю проверку реализации);
+  - Старая формулировка про «коллапс role-router в 94-98%» выкинута.
+- Авторский вклад (06):
+  - Пункт 3 переписан под 4 RQ verdict'а с bootstrap-CI;
+  - Пункт 4 — главный structural finding = Claim 2, добавлен universal
+    negative как concrete design-bound.
+- Заключение (07):
+  - Открывающий абзац — 4230 запусков, $105.35;
+  - Verdict-блок под Claim 1+2+3;
+  - Ключевой результат — Claim 2 + RQ4 design-bound;
+  - Ограничения — n=45 на ячейку, conf_e4 mini, DABench reframing;
+  - Добавлено 7-е направление — переосмысление role-router'а после
+    universal negative.
+- Аннотация (00_annotation): полностью переписана (RU + EN) под новые
+  числа и claim'ы.
+- Введение (00_introduction): счётчик таблиц 19→29.
+- Ключевые слова (00_keywords): «оракул адаптации» → «per-task best-of
+  референс».
+
+Implementation audit в текст диплома отдельным разделом НЕ добавлен
+(по уточнению пользователя). $\Delta_{\text{oracle}}$ метрика сохранена
+как теоретический референс из E1, а не как router-режим.
+
+После каждого этапа правок прогонялся независимый ревьюер; все этапы
+получили verdict APPROVED или APPROVED WITH MINOR FIXES (исправленные
+сразу).
+
 ### Этап 9 — Финальная сборка
 
 - [ ] Аннотация RU и EN.

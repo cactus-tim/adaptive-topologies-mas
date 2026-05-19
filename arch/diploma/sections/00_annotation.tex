@@ -5,25 +5,23 @@
 \addcontentsline{toc}{section}{Аннотация}
 
 В~работе проведена количественная оценка влияния выбора коммуникационной
-топологии мульти-агентной системы, механизма ее адаптации в~процессе
-решения задачи и позиции человека в~контуре управления
-на~эффективность решения задач разных классов. Предмет
-исследования~--- коммуникационная топология мульти-агентных систем
-больших языковых моделей, механизм ее динамической адаптации и
-роль человека в~графе обмена сообщениями; объект~--- сами
-мульти-агентные системы на~основе больших языковых моделей. Разработан и опубликован под лицензией~MIT (от англ. Massachusetts
-Institute of Technology) программный фреймворк, объединяющий пять
-статических топологий, адаптивную мета-топологию, пять ролей
-человека и~три режима маршрутизации.
-Воронка из~четырех экспериментов с~двумя кросс-семейными
-подтверждениями охватывает 5175 запусков на~четырех корпусах
-задач. Получены положительные ответы на~два из~четырех
-исследовательских вопросов; на~два оставшихся~--- отрицательные.
-Помимо отрицательных ответов выявлены два сопутствующих наблюдения,
-которые при~кросс-семейной валидации также не подтверждаются. Центральный вывод работы~--- кросс-семейная
-неустойчивость адаптивных политик маршрутизации, требующая
-обязательной валидации не менее чем на~двух семействах моделей
-рабочего агента.
+топологии мульти-агентной системы, механизма ее адаптации и~позиции
+человека в~контуре управления на~эффективность решения задач разных
+классов. Разработан фреймворк под~лицензией~MIT, объединяющий пять
+статических топологий, адаптивную мета-топологию, пять ролей человека
+и~два режима маршрутизации; воронка из~четырех экспериментов с~двумя
+кросс-семейными подтверждающими запусками охватывает~4230 завершенных
+запусков на~четырех корпусах задач. RQ1 и~RQ3 подтверждены. RQ2
+раскладывается на~task-difficulty-conditional Парето-преимущество
+адаптивной мета-топологии на~сложных корпусах и~routing strategy
+как~per-family deployment decision~--- Парето-победитель меняется
+при~смене семейства весов работника ($\Delta q^{\text{rule}-\text{llm}}
+=+0{,}304$ на~Qwen-3-235B, бутстрап-CI $[+0{,}185,\,+0{,}426]$ исключает
+нуль). RQ4 опровергнут как~universal negative finding~--- адаптивный
+маршрутизатор роли не~дает положительного лифта ни~на одном
+из~двух семейств работника. Центральный structural finding работы~---
+зависимость выбора routing-стратегии от~семейства весов рабочего
+агента, требующая обязательной кросс-семейной валидации.
 
 \vspace{1cm}
 
@@ -34,20 +32,20 @@ Institute of Technology) программный фреймворк, объеди
 The thesis provides a quantitative assessment of how the choice of
 communication topology, its runtime adaptation, and the position of
 the human in the control loop affect the effectiveness of multi-agent
-large-language-model systems on tasks of different classes. The
-subject of study is the communication topology of such systems,
-the mechanism of its dynamic adaptation, and the role of the human
-in the agent message graph; the object is multi-agent systems
-built on large language models. A multi-agent framework was developed and published
-under the MIT license, integrating five static topologies, an
-adaptive meta-topology, five human roles, and three routing modes.
-A funnel of four experiments with two cross-family confirmation runs
-covers 5175 runs across four task corpora. Two of the four research
-questions receive positive answers; the remaining two are rejected.
-Alongside the negative answers, two related side findings are
-identified and likewise fail under cross-family validation. The
-central finding is the cross-family non-invariance of adaptive
-routing policies, which requires mandatory validation on at least
-two worker model families.
+large-language-model systems on tasks of different classes. A framework
+was developed under the MIT license, integrating five static topologies,
+an adaptive meta-topology, five human roles, and two topology routing
+modes; a funnel of four experiments with two cross-family confirmation
+runs covers 4230 completed runs across four task corpora. RQ1 and RQ3
+are confirmed. RQ2 decomposes into a task-difficulty-conditional Pareto
+advantage of the adaptive meta-topology on hard corpora and routing
+strategy as a per-family deployment decision~--- the Pareto winner
+flips when the worker family changes ($\Delta q^{\text{rule}-\text{llm}}
+=+0.304$ on Qwen-3-235B, bootstrap CI $[+0.185,\,+0.426]$ robustly
+excludes zero). RQ4 is rejected as a universal negative finding~---
+the adaptive role router yields no positive lift on either worker
+family. The central structural finding is the dependence of routing
+strategy selection on the weight family of the worker agent, which
+requires mandatory cross-family validation.
 
 \selectlanguage{russian}
