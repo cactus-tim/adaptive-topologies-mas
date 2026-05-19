@@ -159,6 +159,6 @@
   "id": "8544307b-a249-4125-897e-da2508671be6",
   "name": "e3_postfix_full_llm_dabench",
   "started_at": "2026-05-18T09:39:52.881278+00:00",
-  "status": "failed",
+  "status": "completed",
   "total_cost_usd": 0.0
 }
